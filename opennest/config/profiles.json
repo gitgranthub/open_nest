@@ -1,81 +1,96 @@
 {
-  "_note": "Project profiles (WORKORDER_01 section 5). A profile is data: system prompt, starter template, allowed tools, package allowlist, run and compile commands, asset types, starter ideas. Adding a project type should not require changing application code.",
+  "_note": "Project profiles (WORKORDER_01 section 5). A profile is data. Tool sets are four tools wide and deliberately exclude list_project_files and inspect_error: both return information the application already knows, so the file list and the last run result are injected as context instead. Phase 1 and 2 measured selection accuracy falling as the tool set grows. edit_file is the primary way to change a file; write_file is only for creating a new one. See SPIKES.md.",
   "schema_version": 1,
   "profiles": [
     {
       "id": "games",
       "name": "Game",
-      "symbol": "🎮",
+      "symbol": "\ud83c\udfae",
       "tagline": "Build a game",
       "prompt_file": "games.txt",
       "default_language": "python",
-      "frameworks": ["pygame"],
-      "packages": ["pygame", "pillow"],
+      "frameworks": [
+        "pygame"
+      ],
+      "packages": [
+        "pygame",
+        "pillow"
+      ],
       "starter_template": "pygame_basic",
       "entrypoint": "game.py",
-      "run_command": ["python", "src/game.py"],
+      "run_command": [
+        "python",
+        "src/game.py"
+      ],
       "compile_command": null,
       "run_label": "Run Game",
       "tools": [
-        "list_project_files",
         "read_file",
+        "edit_file",
         "write_file",
-        "create_directory",
-        "delete_project_file",
-        "run_project",
-        "inspect_error",
-        "list_assets",
-        "read_text_asset",
-        "get_project_info"
+        "run_project"
       ],
-      "asset_types": ["image", "audio", "data", "code", "document"],
+      "asset_types": [
+        "image",
+        "audio",
+        "data",
+        "code",
+        "document"
+      ],
       "starter_ideas": [
         "Space Game",
         "Platform Game",
         "Maze",
         "Racing Game",
         "Quiz Game"
-      ]
+      ],
+      "run_mode": "interactive"
     },
     {
       "id": "raspberry_pi",
       "name": "Raspberry Pi / Robot",
-      "symbol": "🤖",
+      "symbol": "\ud83e\udd16",
       "tagline": "Build with Raspberry Pi",
       "prompt_file": "raspberry_pi.txt",
       "default_language": "python",
       "frameworks": [],
-      "packages": ["numpy", "pillow"],
+      "packages": [
+        "numpy",
+        "pillow"
+      ],
       "starter_template": "raspberry_pi_basic",
       "entrypoint": "main.py",
-      "run_command": ["python", "src/main.py"],
+      "run_command": [
+        "python",
+        "src/main.py"
+      ],
       "compile_command": null,
       "run_label": "Test on Mac",
       "tools": [
-        "list_project_files",
         "read_file",
+        "edit_file",
         "write_file",
-        "create_directory",
-        "delete_project_file",
-        "run_project",
-        "inspect_error",
-        "list_assets",
-        "read_text_asset",
-        "get_project_info"
+        "run_project"
       ],
-      "asset_types": ["image", "document", "data", "code"],
+      "asset_types": [
+        "image",
+        "document",
+        "data",
+        "code"
+      ],
       "starter_ideas": [
         "Blink an LED",
         "Motion Alarm",
         "Robot Car",
         "Distance Sensor",
         "Weather Station"
-      ]
+      ],
+      "run_mode": "interactive"
     },
     {
       "id": "arduino",
       "name": "Arduino",
-      "symbol": "🔌",
+      "symbol": "\ud83d\udd0c",
       "tagline": "Build a device",
       "prompt_file": "arduino.txt",
       "default_language": "arduino",
@@ -84,91 +99,111 @@
       "starter_template": "arduino_basic",
       "entrypoint": "project.ino",
       "run_command": null,
-      "compile_command": ["arduino-cli", "compile"],
+      "compile_command": [
+        "arduino-cli",
+        "compile"
+      ],
       "run_label": "Compile",
       "tools": [
-        "list_project_files",
         "read_file",
+        "edit_file",
         "write_file",
-        "create_directory",
-        "delete_project_file",
-        "compile_project",
-        "inspect_error",
-        "list_assets",
-        "read_text_asset",
-        "get_project_info"
+        "compile_project"
       ],
-      "asset_types": ["image", "document", "code"],
+      "asset_types": [
+        "image",
+        "document",
+        "code"
+      ],
       "starter_ideas": [
         "Traffic Light",
         "Servo Controller",
         "Temperature Display",
         "Button Game"
-      ]
+      ],
+      "run_mode": "batch"
     },
     {
       "id": "research",
       "name": "Research Project",
-      "symbol": "🔬",
+      "symbol": "\ud83d\udd2c",
       "tagline": "Explore something",
       "prompt_file": "research.txt",
       "default_language": "python",
-      "frameworks": ["pandas", "matplotlib"],
-      "packages": ["pandas", "numpy", "matplotlib", "pillow"],
+      "frameworks": [
+        "pandas",
+        "matplotlib"
+      ],
+      "packages": [
+        "pandas",
+        "numpy",
+        "matplotlib",
+        "pillow"
+      ],
       "starter_template": "research_basic",
       "entrypoint": "analysis.py",
-      "run_command": ["python", "src/analysis.py"],
+      "run_command": [
+        "python",
+        "src/analysis.py"
+      ],
       "compile_command": null,
       "run_label": "Run Analysis",
       "tools": [
-        "list_project_files",
         "read_file",
+        "edit_file",
         "write_file",
-        "create_directory",
-        "delete_project_file",
-        "run_project",
-        "inspect_error",
-        "list_assets",
-        "read_text_asset",
-        "get_project_info"
+        "run_project"
       ],
-      "asset_types": ["data", "document", "image", "code"],
+      "asset_types": [
+        "data",
+        "document",
+        "image",
+        "code"
+      ],
       "starter_ideas": [
         "Analyze an Experiment",
         "Graph a Dataset",
         "Study Weather",
         "Track Observations",
         "Compare Results"
-      ]
+      ],
+      "run_mode": "batch"
     },
     {
       "id": "blank",
       "name": "Something Else",
-      "symbol": "✨",
+      "symbol": "\u2728",
       "tagline": "Start with an idea",
       "prompt_file": "blank.txt",
       "default_language": "python",
       "frameworks": [],
-      "packages": ["numpy", "pillow", "requests"],
+      "packages": [
+        "numpy",
+        "pillow",
+        "requests"
+      ],
       "starter_template": "blank_basic",
       "entrypoint": "main.py",
-      "run_command": ["python", "src/main.py"],
+      "run_command": [
+        "python",
+        "src/main.py"
+      ],
       "compile_command": null,
       "run_label": "Run",
       "tools": [
-        "list_project_files",
         "read_file",
+        "edit_file",
         "write_file",
-        "create_directory",
-        "delete_project_file",
-        "run_project",
-        "inspect_error",
-        "list_assets",
-        "read_text_asset",
-        "get_project_info"
+        "run_project"
       ],
-      "asset_types": ["image", "document", "data", "code"],
-      "starter_ideas": []
+      "asset_types": [
+        "image",
+        "document",
+        "data",
+        "code"
+      ],
+      "starter_ideas": [],
+      "run_mode": "batch"
     }
   ]
 }

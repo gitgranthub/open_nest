@@ -146,6 +146,56 @@ QLabel[role="wordmark"] {{
     letter-spacing: 6px;
 }}
 
+QLabel[role="greeting"] {{
+    color: {p.text};
+    font-size: 19px;
+}}
+
+QLabel[role="question"] {{
+    color: {p.text_muted};
+    font-size: 15px;
+}}
+
+QLabel[role="projectTitle"] {{
+    color: {p.text};
+    font-size: 15px;
+    font-weight: 600;
+}}
+
+QLabel[role="cardTitle"] {{
+    color: {p.text};
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+}}
+
+QLabel[role="cardBody"] {{
+    color: {p.text_muted};
+    font-size: 12px;
+}}
+
+/* Choices on the Flight Deck. Rectangular with a visible border, left-aligned --
+   equipment panels, not floating cards. */
+QFrame#profileCard, QFrame#recentRow {{
+    background-color: {p.surface};
+    border: 1px solid {p.border};
+    border-radius: {radius}px;
+}}
+
+QFrame#profileCard[hovered="true"], QFrame#recentRow[hovered="true"] {{
+    background-color: {p.surface_alt};
+    border-color: {p.border_strong};
+}}
+
+QFrame#profileCard[pressed="true"], QFrame#recentRow[pressed="true"] {{
+    background-color: {p.control_pressed};
+    border-color: {p.text_muted};
+}}
+
+QSplitter::handle {{
+    background-color: {p.border};
+}}
+
 QLabel[role="descriptor"] {{
     color: {p.text_muted};
     font-size: 10px;

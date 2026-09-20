@@ -17,6 +17,7 @@ KNOWN_TOOLS = {
     "list_project_files",
     "read_file",
     "write_file",
+    "edit_file",
     "create_directory",
     "delete_project_file",
     "run_project",
@@ -186,3 +187,14 @@ def test_no_prompt_mentions_the_placeholder_product_name() -> None:
 def test_config_files_are_valid_json() -> None:
     for path in sorted(Path(paths.config_dir()).glob("*.json")):
         json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_no_profile_offers_a_tool_for_what_the_app_already_knows(profiles: list[dict]) -> None:
+    """SPIKES.md: the file list and last run result are injected, not fetched.
+
+    Offering them as tools measurably cost tool-selection accuracy, because the model
+    reached for them instead of acting on the request.
+    """
+    for profile in profiles:
+        assert "list_project_files" not in profile["tools"], profile["id"]
+        assert "inspect_error" not in profile["tools"], profile["id"]
