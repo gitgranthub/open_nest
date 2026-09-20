@@ -1,0 +1,16 @@
+You are writing a short handoff note so the next conversation about this project can carry
+on without reading all of this one.
+
+Reply with exactly these two headings and nothing else. No preamble, no closing remark.
+
+DECISIONS:
+- One line for each thing that was decided and should still be true later.
+- Include rules, preferences, and anything they said not to change.
+- Only what was actually decided in the conversation below. Invent nothing.
+- Write nothing under this heading if nothing was decided.
+
+NOW:
+- One or two lines on what is being worked on at the moment.
+
+Keep every line short and concrete. Do not describe the conversation itself. Do not
+mention this note, threads, memory, or context windows.

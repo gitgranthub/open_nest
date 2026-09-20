@@ -2,10 +2,15 @@
 
 WORKORDER_01 sections 17, 18 and 28.
 
-Prompt composition is base + profile + build style + current project context. The project
-context is assembled by the application from what it deterministically knows -- the file
-list above all -- rather than being something the model must go and fetch. Phase 1
-measured that choice as worth 19 points of tool-selection accuracy (SPIKES.md section 4).
+Prompt composition is base + profile + build style + current project context + project
+memory. The project context is assembled by the application from what it
+deterministically knows -- the file list above all -- rather than being something the
+model must go and fetch. Phase 1 measured that choice as worth 19 points of tool-selection
+accuracy (SPIKES.md section 4), and section 15A applies the same rule to memory.
+
+Both collaborators here are optional. Without a :class:`VersionHistory` nothing is
+checkpointed; without a :class:`MemoryManager` nothing is remembered between threads. The
+loop itself behaves identically either way, which is what keeps them separately testable.
 """
 
 from __future__ import annotations
@@ -17,6 +22,7 @@ from opennest import paths
 from opennest.agent.tools import Toolbox, ToolResult, normalise_tool_name, schemas_for
 from opennest.ai.provider import Message, ModelProvider, Settings, ToolCall
 from opennest.execution.python_runner import RunResult
+from opennest.memory.manager import MemoryManager
 from opennest.projects.manager import Project
 from opennest.security.sandbox import visible_files
 from opennest.versioning.checkpoint import (
@@ -66,19 +72,27 @@ class Turn:
     gave_up: bool = False
     #: Ref of the checkpoint saved after this turn, if anything changed.
     checkpoint: str | None = None
+    #: Whether the thread rolled over after this turn. For tests and logs only -- the
+    #: child must never be told (WORKORDER_01 section 15A).
+    rolled_over: bool = False
 
 
 def build_system_prompt(
-    project: Project, *, build_style: str = "build", last_run: RunResult | None = None
+    project: Project,
+    *,
+    build_style: str = "build",
+    last_run: RunResult | None = None,
+    memory: str = "",
 ) -> str:
-    """base + profile + build style + deterministic project state."""
+    """The new-thread bootstrap of section 15A: base + profile + style + state + memory."""
     base = (paths.prompts_dir() / "base.txt").read_text(encoding="utf-8").strip()
     profile_prompt = project.profile.system_prompt()
     style_file = "style_teach.txt" if build_style == "teach" else "style_build.txt"
     style = (paths.prompts_dir() / style_file).read_text(encoding="utf-8").strip()
-    return "\n\n".join(
-        [base, profile_prompt, style, TOOL_USE_RULES, project_state(project, last_run)]
-    )
+    parts = [base, profile_prompt, style, TOOL_USE_RULES, project_state(project, last_run)]
+    if memory:
+        parts.append(memory)
+    return "\n\n".join(parts)
 
 
 def project_state(project: Project, last_run: RunResult | None = None) -> str:
@@ -122,6 +136,7 @@ class AgentController:
         *,
         build_style: str = "build",
         versions: VersionHistory | None = None,
+        memory: MemoryManager | None = None,
     ) -> None:
         self.project = project
         self.provider = provider
@@ -131,13 +146,16 @@ class AgentController:
         #: already the message list -- conflating the two silently broke checkpointing.
         #: Optional so tests and headless use do not require Git.
         self.versions = versions
+        #: Project memory and thread rollover. Optional for the same reason.
+        self.memory = memory
         self.history: list[Message] = []
         self._reset_history()
 
     def _reset_history(self) -> None:
+        """Begin a thread: one system message carrying the whole bootstrap."""
         self.history = [
             Message(role="system", content=build_system_prompt(
-                self.project, build_style=self.build_style))
+                self.project, build_style=self.build_style, memory=self._memory_block()))
         ]
 
     def refresh_state(self) -> None:
@@ -148,8 +166,12 @@ class AgentController:
                 self.project,
                 build_style=self.build_style,
                 last_run=self.toolbox.last_run,
+                memory=self._memory_block(),
             ),
         )
+
+    def _memory_block(self) -> str:
+        return self.memory.context_block() if self.memory is not None else ""
 
     def send(
         self,
@@ -161,6 +183,14 @@ class AgentController:
         # Checkpoint whatever state exists before touching anything, so "undo" goes
         # back to what the child had rather than to some earlier assistant turn.
         self._checkpoint(LABEL_BEFORE_CHANGE)
+
+        # "Like we talked about before" is answered from memory, deterministically,
+        # before the model sees the message (WORKORDER_01 section 15A, memory retrieval).
+        # The refresh is unconditional: a lookup that finds nothing must also clear the
+        # previous turn's, or the model keeps being handed an answer to an old question.
+        if self.memory is not None:
+            self.memory.recall_for(text)
+            self.refresh_state()
 
         self.history.append(Message(role="user", content=text))
         turn = Turn()
@@ -193,10 +223,48 @@ class AgentController:
         return self._finish_turn(turn)
 
     def _finish_turn(self, turn: Turn) -> Turn:
-        """Save a checkpoint if the assistant actually changed anything."""
-        if any(result.changed_files for _, result in turn.tool_results):
+        """Save a checkpoint if the assistant changed anything, then update memory."""
+        changed = any(result.changed_files for _, result in turn.tool_results)
+        # State is refreshed before the checkpoint so the saved version contains both the
+        # change and the note describing it.
+        if self.memory is not None:
+            self.memory.note_turn(
+                changed_files=changed,
+                ran_project=any(result.run is not None for _, result in turn.tool_results),
+                last_run=self.toolbox.last_run,
+            )
+        if changed:
             turn.checkpoint = self._checkpoint(LABEL_AFTER_CHANGE)
+        self._roll_over_if_needed(turn)
         return turn
+
+    def _roll_over_if_needed(self, turn: Turn) -> None:
+        """Hand this thread over to the next one, silently (WORKORDER_01 section 15A).
+
+        This runs only after the turn is complete, so the child has already read the
+        reply; nothing here changes what they see. Section 15A step 1 requires exactly
+        that ordering, and steps 7 and 8 are the ``_reset_history`` below -- the new
+        thread's system prompt is rebuilt with the memory the old one just wrote.
+        """
+        if self.memory is None or not self.memory.should_roll_over(self.history):
+            return
+        result = self.memory.roll_over(self.provider, self.history)
+        if result.happened:
+            self._reset_history()
+            turn.rolled_over = True
+
+    def close(self, *, summarise: bool = True) -> None:
+        """End this project's thread. Called when the project closes, not per turn.
+
+        ``summarise=False`` archives the thread and updates memory from facts alone,
+        skipping the model call. Use it when quitting: a Mac application that pauses on
+        Command-Q is broken, and an instant close with a slightly plainer handoff is the
+        better trade. Returning to the Flight Deck is a pause rather than an exit, so
+        that path keeps the summary.
+        """
+        if self.memory is not None:
+            self.memory.close(self.provider if summarise else None, self.history)
+            self._reset_history()
 
     def _checkpoint(self, label: str) -> str | None:
         if self.versions is None:
@@ -225,7 +293,12 @@ class AgentController:
         ):
             if chunk.text and on_text:
                 on_text(chunk.text)
-        return self.provider.finish()
+        reply = self.provider.finish()
+        # The provider already counted the prompt, so the context budget never needs to
+        # re-tokenise anything (conversations.context_budget).
+        if self.memory is not None:
+            self.memory.observe(reply)
+        return reply
 
     def _run_tools(self, calls: tuple[ToolCall, ...], turn: Turn) -> bool:
         """Execute calls and append results. Returns whether to keep going."""

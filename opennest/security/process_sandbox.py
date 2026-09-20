@@ -26,16 +26,26 @@ worse than an error a parent can read.
 ``sandbox-exec`` is marked deprecated by Apple. It is present and functional on supported
 versions; :func:`sandbox_available` is the check, and replacing the mechanism later means
 changing only this file.
+
+Note that the check is a *probe*, not a file-existence test, because Seatbelt cannot be
+nested. See :func:`sandbox_available`.
 """
 
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 SANDBOX_EXEC = "/usr/bin/sandbox-exec"
+
+#: The cheapest profile that still proves a profile can be applied at all.
+_PROBE_PROFILE = "(version 1)(allow default)"
+
+#: Probed once per process. None means "not yet asked".
+_available: bool | None = None
 
 
 class SandboxUnavailable(Exception):
@@ -43,7 +53,37 @@ class SandboxUnavailable(Exception):
 
 
 def sandbox_available() -> bool:
-    return sys.platform == "darwin" and os.path.isfile(SANDBOX_EXEC)
+    """Whether the sandbox can actually be applied -- attempted, not assumed.
+
+    Checking that ``/usr/bin/sandbox-exec`` exists is not the same question. Seatbelt
+    profiles **cannot be nested**: inside an existing sandbox, applying another fails
+    with ``sandbox_apply: Operation not permitted`` even though the binary is right
+    there. That is not hypothetical -- it is what happens when the test suite is run
+    under ``scripts/offline.sh``, which is itself a Seatbelt sandbox.
+
+    So the capability is established by exercising it once and caching the answer. It is
+    deliberately not an environment variable or a configuration flag: this decides
+    whether a model's generated code runs at all, and anything a process can set about
+    itself is the wrong input to that decision.
+    """
+    global _available
+    if _available is None:
+        _available = _probe()
+    return _available
+
+
+def _probe() -> bool:
+    if sys.platform != "darwin" or not os.path.isfile(SANDBOX_EXEC):
+        return False
+    try:
+        result = subprocess.run(
+            [SANDBOX_EXEC, "-p", _PROBE_PROFILE, "/usr/bin/true"],
+            capture_output=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
 
 
 def build_profile(project_dir: Path, *, allow_network: bool = False) -> str:

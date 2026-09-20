@@ -1,8 +1,9 @@
 # Measurements
 
 Everything here was measured, not estimated. Sections 1-7 are the Phase 1 risk spikes
-that the agent and execution layers were built on; section 8 records what Phases 2 and 3
-observed afterwards, including where a Phase 1 conclusion turned out not to transfer.
+that the agent and execution layers were built on; sections 8 and 9 record what Phases 2
+to 4 observed afterwards, including where a Phase 1 conclusion turned out not to transfer
+and where the documented workflow turned out to be wrong.
 
 **Measured on:** Apple silicon (arm64), macOS 15.7.9, 48 GB unified memory, mlx 0.32.2,
 mlx-lm 0.31.3, Python 3.12.14.
@@ -248,6 +249,56 @@ still valid Python, ~7 s per turn.
   reopen the interrupted session was detected and both the unsaved edit and a newly
   created file were preserved as their own checkpoint.
 
+## 9. Phase 4 — Seatbelt does not nest
+
+Not a spike; a defect in the documented workflow, found by following it.
+
+`HANDOFF.md` §2 said to run the test suite through `scripts/offline.sh`. Ten tests fail
+that way, all of them tests that start a child project:
+
+```text
+sandbox-exec: sandbox_apply: Operation not permitted
+```
+
+`scripts/offline.sh` is itself a Seatbelt sandbox, and a Seatbelt profile cannot be
+applied inside another one. Verified directly, independent of this project:
+
+| Command | Result |
+|---|---|
+| `sandbox-exec -p '(version 1)(allow default)' true` | succeeds |
+| the same, nested one level deeper | **`sandbox_apply: Operation not permitted`** |
+
+Nothing was wrong with the sandbox. `run_project` fails closed when it cannot confine a
+project, which is correct, and the instruction was asking it to do so ten times.
+
+Two consequences, both now in place:
+
+- The suite runs **unwrapped**. It is hermetic — temporary directories, no network, no
+  model — so it never needed the sandbox. `scripts/offline.sh` keeps the job it exists
+  for: anything that loads the downloaded model or could reach the network.
+- `process_sandbox.sandbox_available()` now **probes** the capability by applying a
+  trivial profile once and caching the answer, instead of checking that
+  `/usr/bin/sandbox-exec` exists. A file-existence test reports a capability the process
+  may not have. Deliberately an attempt rather than an environment variable: this decides
+  whether a model's generated code runs at all, and anything the process can assert about
+  itself is the wrong input to that decision. A wrapped run is now 231 passed, 14 skipped
+  rather than 10 failed.
+
+### Still unmeasured after Phase 4
+
+Thread rollover sends the conversation's prose back through the model a second time to
+write the handoff. Section 3 measured prompt throughput at **39.6 tok/s**, but on a short
+prompt — if that figure holds at a few thousand tokens, a rollover is a visible pause
+after a turn rather than the invisible event §15A requires. The transcript excludes the
+system prompt and all tool traffic, and generation is capped at 400 tokens, so the real
+cost is probably much lower. It has not been measured. Do that before Phase 10; if it is
+bad, move the handoff onto the worker thread instead of running it inline.
+
+Memory *quality* is also unmeasured. `tests/test_rollover.py` proves the application
+rolls over correctly with a scripted provider; whether a 4B model writes a handoff worth
+keeping is the separate question, and the Phase 2 pattern applies — measure it against
+the real model, on its own.
+
 ---
 
 ## Follow-ups for later phases
@@ -258,5 +309,7 @@ still valid Python, ~7 s per turn.
   boundary for running child project code (work order §19).
 - **Phase 8:** installer must verify a model by real inference through the provider, which
   means it needs the local-path resolution too.
+- **Before Phase 10:** measure rollover latency with the real model (section 9), and check
+  handoff quality separately from handoff wiring.
 - **Re-measure on 8 GB hardware** before V1.
 - Remaining models stay unverified until something actually needs them.

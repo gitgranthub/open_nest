@@ -14,6 +14,7 @@ from opennest.agent.controller import AgentController
 from opennest.agent.tools import Toolbox
 from opennest.ai.provider import ProviderError
 from opennest.ai.router import build_provider, default_model_id
+from opennest.memory.manager import MemoryManager
 from opennest.projects.manager import Project, ProjectError, create_project
 from opennest.projects.profiles import Profile
 from opennest.ui.flight_deck import FlightDeck
@@ -32,6 +33,7 @@ class MainWindow(QMainWindow):
         self._loader_thread = None
         self._workbench: Workbench | None = None
         self._versions: VersionHistory | None = None
+        self._controller: AgentController | None = None
 
         self._stack = QStackedWidget()
         self._deck = FlightDeck(user_name)
@@ -105,6 +107,7 @@ class MainWindow(QMainWindow):
             Toolbox(project),
             build_style=project.manifest.build_style,
             versions=versions,
+            memory=MemoryManager.for_provider(project, self._provider, versions=versions),
         )
         workbench = Workbench(project, controller, versions)
         workbench.back_requested.connect(self._back_to_deck)
@@ -114,6 +117,7 @@ class MainWindow(QMainWindow):
             self._workbench.deleteLater()
         self._workbench = workbench
         self._versions = versions
+        self._controller = controller
         self._stack.addWidget(workbench)
         self._stack.setCurrentWidget(workbench)
         if self._provider.is_loaded:
@@ -127,12 +131,19 @@ class MainWindow(QMainWindow):
         self._deck.refresh()
         self._stack.setCurrentWidget(self._deck)
 
-    def _close_project(self) -> None:
-        """Save outstanding work and clear the crash marker."""
+    def _close_project(self, *, summarise: bool = True) -> None:
+        """End the conversation thread, save outstanding work, clear the crash marker.
+
+        Memory is written before the final checkpoint so the saved version contains it.
+        """
+        if self._controller is not None:
+            self._controller.close(summarise=summarise)
+            self._controller = None
         if self._versions is not None:
             self._versions.finish()
             self._versions = None
 
     def closeEvent(self, event) -> None:
-        self._close_project()
+        # Quitting must be immediate; see AgentController.close.
+        self._close_project(summarise=False)
         super().closeEvent(event)
