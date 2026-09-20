@@ -22,7 +22,7 @@ import urllib.error
 import urllib.request
 from typing import Callable
 
-from bootstrap.environment import SetupError, app_support_dir, probe_python
+from bootstrap.environment import SetupError, probe_python, runtime_dir
 
 #: A pinned build, never "whatever is newest". Checksum published by the project at
 #: https://github.com/astral-sh/python-build-standalone/releases/download/20260901/SHA256SUMS
@@ -45,7 +45,7 @@ ProgressCallback = Callable[[int, int], None]
 
 
 def managed_root() -> str:
-    return os.path.join(app_support_dir(), "python")
+    return runtime_dir()
 
 
 def managed_install_dir(version: str = PINNED_VERSION) -> str:

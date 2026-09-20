@@ -4,7 +4,9 @@ Working plan derived from `WORKORDER_01.md` (functional scope) and `DESIGN_DOC.m
 (naming and visual direction). This document records phases, exit criteria, decisions,
 and open questions. It is expected to be amended as work proceeds.
 
-Status: **Phase 0 complete. Phase 1 (risk spikes) is next.**
+Status: **Phases 0 and 1 complete. Phase 2 (core vertical slice) is next.**
+
+Phase 1 measurements are in [SPIKES.md](SPIKES.md).
 
 ---
 
@@ -44,6 +46,7 @@ Consequences:
 - The bootstrap must be able to **acquire** Python 3.12+ without `sudo` (work order §35A:
   "The launcher should not require `sudo` for normal installation"). Running the
   python.org `.pkg` prompts for an admin password, so it cannot be the primary path.
+
 **Resolved in Phase 0** (decision D5). `bootstrap/python_setup.py`:
 
 1. Use a suitable existing interpreter (3.12+) if one is found, preferring Open Nest's own.
@@ -66,8 +69,11 @@ checksum from the release's `SHA256SUMS`.
 
 The entire agent design assumes a local model in the 3–4B range can emit well-formed tool
 calls consistently. If it cannot, the agent layer needs a different shape (constrained
-decoding, a stricter single-tool-per-turn protocol, or a larger default model). This is
-measured in Phase 1, before anything is built on top of it.
+decoding, a stricter single-tool-per-turn protocol, or a larger default model).
+
+**Measured in Phase 1 — see [SPIKES.md](SPIKES.md) §4.** Viable, but only in a specific
+configuration: naive use gives 50% correct tool selection. The agent layer must not expose
+an "explore" tool, must keep ≤4 tools live, and must inject deterministic file state.
 
 ### 2.3 8 GB unified memory is genuinely tight
 
@@ -92,7 +98,7 @@ live in `config/models.json` so that correcting them is a data edit, never a cod
   (work order §13).
 - Keychain is the only permitted location for API keys. Not config, not `.env`, not logs,
   not prompts, not project memory, not Git.
-- `gh` is not installed on this Mac; GitHub auth approach is an open decision (§4).
+- GitHub auth approach remains an open decision (§4, D1).
 
 ---
 
@@ -117,9 +123,10 @@ opennest/
 ├── security/      keychain, sandbox
 └── config/        models.json, profiles.json
 
-bootstrap/         bootstrap, environment, dependency_check, model_setup,
-                   github_setup, installer_ui          (Python 3.9-compatible)
-requirements/      base.txt, macos-apple-silicon.txt
+bootstrap/         bootstrap, environment, python_setup, dependency_check,
+                   model_setup, github_setup, installer_ui   (Python 3.9-compatible)
+requirements/      base.txt, macos-apple-silicon.txt, projects.txt, dev.txt
+scripts/           sandbox.sh, fetch.sh, offline.sh     (contained development)
 ```
 
 Guiding rules:
@@ -135,9 +142,9 @@ Guiding rules:
 
 | # | Decision | Needed by | Current lean |
 |---|---|---|---|
-| D1 | GitHub auth: registered OAuth App (device flow) vs. shelling to `gh` vs. PAT fallback | Phase 9 | Device flow; needs a client ID the user must register |
-| D2 | Default local model + quantization | Phase 1 output | Decide from measured spike results |
-| D3 | Tool-call format (native chat template vs. constrained JSON vs. tagged block) | Phase 1 output | Decide from measured spike results |
+| D1 | GitHub auth: registered OAuth App (device flow) vs. shelling to `gh` vs. PAT fallback | Phase 9 | `gh` is now authenticated on the dev machine, which is a viable path; it authenticates the parent's account, so revisit in Phase 9 |
+| ~~D2~~ | ~~Default local model + quantization~~ | ~~Phase 1~~ | **Resolved**: `mlx-community/Qwen3-4B-Instruct-2507-4bit` @ `50d4275`. Apache-2.0, 2.61 GB resident, 92.5 tok/s |
+| ~~D3~~ | ~~Tool-call format~~ | ~~Phase 1~~ | **Resolved**: native `<tool_call>` template, temp 0, ≤4 tools, file state injected rather than listed via a tool |
 | D4 | Projects directory location | Phase 0 | `~/Open Nest/Projects` (mirrors work order's `~/BuildLab/Projects`) |
 | ~~D5~~ | ~~Vendor a standalone Python vs. require Homebrew/python.org~~ | ~~Phase 1~~ | **Resolved in Phase 0**: vendor a pinned, checksum-verified standalone build (section 2.1) |
 
@@ -168,22 +175,38 @@ Known gap carried forward: the launcher currently starts the app detached with n
 surface if the app itself fails at startup. Phase 8 replaces this with the real wizard and
 proper reporting.
 
-### Phase 1 — Risk spikes
+### Phase 1 — Risk spikes — **complete**
 
-- MLX: load time, tokens/sec, peak RSS for 2–3 candidate 4-bit models.
-- Tool-call reliability harness: ~20 representative prompts, scored per model per format.
-- Pygame subprocess launch / stdout+stderr capture / terminate from a PySide6 parent.
-- Keychain round-trip via `keyring`.
-- Standalone-Python acquisition path proven on this machine.
+Deliverable: [SPIKES.md](SPIKES.md). D2 and D3 resolved.
 
-**Exit:** `SPIKES.md` recording measurements, with D2 and D3 resolved.
+Added beyond the original scope, at the request of the developer: a contained,
+network-isolated development sandbox (`scripts/sandbox.sh`, `scripts/fetch.sh`,
+`scripts/offline.sh`). Third-party artifacts are fetched pinned with network on, then
+executed with network denied and writes confined to the project, enforced by macOS
+Seatbelt without root. One model was downloaded rather than the full candidate set.
+
+Headline results:
+
+- Tool calling is **viable but configuration-sensitive**: 50% correct tool selection
+  naively, 100% on 16 single-turn cases once `list_project_files` is replaced by injected
+  file state and a one-tool nudge is added. Treat this as "the configuration is sound",
+  not "the agent is reliable" — multi-turn behaviour is still unmeasured.
+- Memory is not the constraint it was feared to be: 2.74 GB for model, app and a running
+  project combined.
+- **Defect found:** `mlx_lm.load()` reaches the network even for a cached model, which
+  would have broken offline operation (work order §34). Phase 2 must resolve the local
+  snapshot path first.
 
 ### Phase 2 — Core vertical slice (Games, local model only)
 
 Project manager, manifest, profile loader, Pygame starter template; provider interface +
-MLX provider with streaming + model router; agent with `list_project_files`, `read_file`,
-`write_file`, `run_project`, `inspect_error`; sandbox path confinement and timeouts;
-Flight Deck and Workbench; repair loop capped at 3 attempts.
+MLX provider with streaming + model router; agent with `read_file`, `write_file`,
+`run_project`, `inspect_error` (**not** `list_project_files` — see SPIKES.md §4); sandbox
+path confinement and timeouts; Flight Deck and Workbench; repair loop capped at 3 attempts.
+
+Carries these obligations from Phase 1: resolve models to a local path before loading and
+test it with `HF_HUB_OFFLINE=1`; normalise tool names before dispatch; port
+`scripts/offline.sh` into `opennest/security/sandbox.py` as the child-code boundary.
 
 **Exit:** DoD 21–25 and 29–30 — an idea becomes a running game, and "make the asteroids
 move faster" works.

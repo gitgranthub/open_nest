@@ -78,6 +78,30 @@ def test_every_model_has_a_context_policy(models: list[dict]) -> None:
         assert policy["memory_reserved_tokens"] < policy["rollover_threshold"]
 
 
+def test_local_models_are_pinned_to_a_commit(models: list[dict]) -> None:
+    """mlx-community holds community conversions, so downloads must be reproducible.
+
+    Tracking a moving branch means the bytes installed on a child's Mac are whatever the
+    namespace happened to contain that day. Pin the SHA; bump it deliberately.
+    """
+    for model in models:
+        if model["provider"] != "mlx":
+            continue
+        revision = model.get("revision", "")
+        assert re.fullmatch(r"[0-9a-f]{40}", revision), (
+            f"model {model['id']} must pin a 40-character commit SHA, got {revision!r}"
+        )
+
+
+def test_local_models_record_their_provenance(models: list[dict]) -> None:
+    """A community conversion is two trust hops from the original author. Show both."""
+    for model in models:
+        if model["provider"] != "mlx":
+            continue
+        for field in ("upstream_model", "license", "download_gb"):
+            assert model.get(field), f"model {model['id']} is missing {field}"
+
+
 def test_cloud_models_are_marked_as_using_the_internet(models: list[dict]) -> None:
     """The UI must never present a cloud model as if it ran on this Mac."""
     for model in models:

@@ -129,14 +129,34 @@ def probe_python(executable: str) -> tuple[tuple[int, int, int], str] | None:
     return parts, fields[1]
 
 
+def opennest_home() -> str | None:
+    """Containment root, mirroring opennest.paths.opennest_home().
+
+    When set, every file Open Nest owns lives under it and nothing is written elsewhere.
+    """
+    value = os.environ.get("OPENNEST_HOME")
+    return os.path.expanduser(value) if value else None
+
+
 def app_support_dir() -> str:
     """Mirrors opennest.paths.app_support_dir(), for the same reason as APP_NAME."""
+    home = opennest_home()
+    if home:
+        return os.path.join(home, "state")
     return os.path.join(os.path.expanduser("~"), "Library", "Application Support", APP_NAME)
+
+
+def runtime_dir() -> str:
+    """Mirrors opennest.paths.runtime_dir(): where the vendored interpreter lives."""
+    home = opennest_home()
+    if home:
+        return os.path.join(home, "runtime")
+    return os.path.join(app_support_dir(), "python")
 
 
 def managed_pythons() -> list[str]:
     """Interpreters Open Nest installed for itself (see bootstrap.python_setup)."""
-    pattern = os.path.join(app_support_dir(), "python", "*", "bin", "python3")
+    pattern = os.path.join(runtime_dir(), "*", "bin", "python3")
     return sorted(glob.glob(pattern), reverse=True)
 
 

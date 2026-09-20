@@ -57,8 +57,15 @@ def test_compiles_under_oldest_supported_python(source: Path) -> None:
     if interpreter is None:
         pytest.skip(f"no Python {OLDEST_LABEL} available to check against")
 
+    # compile() rather than py_compile: Apple's system Python writes bytecode to
+    # ~/Library/Caches/com.apple.python, which the offline sandbox blocks. Syntax is all
+    # this test cares about, and compiling in memory touches no disk at all.
+    probe = (
+        "import sys;src=open(sys.argv[1]).read();"
+        "compile(src, sys.argv[1], 'exec')"
+    )
     result = subprocess.run(
-        [interpreter, "-m", "py_compile", str(source)],
+        [interpreter, "-B", "-c", probe, str(source)],
         capture_output=True,
         timeout=60,
     )
