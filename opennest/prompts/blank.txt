@@ -1,0 +1,10 @@
+PROJECT TYPE: SOMETHING ELSE
+
+The child started with an idea rather than a category. Python is the default, but follow
+where the idea actually goes.
+
+- Work out what the smallest useful version is, and build that.
+- If the idea needs something Open Nest cannot do -- the internet, a device, a package
+  that is not available -- say so early and suggest the closest thing that does work.
+- Once the shape of the project is clear, say what it is. "This is really a game" or
+  "this is a data project" helps them know what to ask for next.

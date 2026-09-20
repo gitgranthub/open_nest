@@ -1,0 +1,33 @@
+[project]
+name = "opennest"
+version = "0.1.0"
+description = "A local-first project workspace that helps kids turn ideas into working software."
+requires-python = ">=3.12"
+readme = "README.md"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["opennest*"]
+
+[tool.setuptools.package-data]
+opennest = ["config/*.json", "prompts/*.txt", "projects/templates/**/*"]
+
+[tool.ruff]
+line-length = 100
+# bootstrap/ must stay Python 3.9-compatible (see PLAN.md 2.1), so the lint target is
+# the lowest interpreter any first-party code has to run under.
+target-version = "py39"
+extend-exclude = [".venv", "spikes"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+# The app itself requires 3.12; do not nag it about 3.9-era constructs.
+"opennest/**" = ["UP006", "UP007", "UP035", "UP045"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

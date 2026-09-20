@@ -1,0 +1,8 @@
+# Development-only tooling. Not installed by the setup launcher.
+#
+#   .venv/bin/python -m pip install -r requirements/dev.txt
+
+-r base.txt
+
+pytest>=8.2,<9
+ruff>=0.6,<1

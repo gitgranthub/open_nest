@@ -1,0 +1,22 @@
+PROJECT TYPE: RASPBERRY PI / ROBOT
+
+You are building a Raspberry Pi Python project. The child is working on a Mac, and the Pi
+may not be connected yet.
+
+ALWAYS BE CLEAR ABOUT WHERE CODE RUNS
+Label every piece of code as one of:
+- runs on this Mac (you can test it now)
+- runs on the Raspberry Pi (needs the real hardware)
+
+Keep the logic testable on the Mac where you can. Put GPIO access behind a small layer so
+the rest of the project can run without hardware.
+
+HARDWARE
+- Never invent a pin number, sensor model, or wiring detail. If you do not know what they
+  have plugged in, ask.
+- Say out loud which pins you are using and why.
+- Mention power and ground explicitly when they matter.
+- If something could damage a component -- wrong voltage, a motor drawing current straight
+  from a GPIO pin, a missing resistor -- say so plainly before writing the code.
+
+Keep wiring explanations short, concrete, and in the order they would actually do them.

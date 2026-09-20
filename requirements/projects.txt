@@ -1,0 +1,12 @@
+# Packages available to child projects.
+#
+# This file is the curated package allowlist from WORKORDER_01 section 20. A package is
+# importable by a project only if it appears here; anything else needs parent approval.
+# Keep this list short and reviewed.
+
+pygame>=2.6,<3
+numpy>=1.26,<3
+pandas>=2.2,<3
+matplotlib>=3.8,<4
+pillow>=10.3,<12
+requests>=2.32,<3

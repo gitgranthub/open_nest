@@ -1,0 +1,121 @@
+{
+  "_note": "Curated model list (WORKORDER_01 section 3). Model behaviour must never be hard-coded elsewhere in the application. Every entry below has verified=false: repository ids, quantizations, download sizes and context policies are resolved against real mlx-community repositories in Phase 1 (PLAN.md decision D2) before any of them is offered to a parent.",
+  "schema_version": 1,
+  "default_local_model": "qwen3-4b",
+  "models": [
+    {
+      "id": "qwen3-4b",
+      "name": "Qwen3 4B",
+      "provider": "mlx",
+      "model_id": "mlx-community/Qwen3-4B-4bit",
+      "description": "Recommended for coding and building",
+      "recommended": true,
+      "verified": false,
+      "download_gb": null,
+      "recommended_ram_gb": 8,
+      "supports_images": false,
+      "supports_documents": true,
+      "supports_tools": true,
+      "context_policy": {
+        "max_context_tokens": 16000,
+        "rollover_threshold": 12000,
+        "memory_reserved_tokens": 2500
+      }
+    },
+    {
+      "id": "qwen25-coder-3b",
+      "name": "Qwen2.5 Coder 3B",
+      "provider": "mlx",
+      "model_id": "mlx-community/Qwen2.5-Coder-3B-Instruct-4bit",
+      "description": "Focused on writing code",
+      "recommended": false,
+      "verified": false,
+      "download_gb": null,
+      "recommended_ram_gb": 8,
+      "supports_images": false,
+      "supports_documents": true,
+      "supports_tools": true,
+      "context_policy": {
+        "max_context_tokens": 16000,
+        "rollover_threshold": 12000,
+        "memory_reserved_tokens": 2500
+      }
+    },
+    {
+      "id": "llama32-3b",
+      "name": "Llama 3.2 3B",
+      "provider": "mlx",
+      "model_id": "mlx-community/Llama-3.2-3B-Instruct-4bit",
+      "description": "Fast and lightweight",
+      "recommended": false,
+      "verified": false,
+      "download_gb": null,
+      "recommended_ram_gb": 8,
+      "supports_images": false,
+      "supports_documents": true,
+      "supports_tools": true,
+      "context_policy": {
+        "max_context_tokens": 12000,
+        "rollover_threshold": 9000,
+        "memory_reserved_tokens": 2500
+      }
+    },
+    {
+      "id": "gemma2-2b",
+      "name": "Gemma 2 2B",
+      "provider": "mlx",
+      "model_id": "mlx-community/gemma-2-2b-it-4bit",
+      "description": "Good general helper",
+      "recommended": false,
+      "verified": false,
+      "download_gb": null,
+      "recommended_ram_gb": 8,
+      "supports_images": false,
+      "supports_documents": true,
+      "supports_tools": false,
+      "context_policy": {
+        "max_context_tokens": 8000,
+        "rollover_threshold": 6000,
+        "memory_reserved_tokens": 2000
+      }
+    },
+    {
+      "id": "claude-sonnet",
+      "name": "Claude",
+      "provider": "anthropic",
+      "model_id": "claude-sonnet-5",
+      "description": "Uses the internet",
+      "recommended": false,
+      "verified": false,
+      "requires_internet": true,
+      "may_cost_money": true,
+      "supports_images": true,
+      "supports_documents": true,
+      "supports_tools": true,
+      "context_policy": {
+        "max_context_tokens": 120000,
+        "rollover_threshold": 90000,
+        "memory_reserved_tokens": 6000
+      }
+    },
+    {
+      "id": "openai-gpt",
+      "name": "OpenAI",
+      "provider": "openai",
+      "model_id": null,
+      "description": "Uses the internet",
+      "recommended": false,
+      "verified": false,
+      "requires_internet": true,
+      "may_cost_money": true,
+      "supports_images": true,
+      "supports_documents": true,
+      "supports_tools": true,
+      "context_policy": {
+        "max_context_tokens": 120000,
+        "rollover_threshold": 90000,
+        "memory_reserved_tokens": 6000
+      }
+    }
+  ]
+}
