@@ -1,7 +1,8 @@
-# Phase 1 — Risk Spikes
+# Measurements
 
-Measurements taken to retire the risks recorded in `PLAN.md` before the agent and
-execution layers are built on top of them. Everything below was measured, not estimated.
+Everything here was measured, not estimated. Sections 1-7 are the Phase 1 risk spikes
+that the agent and execution layers were built on; section 8 records what Phases 2 and 3
+observed afterwards, including where a Phase 1 conclusion turned out not to transfer.
 
 **Measured on:** Apple silicon (arm64), macOS 15.7.9, 48 GB unified memory, mlx 0.32.2,
 mlx-lm 0.31.3, Python 3.12.14.
@@ -210,6 +211,42 @@ Moving it inside the sandbox means re-running setup with `OPENNEST_HOME` set and
 rebuilding the virtual environment — the code already supports this, since
 `bootstrap.environment.runtime_dir()` honours the containment root. Left as a deliberate
 choice rather than an unprompted rebuild.
+
+---
+
+## 8. Later measurements (Phases 2 and 3)
+
+Recorded here so the measurement record stays in one place.
+
+**Whole-file writes fail on this model.** Asked to reproduce a whole file inside a JSON
+string, it emits Python triple-quotes (`"content": """...`) and the call never parses.
+Against five change requests:
+
+| Tool set | Parseable | Correct target |
+|---|---|---|
+| `write_file` (whole file) | 5/5 | 4/5 |
+| `edit_file` (targeted) | 5/5 | **5/5** |
+| both offered | 4/5 | 4/5 |
+
+Offering both is worse than either alone — the same tool-count effect as section 4.
+`write_file` now refuses to overwrite, and both write paths reject invalid Python before
+saving.
+
+**The single-turn nudge was wrong for multi-turn.** The "call exactly one tool"
+instruction from section 4 caused the model to read a file and then *claim* an edit it
+never made. Rewritten to keep the "do not explore" property without the stop-after-one
+instruction, plus a deterministic check for a claimed change with no write.
+
+**Full slice, real model, offline:** 5/6 varied change requests applied correctly, output
+still valid Python, ~7 s per turn.
+
+**Phase 3, with real processes rather than simulations:**
+
+- DoD 31 — model changed `PLAYER_SPEED` 5 → 8, undo restored the file byte-for-byte, undo
+  again brought the change back.
+- Crash recovery — a project opened in a separate process, edited, then SIGKILLed. On
+  reopen the interrupted session was detected and both the unsaved edit and a newly
+  created file were preserved as their own checkpoint.
 
 ---
 

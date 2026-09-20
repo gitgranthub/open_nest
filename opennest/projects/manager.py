@@ -16,16 +16,15 @@ Manifest writes are atomic: a crash mid-save must not leave a project unopenable
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
-import tempfile
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
 from opennest import paths
 from opennest.projects.profiles import Profile, get_profile
+from opennest.versioning.autosave import atomic_write_text
 
 MANIFEST_NAME = "project.json"
 SUBDIRECTORIES = ("src", "assets", "data", "docs")
@@ -99,19 +98,9 @@ def safe_directory_name(name: str) -> str:
 
 
 def write_manifest(directory: Path, manifest: Manifest) -> None:
-    """Write project.json atomically so a crash cannot corrupt it."""
-    target = Path(directory) / MANIFEST_NAME
+    """Write project.json atomically. A half-written manifest makes a project unopenable."""
     payload = json.dumps(asdict(manifest), indent=2) + "\n"
-    handle, temp_name = tempfile.mkstemp(dir=str(directory), prefix=".manifest-", suffix=".tmp")
-    try:
-        with os.fdopen(handle, "w", encoding="utf-8") as stream:
-            stream.write(payload)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temp_name, target)
-    except BaseException:
-        Path(temp_name).unlink(missing_ok=True)
-        raise
+    atomic_write_text(Path(directory) / MANIFEST_NAME, payload)
 
 
 def read_manifest(directory: Path) -> Manifest:
