@@ -121,6 +121,24 @@ def test_successful_run_is_reported(box: Toolbox) -> None:
     assert result.ok and "it works" in result.content
 
 
+@needs_sandbox
+def test_a_successful_run_is_remembered_in_the_manifest(box: Toolbox) -> None:
+    """Section 15A: run status is a fact the application records, not one it asks for."""
+    from opennest.projects.manager import read_manifest
+
+    (box.project.directory / "src" / "game.py").write_text("print('ok')\n")
+    assert box.project.manifest.last_successful_run is None
+    box.dispatch("run_project", {})
+    assert read_manifest(box.project.directory).last_successful_run is not None
+
+
+@needs_sandbox
+def test_a_failed_run_is_not_remembered_as_a_success(box: Toolbox) -> None:
+    (box.project.directory / "src" / "game.py").write_text("raise ValueError('no')\n")
+    box.dispatch("run_project", {})
+    assert box.project.manifest.last_successful_run is None
+
+
 def test_edit_file_replaces_one_exact_line(box: Toolbox) -> None:
     (box.project.directory / "src" / "game.py").write_text("SPEED = 5\nSIZE = 40\n")
     result = box.dispatch("edit_file", {"path": "src/game.py",

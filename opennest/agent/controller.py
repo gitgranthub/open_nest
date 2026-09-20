@@ -112,6 +112,13 @@ def project_state(project: Project, last_run: RunResult | None = None) -> str:
         f"Run action: {project.profile.run_label}",
         f"Files in this project (you already know these):\n{listing}",
     ]
+    # The base prompt tells the model to stop rather than install a missing package, so
+    # it has to be told what it already has. Deterministic, from the profile.
+    if project.profile.packages:
+        parts.append(
+            "Packages you can import (these are installed; there are no others):\n"
+            + "\n".join(f"  {name}" for name in project.profile.packages)
+        )
     if last_run is not None:
         if last_run.still_running:
             parts.append("Last run: the project started and is running now.")
@@ -256,11 +263,18 @@ class AgentController:
     def close(self, *, summarise: bool = True) -> None:
         """End this project's thread. Called when the project closes, not per turn.
 
-        ``summarise=False`` archives the thread and updates memory from facts alone,
-        skipping the model call. Use it when quitting: a Mac application that pauses on
-        Command-Q is broken, and an instant close with a slightly plainer handoff is the
-        better trade. Returning to the Flight Deck is a pause rather than an exit, so
-        that path keeps the summary.
+        Closing summarises, including on quit. An earlier version skipped the model call
+        when quitting, on the reasoning that an application must not pause on Command-Q.
+        That traded the wrong thing away: a session long enough for summarising to be
+        slow has *already* rolled over, so the transcript left at close is bounded by the
+        rollover threshold and is usually far shorter. Quit latency and rollover latency
+        are therefore the same unmeasured number, and special-casing quit bought a
+        bounded saving at the cost of losing the decisions of every session that never
+        crossed the threshold -- which is most short sessions, and exactly the ones
+        updating memory at close exists for.
+
+        ``summarise=False`` remains as the lever if that measurement (SPIKES.md section 9)
+        comes back badly, and as the way to end a thread without touching the model.
         """
         if self.memory is not None:
             self.memory.close(self.provider if summarise else None, self.history)

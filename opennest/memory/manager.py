@@ -97,7 +97,7 @@ class MemoryManager:
                 "PROJECT MEMORY\n"
                 "What you already know about this project from earlier work. Treat it as "
                 "true. Do not ask them to tell you again.\n\n"
-                + bible.render()
+                + bible.render_for_prompt()
             )
 
         carried = project_state.carried_notes(self.notes)

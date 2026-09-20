@@ -285,30 +285,61 @@ archived, the manifest advances to thread 2, the new thread starts with the boot
 alone, and the child's next message — "like we talked about before" — is answered from
 the bible rather than the conversation, which is gone. A companion test asserts that no
 text the child sees contains "context", "thread", "rollover", "new chat" or "summar".
-245 tests, ruff clean.
+249 tests, ruff clean.
 
-Four design decisions, three of them forced by constraints measured earlier:
+Four decisions were re-examined after the first implementation. Two stood, one exposed a
+real gap, and one was wrong.
 
-- **No `search_memory` tool.** §15A asks the agent to search memory before saying it does
-  not remember; a fifth tool would have cost the accuracy Phase 1 measured. The
-  application searches deterministically when the child's phrasing refers to the past and
-  injects the result, exactly as it injects the file list.
-- **`project_state.md` is written but not injected.** The live block in
-  `controller.project_state()` already carries the same facts, more accurately. Only the
-  semantic remainder — carried task, open problems — goes into the prompt. The handoff
-  summary is likewise not injected: both halves of it are already present, in the bible
-  and in the carried task.
-- **Supersession drops numbers from a decision's subject.** "Player speed is 5" and
-  "Player speed is 8" must collapse to one subject or the §15A example never triggers.
-  Subjects compare by prefix rather than equality, because a restatement is longer than
-  the original — caught by a test before it shipped.
-- **Quitting skips the handoff generation; returning to the Flight Deck does not.** A Mac
-  application that pauses on Command-Q is broken. Closing to the deck is a pause within a
-  session, so it keeps the model-written summary; quitting archives the thread with the
-  deterministic one.
+**No `search_memory` tool — stands.** §15A asks the agent to search memory before saying
+it does not remember; a fifth tool would have cost the accuracy Phase 1 measured. The
+application searches deterministically when the child's phrasing refers to the past and
+injects the result, exactly as it injects the file list. The trigger is a cue-phrase list
+(`history_search.CUES`) and is an unmeasured heuristic: it can miss a phrasing nobody
+thought of. The failure is soft — the bible is in the prompt regardless — so the list was
+deliberately *not* tuned by intuition. It is on the SPIKES follow-up list instead.
 
-Carried forward: rollover latency with the real model is unmeasured, and the in-progress
-thread is not persisted until it is archived.
+Rejected alternative: search on every turn and inject above a relevance threshold. It
+removes the brittle trigger but the block's framing ("they are referring to something
+from before, treat it as true") is wrong for an ordinary request, and over-anchoring a 4B
+model on a past decision it was about to change is a worse failure than missing a cue.
+
+**`project_state.md` written but not injected — stands, and exposed two real gaps.** The
+live block in `controller.project_state()` already carries the same facts, more
+accurately. But auditing the claim found two things it did *not* carry, both fixed:
+
+- **Dependencies were never in any prompt.** The base prompt tells the model to stop
+  rather than install a missing package, while never telling it which packages exist.
+  `project_state()` now lists `profile.packages`. This was a gap from Phase 2.
+- **`manifest.last_successful_run` was never written**, so the "Last Successful Run"
+  section could never render — a dead path. `run_project` now records it, which is what
+  §15A means by populating run status programmatically.
+
+After those, everything in `project_state.md` is either in the live block or carried by
+`project_state.carried_notes()`, and the decision is sound rather than merely convenient.
+
+**Supersession drops numbers from a decision's subject — stands, with the prompt
+tightened.** "Player speed is 5" and "Player speed is 8" must collapse to one subject or
+the §15A example never triggers. Subjects compare by prefix rather than equality, because
+a restatement is longer than the original — caught by a test before it shipped. It is a
+heuristic and can mis-fire on a two-word subject that prefixes a three-word one; the harm
+is bounded because nothing is deleted until `MAX_SUPERSEDED` entries accumulate.
+
+What did change: `## Superseded Decisions` is no longer rendered into the prompt. A model
+handed a list of things that are no longer true will act on some of them. The file keeps
+the record for a person to read; the prompt gets current truths.
+
+**Quitting used to skip the handoff generation — reversed.** The original reasoning was
+that an application must not pause on Command-Q. That traded away the wrong thing. A
+session long enough for summarising to be slow has *already* rolled over, so the
+transcript left at close is bounded by the rollover threshold and is usually far shorter;
+quit latency and rollover latency are the same unmeasured number. Special-casing quit
+bought a bounded saving at the cost of losing the decisions of every session that never
+crossed the threshold — which is most short sessions, and exactly the ones that updating
+memory at close exists for. `close(summarise=False)` remains as the lever if the latency
+measurement comes back badly.
+
+Carried forward: rollover latency with the real model is unmeasured, the recall cue list
+is unmeasured, and the in-progress thread is not persisted until it is archived.
 
 ### Phase 5 — Assets
 

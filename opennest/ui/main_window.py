@@ -131,19 +131,18 @@ class MainWindow(QMainWindow):
         self._deck.refresh()
         self._stack.setCurrentWidget(self._deck)
 
-    def _close_project(self, *, summarise: bool = True) -> None:
+    def _close_project(self) -> None:
         """End the conversation thread, save outstanding work, clear the crash marker.
 
         Memory is written before the final checkpoint so the saved version contains it.
         """
         if self._controller is not None:
-            self._controller.close(summarise=summarise)
+            self._controller.close()
             self._controller = None
         if self._versions is not None:
             self._versions.finish()
             self._versions = None
 
     def closeEvent(self, event) -> None:
-        # Quitting must be immediate; see AgentController.close.
-        self._close_project(summarise=False)
+        self._close_project()
         super().closeEvent(event)

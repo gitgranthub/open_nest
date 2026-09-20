@@ -126,8 +126,20 @@ class Bible:
         self.sections[GOAL] = [cleaned]
         return True
 
-    def render(self) -> str:
-        return markdown.render_sections(self.title, self.sections, SECTION_ORDER)
+    def render(self, *, skip: tuple[str, ...] = ()) -> str:
+        sections = {k: v for k, v in self.sections.items() if k not in skip}
+        return markdown.render_sections(self.title, sections, SECTION_ORDER)
+
+    def render_for_prompt(self) -> str:
+        """The bible as the model should see it: current truths only.
+
+        ``Superseded Decisions`` is left out. It exists so a person reading the file can
+        see what changed and when, which is what section 15A's example is for -- but a
+        model handed a list of things that are no longer true will act on some of them,
+        and it costs tokens to say so. The file keeps the record; the prompt gets the
+        truth.
+        """
+        return self.render(skip=(SUPERSEDED,))
 
 
 def path_for(project: Project) -> Path:

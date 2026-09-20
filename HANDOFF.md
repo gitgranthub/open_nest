@@ -32,20 +32,20 @@ What works today: a child picks a project type, describes an idea, the local mod
 the project, it runs, they can undo, and the project remembers its decisions across
 conversations. Everything is local; there is no cloud provider and no asset import.
 
-245 tests pass, ruff is clean.
+249 tests pass, ruff is clean.
 
 ---
 
 ## 2. Get running in five minutes
 
 ```bash
-.venv/bin/python -m pytest -q      # 245 passing
+.venv/bin/python -m pytest -q      # 249 passing
 ```
 
 **Run the test suite unwrapped.** It is hermetic — temporary directories, no network, no
 model — so it needs nothing from the sandbox. Wrapping it in `scripts/offline.sh` used to
 be the documented instruction and it was wrong: see "Seatbelt does not nest" in section 4.
-A wrapped run is green now (231 passed, 14 skipped), but the skips are real coverage you
+A wrapped run is green now (233 passed, 16 skipped), but the skips are real coverage you
 lose, so prefer the unwrapped run.
 
 If `.venv` does not exist yet, run `./Setup\ Open\ Nest.command` first. It installs its
@@ -141,7 +141,7 @@ does.** Do not "clean up" these without re-measuring:
 **Other traps:**
 
 - **Seatbelt does not nest.** Applying a `sandbox-exec` profile inside an existing one
-  fails with `sandbox_apply: Operation not permitted`, so the ten tests that start a child
+  fails with `sandbox_apply: Operation not permitted`, so the twelve tests that start a child
   project cannot pass from inside `scripts/offline.sh` — `run_project` correctly refuses
   to run anything it cannot confine. `process_sandbox.sandbox_available()` now *probes*
   the capability by applying a trivial profile once, rather than checking that the binary
@@ -203,6 +203,17 @@ open problems — *is* injected, via `project_state.carried_notes()`. Same for t
 summary: its decisions are merged into the bible and its "where we left off" line becomes
 the carried task, so injecting the file as well would repeat both.
 
+Auditing that claim found two facts the live block genuinely did not carry, both now
+fixed: the package list (the base prompt tells the model to stop rather than install,
+while never saying what exists) and `manifest.last_successful_run`, which nothing wrote,
+so the section that renders it was dead. If you add a section to `project_state.md`,
+check which side of this line it falls on.
+
+**`## Superseded Decisions` never reaches the prompt.** A model handed a list of things
+that are no longer true will act on some of them. `Bible.render_for_prompt()` leaves it
+out; the file keeps it for a person to read. §15A shows that section for the reader's
+benefit, not the model's.
+
 **Supersession is mechanical and depends on dropping numbers.** `compactor.subject()`
 reduces a decision to its first three meaningful words with digits removed, so "Player
 speed is 5" and "Player speed is 8" collapse to the same subject and the old one moves to
@@ -221,10 +232,16 @@ as easily as into a file.
 ### What is not done
 
 - **Rollover latency is unmeasured with the real model.** Summarising sends the thread's
-  prose back through the model a second time. Phase 1 measured prompt throughput at
-  39.6 tok/s on a short prompt; if that figure holds for a few thousand tokens, a
-  rollover is a visible pause after a turn. Measure it before Phase 10, and if it is bad
-  the fix is to run the handoff on the worker thread rather than inline.
+  prose back through the model a second time, and closing a project does the same. Phase
+  1 measured prompt throughput at 39.6 tok/s on a short prompt; if that figure holds for
+  a few thousand tokens, a rollover is a visible pause after a turn and quitting pauses
+  too. Measure it before Phase 10. If it is bad, the lever is already there —
+  `close(summarise=False)` — and the real fix is running the handoff on the worker
+  thread rather than inline.
+- **The recall cue list is an unmeasured heuristic.** `history_search.CUES` decides when
+  the application searches memory. A phrasing nobody thought of is simply missed; the
+  failure is soft, because the bible is in the prompt either way. It was deliberately not
+  tuned by intuition — measure it, the way everything else here was.
 - **The live thread is not persisted as it grows.** It is archived at rollover and at
   close, so a crash loses the current transcript — never the project or the bible.
 - **Memory quality has not been checked against the real model.** The loop is proven by

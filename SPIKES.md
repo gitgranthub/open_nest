@@ -253,8 +253,9 @@ still valid Python, ~7 s per turn.
 
 Not a spike; a defect in the documented workflow, found by following it.
 
-`HANDOFF.md` §2 said to run the test suite through `scripts/offline.sh`. Ten tests fail
-that way, all of them tests that start a child project:
+`HANDOFF.md` §2 said to run the test suite through `scripts/offline.sh`. Ten tests failed
+that way when this was found — all of them tests that start a child project, twelve of
+them now:
 
 ```text
 sandbox-exec: sandbox_apply: Operation not permitted
@@ -281,18 +282,30 @@ Two consequences, both now in place:
   `/usr/bin/sandbox-exec` exists. A file-existence test reports a capability the process
   may not have. Deliberately an attempt rather than an environment variable: this decides
   whether a model's generated code runs at all, and anything the process can assert about
-  itself is the wrong input to that decision. A wrapped run is now 231 passed, 14 skipped
+  itself is the wrong input to that decision. A wrapped run is now 233 passed, 16 skipped
   rather than 10 failed.
 
 ### Still unmeasured after Phase 4
 
 Thread rollover sends the conversation's prose back through the model a second time to
-write the handoff. Section 3 measured prompt throughput at **39.6 tok/s**, but on a short
-prompt — if that figure holds at a few thousand tokens, a rollover is a visible pause
-after a turn rather than the invisible event §15A requires. The transcript excludes the
-system prompt and all tool traffic, and generation is capped at 400 tokens, so the real
-cost is probably much lower. It has not been measured. Do that before Phase 10; if it is
-bad, move the handoff onto the worker thread instead of running it inline.
+write the handoff, and closing a project does the same. Section 3 measured prompt
+throughput at **39.6 tok/s**, but on a short prompt — if that figure holds at a few
+thousand tokens, a rollover is a visible pause after a turn rather than the invisible
+event §15A requires. The transcript excludes the system prompt and all tool traffic, and
+generation is capped at 400 tokens, so the real cost is probably much lower. It has not
+been measured. Do that before Phase 10; if it is bad, move the handoff onto the worker
+thread instead of running it inline.
+
+Note that this is a single number governing both paths. Quitting was briefly special-cased
+to skip the model call, on the assumption the pause would be intolerable — but the
+transcript left at close is bounded by the same rollover threshold, so both stand or fall
+together. Measure once.
+
+**The recall cue list is unmeasured.** `history_search.CUES` decides when the application
+searches memory on the child's behalf. It was written by inspection and deliberately not
+tuned further, because tuning a heuristic by intuition is what this document exists to
+discourage. The failure mode is soft: a missed cue means the model answers from the bible,
+which is in the prompt regardless. Worth a pass of real child phrasings.
 
 Memory *quality* is also unmeasured. `tests/test_rollover.py` proves the application
 rolls over correctly with a scripted provider; whether a 4B model writes a handoff worth

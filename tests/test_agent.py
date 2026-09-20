@@ -49,6 +49,13 @@ def test_project_state_lists_files_so_no_tool_is_needed(project) -> None:
     assert "you already know these" in state
 
 
+def test_project_state_names_the_packages_that_exist(project) -> None:
+    """The base prompt tells it to stop rather than install, so it must know what it has."""
+    state = project_state(project)
+    assert "pygame" in state
+    assert "there are no others" in state
+
+
 def test_project_state_hides_internal_directories(project) -> None:
     (project.internal_dir / "project_bible.md").write_text("internal")
     assert ".opennest" not in project_state(project)

@@ -25,7 +25,7 @@ from opennest.conversations.context_budget import (
     estimate_tokens,
     fit,
 )
-from opennest.memory import project_bible, project_state
+from opennest.memory import compactor, project_bible, project_state
 from opennest.memory.manager import MemoryManager
 from opennest.projects.manager import read_manifest
 from tests.conftest import ScriptedProvider
@@ -351,8 +351,8 @@ def test_closing_a_project_archives_the_thread(project) -> None:
     assert "boss level" in project_bible.path_for(project).read_text()
 
 
-def test_quitting_skips_the_model_but_still_archives(project) -> None:
-    """Command-Q must be instant; the handoff falls back to what the app knows."""
+def test_closing_without_the_model_still_archives(project) -> None:
+    """The lever for if rollover latency measures badly: archive, skip the model."""
     controller, provider, _ = build(
         project,
         [Reply(text="Done.")],
@@ -366,6 +366,25 @@ def test_quitting_skips_the_model_but_still_archives(project) -> None:
     assert len(provider.calls) == calls_before
     assert archive.thread_path(project, 1).is_file()
     assert "Make the ship blue" in archive.read_summary(project, 1)
+
+
+def test_superseded_decisions_stay_out_of_the_prompt(project) -> None:
+    """The file keeps the record; the model gets current truths only."""
+    bible = project_bible.load(project)
+    compactor.add_decisions(bible, ["Player speed is 5"])
+    compactor.add_decisions(bible, ["Player speed is 8 after play testing"])
+    project_bible.save(project, bible)
+
+    on_disk = project_bible.path_for(project).read_text()
+    assert "Player speed is 5" in on_disk
+    assert "Superseded Decisions" in on_disk
+
+    controller, provider, _ = build(project, [Reply(text="ok")])
+    controller.send("what now?")
+    prompt = provider.system_prompt
+    assert "Player speed is 8" in prompt
+    assert "Player speed is 5" not in prompt
+    assert "Superseded" not in prompt
 
 
 def test_closing_an_untouched_project_archives_nothing(project) -> None:
