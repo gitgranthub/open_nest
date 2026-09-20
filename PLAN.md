@@ -4,7 +4,9 @@ Working plan derived from `WORKORDER_01.md` (functional scope) and `DESIGN_DOC.m
 (naming and visual direction). This document records phases, exit criteria, decisions,
 and open questions. It is expected to be amended as work proceeds.
 
-Status: **Phases 0-2 complete. Phase 3 (durability: autosave, Git, undo) is next.**
+Status: **Phases 0-3 complete. Phase 4 (memory and thread rollover) is next.**
+
+New developers should start with [HANDOFF.md](HANDOFF.md).
 
 Phase 1 measurements are in [SPIKES.md](SPIKES.md).
 
