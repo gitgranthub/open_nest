@@ -18,20 +18,33 @@ def test_bundled_config_and_prompts_ship_with_the_package() -> None:
     assert (paths.prompts_dir() / "base.txt").is_file()
 
 
-def test_internal_state_stays_out_of_the_repository() -> None:
-    """Projects, logs and models must not be written into the cloned repo."""
+def test_installed_mode_writes_nothing_into_the_repository(monkeypatch) -> None:
+    """With no containment root, state goes to standard macOS locations, never the repo."""
+    monkeypatch.delenv(paths.HOME_ENV_VAR, raising=False)
+    monkeypatch.delenv(paths.PROJECTS_ENV_VAR, raising=False)
     repo = paths.repo_root()
-    for path in (
-        paths.app_support_dir(),
-        paths.logs_dir(),
-        paths.models_dir(),
-        paths.projects_root(),
-        paths.installation_state_file(),
-    ):
+    for path in (*paths.managed_locations().values(), paths.installation_state_file()):
         assert repo not in path.parents, f"{path} would be written inside the repository"
 
 
-def test_projects_root_is_somewhere_a_child_can_find_it() -> None:
+def test_contained_mode_keeps_everything_under_one_root(monkeypatch, tmp_path) -> None:
+    """With OPENNEST_HOME set, nothing may be written outside it.
+
+    This is the property the development sandbox depends on: one directory to audit or
+    delete. A path escaping the root would silently leak onto a work-managed machine.
+    """
+    monkeypatch.delenv(paths.PROJECTS_ENV_VAR, raising=False)
+    monkeypatch.setenv(paths.HOME_ENV_VAR, str(tmp_path / "sandbox"))
+    root = (tmp_path / "sandbox").resolve()
+    assert paths.is_contained()
+    for name, path in paths.managed_locations().items():
+        assert path.resolve().is_relative_to(root), f"{name} escapes the containment root"
+    assert paths.installation_state_file().resolve().is_relative_to(root)
+
+
+def test_projects_root_is_somewhere_a_child_can_find_it(monkeypatch) -> None:
+    monkeypatch.delenv(paths.HOME_ENV_VAR, raising=False)
+    monkeypatch.delenv(paths.PROJECTS_ENV_VAR, raising=False)
     root = paths.projects_root()
     assert root.is_relative_to(Path.home())
     assert "Library" not in root.parts

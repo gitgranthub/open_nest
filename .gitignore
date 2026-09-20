@@ -220,3 +220,6 @@ __marimo__/
 # Open Nest
 .DS_Store
 spikes/
+
+# Contained development sandbox (models, runtime, caches)
+.opennest-sandbox/
