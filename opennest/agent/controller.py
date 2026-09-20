@@ -19,6 +19,11 @@ from opennest.ai.provider import Message, ModelProvider, Settings, ToolCall
 from opennest.execution.python_runner import RunResult
 from opennest.projects.manager import Project
 from opennest.security.sandbox import visible_files
+from opennest.versioning.checkpoint import (
+    LABEL_AFTER_CHANGE,
+    LABEL_BEFORE_CHANGE,
+    VersionHistory,
+)
 
 #: WORKORDER_01 section 28: "Maximum automatic repair attempts: 3".
 MAX_REPAIR_ATTEMPTS = 3
@@ -59,6 +64,8 @@ class Turn:
     tool_results: list[tuple[str, ToolResult]] = field(default_factory=list)
     repair_attempts: int = 0
     gave_up: bool = False
+    #: Ref of the checkpoint saved after this turn, if anything changed.
+    checkpoint: str | None = None
 
 
 def build_system_prompt(
@@ -114,11 +121,16 @@ class AgentController:
         toolbox: Toolbox,
         *,
         build_style: str = "build",
+        versions: VersionHistory | None = None,
     ) -> None:
         self.project = project
         self.provider = provider
         self.toolbox = toolbox
         self.build_style = build_style
+        #: Saved versions. Named `versions`, not `history`, because `self.history` is
+        #: already the message list -- conflating the two silently broke checkpointing.
+        #: Optional so tests and headless use do not require Git.
+        self.versions = versions
         self.history: list[Message] = []
         self._reset_history()
 
@@ -146,6 +158,10 @@ class AgentController:
         on_text: Callable[[str], None] | None = None,
     ) -> Turn:
         """One exchange: the child says something, the agent acts, and reports back."""
+        # Checkpoint whatever state exists before touching anything, so "undo" goes
+        # back to what the child had rather than to some earlier assistant turn.
+        self._checkpoint(LABEL_BEFORE_CHANGE)
+
         self.history.append(Message(role="user", content=text))
         turn = Turn()
         challenged = False
@@ -167,14 +183,27 @@ class AgentController:
                         "changed anything yet."
                     )))
                     continue
-                return turn
+                return self._finish_turn(turn)
 
             should_continue = self._run_tools(reply.tool_calls, turn)
             if not should_continue:
-                return turn
+                return self._finish_turn(turn)
 
         turn.text = turn.text or "I tried several steps but could not finish that."
+        return self._finish_turn(turn)
+
+    def _finish_turn(self, turn: Turn) -> Turn:
+        """Save a checkpoint if the assistant actually changed anything."""
+        if any(result.changed_files for _, result in turn.tool_results):
+            turn.checkpoint = self._checkpoint(LABEL_AFTER_CHANGE)
         return turn
+
+    def _checkpoint(self, label: str) -> str | None:
+        if self.versions is None:
+            return None
+        # Versioning must never break the thing the child is doing -- except for a
+        # credential, which save_quietly still raises for.
+        return self.versions.save_quietly(label)
 
     @staticmethod
     def _claimed_a_change_it_did_not_make(turn: Turn, text: str) -> bool:

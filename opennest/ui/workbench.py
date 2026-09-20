@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QSplitter,
@@ -30,6 +31,8 @@ from opennest.projects.manager import Project
 from opennest.security.sandbox import visible_files
 from opennest.ui.common import horizontal_rule, section_label, status_row
 from opennest.ui.worker import AgentWorker, run_in_thread
+from opennest.versioning.checkpoint import VersionHistory
+from opennest.versioning.git_manager import GitError, SecretsFound
 
 
 def panel(title: str) -> tuple[QFrame, QVBoxLayout]:
@@ -47,11 +50,17 @@ class Workbench(QWidget):
 
     back_requested = Signal()
 
-    def __init__(self, project: Project, controller: AgentController) -> None:
+    def __init__(
+        self,
+        project: Project,
+        controller: AgentController,
+        versions: VersionHistory | None = None,
+    ) -> None:
         super().__init__()
         self.project = project
         self.controller = controller
         self.toolbox: Toolbox = controller.toolbox
+        self.versions = versions
         self._thread = None
         self._build()
         self.refresh_files()
@@ -147,6 +156,12 @@ class Workbench(QWidget):
         self._stop_button.clicked.connect(self._stop)
         self._stop_button.setEnabled(False)
 
+        # "Undo", not "revert commit". The child never learns that Git is involved.
+        self._undo_button = QPushButton("Undo")
+        self._undo_button.setToolTip("Go back to how the project was before the last change")
+        self._undo_button.clicked.connect(self._undo)
+        self._undo_button.setEnabled(bool(self.versions and self.versions.can_undo))
+
         self._style = QComboBox()
         self._style.addItem("Just build it", "build")
         self._style.addItem("Build it and teach me", "teach")
@@ -157,6 +172,8 @@ class Workbench(QWidget):
 
         row.addWidget(self._run_button)
         row.addWidget(self._stop_button)
+        row.addSpacing(16)
+        row.addWidget(self._undo_button)
         row.addSpacing(16)
         row.addWidget(section_label("Build Style"))
         row.addWidget(self._style)
@@ -224,6 +241,30 @@ class Workbench(QWidget):
         if turn.text:
             self._say("Assistant", turn.text)
         self.refresh_files()
+        self._refresh_undo()
+
+    def _refresh_undo(self) -> None:
+        self._undo_button.setEnabled(bool(self.versions and self.versions.can_undo))
+
+    def _undo(self) -> None:
+        if self.versions is None:
+            return
+        try:
+            restored = self.versions.undo()
+        except SecretsFound as exc:
+            QMessageBox.warning(self, "Open Nest", str(exc))
+            return
+        except GitError as exc:
+            QMessageBox.warning(self, "Open Nest", str(exc))
+            return
+        if restored is None:
+            self._say("Open Nest", "There is no earlier version to go back to.")
+            return
+        self.refresh_files()
+        self._refresh_undo()
+        self.controller.refresh_state()
+        self._output.clear()
+        self._say("Open Nest", f"Went back to: {restored.label}")
 
     def _turn_failed(self, message: str) -> None:
         self._busy(False)

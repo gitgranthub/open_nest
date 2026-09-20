@@ -212,3 +212,74 @@ def test_claim_after_a_real_write_is_accepted(project) -> None:
     turn = controller.send("faster please")
     assert turn.text == "I increased the player speed to 9."
     assert len(provider.calls) == 2
+
+
+# --------------------------------------------------------- checkpoints around a turn
+
+def _versions(project):
+    from opennest.versioning.checkpoint import VersionHistory
+    versions = VersionHistory(project)
+    versions.start()
+    return versions
+
+
+def make_versioned(project, replies):
+    from opennest.versioning import git_manager
+    if not git_manager.git_available():
+        pytest.skip("git not available")
+    provider = ScriptedProvider(replies)
+    versions = _versions(project)
+    controller = AgentController(
+        project, provider, Toolbox(project), versions=versions
+    )
+    return controller, versions
+
+
+def test_a_turn_that_changes_files_saves_a_checkpoint(project) -> None:
+    controller, versions = make_versioned(project, [
+        Reply(tool_calls=(ToolCall("edit_file", {"path": "src/game.py",
+                                                 "old_text": "PLAYER_SPEED = 5",
+                                                 "new_text": "PLAYER_SPEED = 8"}),)),
+        Reply(text="Done."),
+    ])
+    before = len(versions.checkpoints())
+    turn = controller.send("faster")
+    assert turn.checkpoint is not None
+    assert len(versions.checkpoints()) > before
+
+
+def test_a_turn_that_changes_nothing_saves_no_checkpoint(project) -> None:
+    """Section 29A: do not commit after every keystroke."""
+    controller, versions = make_versioned(project, [Reply(text="It uses arrow keys.")])
+    before = len(versions.checkpoints())
+    turn = controller.send("how does it move?")
+    assert turn.checkpoint is None
+    assert len(versions.checkpoints()) == before
+
+
+def test_undo_after_a_turn_restores_what_the_child_had(project) -> None:
+    """The end-to-end promise: the assistant changed it, undo puts it back."""
+    controller, versions = make_versioned(project, [
+        Reply(tool_calls=(ToolCall("edit_file", {"path": "src/game.py",
+                                                 "old_text": "PLAYER_SPEED = 5",
+                                                 "new_text": "PLAYER_SPEED = 999"}),)),
+        Reply(text="Done."),
+    ])
+    controller.send("much faster")
+    assert "PLAYER_SPEED = 999" in project.entrypoint_path.read_text()
+
+    versions.undo()
+    assert "PLAYER_SPEED = 5" in project.entrypoint_path.read_text()
+
+
+def test_the_agent_works_without_versioning(project) -> None:
+    """Git is optional; the assistant must not depend on it."""
+    controller, _ = make(project, [
+        Reply(tool_calls=(ToolCall("edit_file", {"path": "src/game.py",
+                                                 "old_text": "PLAYER_SPEED = 5",
+                                                 "new_text": "PLAYER_SPEED = 7"}),)),
+        Reply(text="ok"),
+    ])
+    turn = controller.send("faster")
+    assert turn.checkpoint is None
+    assert "PLAYER_SPEED = 7" in project.entrypoint_path.read_text()

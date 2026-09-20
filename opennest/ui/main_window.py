@@ -19,6 +19,7 @@ from opennest.projects.profiles import Profile
 from opennest.ui.flight_deck import FlightDeck
 from opennest.ui.workbench import Workbench
 from opennest.ui.worker import ModelLoader, run_in_thread
+from opennest.versioning.checkpoint import VersionHistory
 
 
 class MainWindow(QMainWindow):
@@ -30,6 +31,7 @@ class MainWindow(QMainWindow):
         self._provider = None
         self._loader_thread = None
         self._workbench: Workbench | None = None
+        self._versions: VersionHistory | None = None
 
         self._stack = QStackedWidget()
         self._deck = FlightDeck(user_name)
@@ -93,24 +95,44 @@ class MainWindow(QMainWindow):
             )
             return
 
+        versions = VersionHistory(project)
+        versions.start()
+        recovery = versions.recover()
+
         controller = AgentController(
             project,
             self._provider,
             Toolbox(project),
             build_style=project.manifest.build_style,
+            versions=versions,
         )
-        workbench = Workbench(project, controller)
+        workbench = Workbench(project, controller, versions)
         workbench.back_requested.connect(self._back_to_deck)
 
         if self._workbench is not None:
             self._stack.removeWidget(self._workbench)
             self._workbench.deleteLater()
         self._workbench = workbench
+        self._versions = versions
         self._stack.addWidget(workbench)
         self._stack.setCurrentWidget(workbench)
         if self._provider.is_loaded:
             workbench.set_model_status("ready", "Ready")
+        # Only mentioned when something actually happened (WORKORDER_01 section 29A).
+        if recovery.recovered:
+            QMessageBox.information(self, APP_NAME, recovery.message)
 
     def _back_to_deck(self) -> None:
+        self._close_project()
         self._deck.refresh()
         self._stack.setCurrentWidget(self._deck)
+
+    def _close_project(self) -> None:
+        """Save outstanding work and clear the crash marker."""
+        if self._versions is not None:
+            self._versions.finish()
+            self._versions = None
+
+    def closeEvent(self, event) -> None:
+        self._close_project()
+        super().closeEvent(event)
