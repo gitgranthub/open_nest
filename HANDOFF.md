@@ -8,6 +8,10 @@ Read in this order: this file → [PLAN.md](PLAN.md) (phases and decisions) →
 `DESIGN_DOC.md` are the source requirements; read the sections you are implementing
 rather than all 3,400 lines up front.
 
+`CLAUDE.md` points here, so this file is the entry point for every session. Keep it
+current: if you finish a phase or learn something that would have saved you an hour,
+it belongs in section 4.
+
 ---
 
 ## 1. Where the project is

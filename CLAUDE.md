@@ -1,5 +1,12 @@
 # CLAUDE.md
 
+## Start Here
+- Read HANDOFF.md first. It reflects the current state of the project and supersedes
+  any stale assumption you would otherwise form from the code or the work order.
+- HANDOFF.md points at PLAN.md (phases, decisions) and SPIKES.md (what was actually
+  measured). Several design choices look wrong until you read why they were measured
+  that way — check SPIKES.md before "fixing" one.
+
 ## Working Style
 - Fully read WORKORDER_01.md and DESIGN_DOC.md
 - Read and understand the relevant code before making changes.
