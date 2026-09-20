@@ -229,6 +229,31 @@ Three design changes were forced by measurement rather than chosen up front:
 Known gaps carried to Phase 3: nothing is saved to Git yet, there is no undo, and the
 Workbench transcript is not persisted.
 
+### Security review follow-ups
+
+Raised in review of the Phase 2 sandbox. The first three are done in that branch; the
+fourth is deliberately deferred.
+
+- **Done** — `.env` and the rest of the secret family are now unreadable as well as
+  unwritable. Reading a credential is how it ends up quoted into a reply, a prompt or a
+  commit, and relying on `visible_files()` hiding it was never protection: the model can
+  name a path it was never shown.
+- **Done** — case-variant protected paths. This was a *live bypass*, not a missing test:
+  macOS is case-insensitive by default, so `.GIT/HEAD` opened `.git/HEAD` while the
+  Python comparison saw two different strings. Every protected directory was reachable by
+  changing the case. Comparison is now casefolded.
+- **Done** — the boundary is documented, and made real. `run_project` now runs every
+  project under macOS Seatbelt with no network and writes confined to the project,
+  failing closed if the sandbox cannot be applied. Previously the process sandbox existed
+  only as a development script, so the "outer boundary" was aspirational.
+- **Deferred — TOCTOU.** `resolve_in_project()` validates a path and returns it; the
+  caller opens it afterwards, so in principle a symlink could be swapped in between.
+  Under the stated threat model — a confused 4B model, not hostile local code able to
+  race the process — this is accepted. Hardening means holding an open descriptor inside
+  the module (`os.open` with `O_NOFOLLOW`, then `openat` relative to a directory
+  descriptor) and handing callers descriptors rather than paths, which changes every
+  tool signature. Revisit if the threat model ever includes untrusted local code.
+
 ### Phase 3 — Durability
 
 Atomic writes, dirty-state tracking, autosave; per-project Git init with generated

@@ -6,7 +6,6 @@ attacker. These cases are the ones a model actually produces.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -148,8 +147,94 @@ def test_visible_files_is_bounded(project: Path) -> None:
     assert len(visible_files(project, limit=10)) == 10
 
 
-@pytest.mark.skipif(os.environ.get("CI") == "true", reason="needs a case-insensitive check")
 def test_protected_dir_check_uses_path_parts_not_substrings(project: Path) -> None:
     """A file merely named like a protected dir is fine; only real components count."""
     (project / "gitignore-notes.md").write_text("notes")
     assert resolve_in_project(project, "gitignore-notes.md").is_file()
+    (project / "my-env-notes.txt").write_text("notes")
+    assert resolve_in_project(project, "my-env-notes.txt").is_file()
+
+
+# --------------------------------------------------------------------------- secrets
+
+def test_env_cannot_be_read(project: Path) -> None:
+    (project / ".env").write_text("SECRET=do-not-read")
+    with pytest.raises(PathNotAllowed):
+        resolve_in_project(project, ".env")
+
+
+def test_env_cannot_be_written(project: Path) -> None:
+    with pytest.raises(PathNotAllowed):
+        resolve_in_project(project, ".env", for_write=True)
+
+
+@pytest.mark.parametrize(
+    "secret",
+    [".env", ".env.local", ".env.production", ".envrc", ".netrc", ".npmrc",
+     ".pypirc", ".htpasswd", "src/.env", "data/.env.staging"],
+)
+def test_secret_files_are_unreadable_and_unwritable(project: Path, secret: str) -> None:
+    """Reading a credential is how it ends up quoted into a reply, prompt or commit.
+
+    Relying on visible_files() hiding it is not protection: the model can name a path
+    it was never shown.
+    """
+    target = project / secret
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("SECRET=do-not-read")
+    with pytest.raises(PathNotAllowed):
+        resolve_in_project(project, secret)
+    with pytest.raises(PathNotAllowed):
+        resolve_in_project(project, secret, for_write=True)
+
+
+@pytest.mark.parametrize("variant", [".ENV", ".Env", ".eNv", ".ENV.LOCAL", ".NetRC"])
+def test_secret_names_are_matched_regardless_of_case(project: Path, variant: str) -> None:
+    with pytest.raises(PathNotAllowed):
+        resolve_in_project(project, variant)
+
+
+def test_gitignore_is_readable_but_not_writable(project: Path) -> None:
+    """Different from a secret: Open Nest generates it, so it may be read, never edited."""
+    (project / ".gitignore").write_text("__pycache__/\n")
+    assert resolve_in_project(project, ".gitignore").is_file()
+    with pytest.raises(PathNotAllowed):
+        resolve_in_project(project, ".gitignore", for_write=True)
+
+
+# ------------------------------------------------------- case-insensitive filesystems
+
+@pytest.mark.parametrize(
+    "variant",
+    [".Git/HEAD", ".GIT/HEAD", ".gIt/config",
+     ".OpenNest/project_bible.md", ".OPENNEST/project_bible.md", ".openNEST/x.md",
+     "src/../.GIT/HEAD"],
+)
+def test_case_variant_protected_dirs_are_refused(project: Path, variant: str) -> None:
+    """macOS is case-insensitive by default, so .GIT/HEAD opens .git/HEAD.
+
+    This was a live bypass: every protected directory was reachable by changing case,
+    because the filesystem compared case-insensitively while Python did not.
+    """
+    with pytest.raises(PathNotAllowed):
+        resolve_in_project(project, variant)
+
+
+def test_case_variants_are_refused_even_on_a_case_sensitive_volume(project: Path) -> None:
+    """The rule must not depend on how the volume happens to be formatted.
+
+    On a case-sensitive volume `.GIT` is a genuinely different directory, and refusing it
+    is a harmless false positive. Depending on the filesystem would make the guarantee
+    vary by machine.
+    """
+    case_insensitive = (project / ".GIT").exists()
+    with pytest.raises(PathNotAllowed):
+        resolve_in_project(project, ".GIT/HEAD")
+    assert isinstance(case_insensitive, bool)  # documents what was observed
+
+
+def test_visible_files_never_lists_a_secret(project: Path) -> None:
+    (project / ".env").write_text("SECRET=x")
+    (project / "src" / ".env.local").write_text("SECRET=y")
+    listing = visible_files(project)
+    assert not any("env" in name.lower() for name in listing)

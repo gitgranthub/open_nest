@@ -7,6 +7,12 @@ address space on an 8 GB Mac, and a separate process can actually be killed.
 Phase 1 validated the mechanics -- see SPIKES.md section 5. Escalating SIGTERM to SIGKILL
 across a new session group is what makes termination reliable; without a new session a
 hung child can outlive its parent.
+
+Every run is confined by :mod:`opennest.security.process_sandbox`: no network, writes
+limited to the project. That is the boundary that actually holds against generated code,
+as opposed to the path checks in :mod:`opennest.security.sandbox`, which only cover paths
+travelling through Open Nest's own tools. If the sandbox cannot be applied, the project
+is not run.
 """
 
 from __future__ import annotations
@@ -18,6 +24,8 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+from opennest.security.process_sandbox import SandboxUnavailable, wrap
 
 #: A child's game runs until they close it; an analysis should not run forever.
 DEFAULT_TIMEOUT_SECONDS = 120
@@ -78,6 +86,7 @@ def run_project(
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
     python_executable: str | None = None,
     interactive: bool = False,
+    allow_network: bool = False,
 ) -> RunResult:
     """Run a project's command from its directory and capture everything.
 
@@ -101,6 +110,14 @@ def run_project(
         argv[0] = python_executable or sys.executable
 
     started = time.monotonic()
+
+    # The real security boundary. opennest.security.sandbox guards paths going through
+    # Open Nest's tools; it cannot constrain a process, and generated code is a process.
+    try:
+        argv = wrap(argv, project_dir, allow_network=allow_network)
+    except SandboxUnavailable as exc:
+        return RunResult(None, "", str(exc), time.monotonic() - started, False)
+
     try:
         process = subprocess.Popen(
             argv,
