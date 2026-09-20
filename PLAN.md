@@ -4,7 +4,7 @@ Working plan derived from `WORKORDER_01.md` (functional scope) and `DESIGN_DOC.m
 (naming and visual direction). This document records phases, exit criteria, decisions,
 and open questions. It is expected to be amended as work proceeds.
 
-Status: **Phases 0 and 1 complete. Phase 2 (core vertical slice) is next.**
+Status: **Phases 0-2 complete. Phase 3 (durability: autosave, Git, undo) is next.**
 
 Phase 1 measurements are in [SPIKES.md](SPIKES.md).
 
@@ -208,8 +208,26 @@ Carries these obligations from Phase 1: resolve models to a local path before lo
 test it with `HF_HUB_OFFLINE=1`; normalise tool names before dispatch; port
 `scripts/offline.sh` into `opennest/security/sandbox.py` as the child-code boundary.
 
-**Exit:** DoD 21–25 and 29–30 — an idea becomes a running game, and "make the asteroids
-move faster" works.
+**Exit criterion met.** An idea becomes a project, the model edits it correctly, and it
+runs. Measured 5/6 on varied change requests end to end with the real local model,
+offline. 114 tests, ruff clean.
+
+Three design changes were forced by measurement rather than chosen up front:
+
+- **`edit_file` replaced whole-file writes as the primary edit tool.** Asked to reproduce
+  a whole file inside a JSON string, the model emitted Python triple-quotes and produced
+  unparseable output. Targeted edits scored 5/5 against write_file's 4/5, and offering
+  both together scored worse than either alone.
+- **`write_file` now refuses to overwrite** and both write paths reject syntactically
+  invalid Python. A run that left a child's working game broken is a far worse outcome
+  than a refused edit the model can retry.
+- **The Phase 1 "call exactly one tool" nudge had to be rewritten.** It was measured on
+  single-turn selection; carried into a multi-turn loop verbatim it caused the model to
+  read a file and then *claim* an edit it never made. The application now also checks
+  for that claim deterministically rather than trusting the prompt.
+
+Known gaps carried to Phase 3: nothing is saved to Git yet, there is no undo, and the
+Workbench transcript is not persisted.
 
 ### Phase 3 — Durability
 
