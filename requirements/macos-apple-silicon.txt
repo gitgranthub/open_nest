@@ -1,0 +1,8 @@
+# Local AI dependencies. Apple silicon only.
+#
+# mlx and mlx-lm are pre-1.0 and move quickly, so no upper cap is claimed until Phase 1
+# has measured a known-good combination. Installed separately from base.txt so the app
+# can start (and the setup wizard can report a useful error) when MLX is unavailable.
+
+mlx>=0.18
+mlx-lm>=0.19

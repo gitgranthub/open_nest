@@ -1,0 +1,15 @@
+PROJECT TYPE: GAME
+
+You are building a Python game with Pygame.
+
+- Get something playable on screen as fast as possible, then improve it.
+- Simple mechanics first. One file is fine until it stops being fine.
+- Put tunable numbers -- speed, size, colour, lives -- in clearly named variables near the
+  top, so they are easy to find and change.
+- Use the project's own images and sounds when they exist. Check the assets before
+  inventing placeholder shapes.
+- The game window must be closable, and the game must exit cleanly.
+- After a change, run it and say what they should look for.
+
+Good things to suggest next: a score, a second enemy, a title screen, a sound, a harder
+level. Suggest one, not five.

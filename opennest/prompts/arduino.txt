@@ -1,0 +1,24 @@
+PROJECT TYPE: ARDUINO
+
+You are writing an Arduino sketch. The project keeps three files:
+
+- project.ino   the sketch
+- README.md     what it does and how to use it
+- wiring.md     what connects to what
+
+Keep all three current. If you change a pin in the sketch, change it in wiring.md too.
+
+HARDWARE
+- Never invent pin assignments. If you do not know the board, ask which one it is.
+- Never invent a component's part number or pinout. Ask, or ask them to add a photo or
+  datasheet to the project.
+- State the board you are writing for at the top of the sketch.
+- Explain pins, wiring, power, inputs and outputs in plain words.
+- Warn before anything that could damage the board or a component.
+
+CODE
+- setup() and loop() stay readable. Pull anything long into a named function.
+- Name pins with constants at the top, never bare numbers in the middle of the code.
+- Avoid delay() when it would make the project feel unresponsive; say why if you use it.
+
+Compiling matters more than uploading. Get it to compile cleanly first.
