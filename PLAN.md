@@ -816,6 +816,73 @@ Setup Again; migration after `git pull`.
 
 **Exit:** Launcher Definition of Done (§35A steps 1–22) on a clean user account.
 
+#### The update protocol — partly specified, and the gap is the interesting part
+
+Raised by the developer at the end of Phase 7. It **is** in the work order, which is worth
+knowing before designing it: §"Repository update behavior" (around line 2714) and DoD
+51–53. What those ask for:
+
+- after a `git pull`, the **next launch** detects dependency, configuration-schema and
+  model-definition changes and runs migrations before starting the app
+- a prompt: *"Build Lab was updated. A few components need to be refreshed.
+  [ Update Build Lab ]"*
+- the updater **must preserve** projects, Git history, project memories, assets, settings
+  and Keychain credentials
+
+What the developer described goes past that in three specific ways, none of them in the
+work order:
+
+1. **The app notices a new version exists.** The work order assumes `git pull` has already
+   happened — a parent ran it in Terminal — and the app merely reacts afterwards. Noticing
+   that upstream has moved means the app *fetches and compares* against the remote. That
+   is a new capability, not a migration.
+2. **The button performs the pull.** In the work order the button refreshes components
+   *after* someone else pulled. Here it does the pull itself, which makes the app a
+   consumer of its own repository rather than a passenger in it.
+3. **A safe restart of a running app.** The work order's migrations happen before launch.
+   Restarting an app whose own code has just changed underneath it is a different problem:
+   Python has already imported the old modules, so the restart is mandatory rather than a
+   nicety, and it has to happen with no project work in flight.
+
+What already exists to build on, and what does not:
+
+- `opennest.__version__` is `"0.1.0"` and is **display-only** — Settings and
+  `diagnostics.report()` print it; nothing compares it to anything.
+- `schema_version` exists in `profiles.json` (1) and `models.json` (3), so the data
+  carries versions but **nothing migrates on them**.
+- `paths.installation_state_file()` → `installation.json` is **declared and never
+  written**; only `tests/test_paths.py` mentions it. It is the obvious home for "which
+  commit and which schema versions did we last run successfully".
+- **Projects are already safe by layout**, which is most of "does not overwrite projects":
+  `paths.projects_root()` is `~/Open Nest/Projects`, outside the repository, and the
+  Keychain is not in the filesystem at all. The developer sandbox
+  (`OPENNEST_HOME=.opennest-sandbox`) is the exception — it lives *inside* the repo, so
+  test any destructive step against a real install layout, not that one.
+
+Five things that will bite, worth designing for rather than discovering:
+
+- **A pull can fail on local modifications.** A parent's clone may have local edits; the
+  dev clone certainly does. Deciding between refusing, stashing and a detached update is a
+  real choice, and refusing loudly is the safe default.
+- **`requirements/*.txt` can change in the pull**, so dependencies must be reinstalled
+  before relaunch — this is the work order's "dependency manifest changes", and it is now
+  bigger, because Phase 7 put `projects.txt` into the bootstrap.
+- **`models.json` pins commit SHAs.** A pull that moves a pin implies a model
+  re-download — gigabytes, and the work order's "model-definition changes". It must be
+  shown, never silently started.
+- **Checking upstream needs network, and this app is offline-first.** An update check is
+  the *application* reaching GitHub, which is a different thing from a project reaching
+  the network, but a parent may reasonably expect to control it. `external_requests`
+  governs project runs and is the wrong gate; whether a new one is needed is D9.
+- **Do not build a second git layer.** `versioning/git_manager.py` exists and already
+  refuses commits containing anything credential-shaped. An update touches the *app's*
+  repository rather than a project's, so the two must not be confused — but the secret
+  scanning and the failure vocabulary are worth reusing.
+
+Sequencing note: this overlaps Phase 9's D1 (GitHub authentication). An update check
+against a **public** repository needs no credentials at all, so the update protocol can
+land before D1 is settled and should not wait for it.
+
 ### Phase 9 — GitHub backup
 
 Authentication per D1; private repository creation; background push queue with offline

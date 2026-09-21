@@ -98,6 +98,14 @@ which is the default.
 - **`projects.txt` is now in the bootstrap**, which makes the install bigger. Worth
   showing in the wizard rather than letting it be a silent five-minute wait.
 
+And one item raised after Phase 7 closed: **the app has no concept of its own version.**
+`opennest.__version__` is `"0.1.0"` and only ever gets printed; `installation.json` is
+declared in `paths.py` and never written. The work order does ask for safe updates after a
+`git pull` (§"Repository update behavior", DoD 51–53), but only as migrations on the next
+launch — not noticing that a new version exists, not pulling from inside the app, and not
+restarting a running one. That is **D9**, and PLAN.md's Phase 8 section has the gap and the
+traps written out.
+
 Still with no consumer: `raspberry_pi_deployment`. §7 calls SSH deployment future, so
 Phase 7 had nothing to gate without inventing a feature. When you build it, it takes the
 privileged-action pattern in §5, not a new mechanism.
@@ -747,6 +755,7 @@ From `CLAUDE.md` and from the developer directly:
 | # | Decision | Needed by |
 |---|---|---|
 | D1 | GitHub auth — OAuth device flow, `gh` CLI, or PAT. `gh` is authenticated on the dev machine but authenticates the *parent's* account | Phase 9 |
+| D9 | **How the app updates itself, and whether checking is a parent-controlled action.** The work order already asks for migration *after* someone runs `git pull` (§"Repository update behavior", DoD 51–53). Noticing that upstream moved, pulling from inside the app, and restarting safely are all past that — PLAN.md's Phase 8 section has the gap analysis and the five traps. An update check is the *application* reaching the network, which `external_requests` does not govern | Phase 8 |
 | D7 | **Which Arduino board cores to install.** Only `arduino:avr` is installed (324 MB, 27 boards). ESP32, SAMD and RP2040 are each another download, and a child whose board is missing sees an honest but useless list. Installing everything is gigabytes; installing on demand needs network mid-project | Phase 8 wizard |
 | D8 | **Whether image generation shows its cost.** ~800 KB and 10–15 s per image, billed per image, with no count or total anywhere. A parent who turned cloud on for chat has also turned this on | before real use |
 | — | Git author identity is currently `Open Nest <opennest@localhost>` until the setup wizard collects a real one | Phase 8 |
