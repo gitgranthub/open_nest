@@ -881,14 +881,219 @@ transparency"*, `can_interpret` → **False**, listed as unread, prompt still sa
 
 ---
 
+## 15. Phase 8 — what it takes to show a download honestly
+
+§35A asks the installer to display progress, show expected disk usage, support
+cancellation, support resume, and detect an already downloaded model. Before this,
+`scripts/fetch.sh` ran a bare `snapshot_download` with `HF_HUB_DISABLE_PROGRESS_BARS=1`
+and did none of them. Measured against huggingface_hub **1.32.0**, one pinned model
+(`gemma-2-2b-it-4bit`, 1.49 GB), interrupted rather than completed, and removed
+afterwards.
+
+### 15A. The default backend cannot be cancelled
+
+huggingface_hub 1.32 defaults to the **Xet** storage backend, and a `tqdm_class` that
+raises does **not** stop a Xet transfer:
+
+| | |
+|---|---|
+| cancel threshold | 120 MB |
+| first raise | 127 MB, inside `_xet_progress_reporting.update_transfer` — **swallowed** |
+| transfer continued to | **1,598 MB** — the entire model |
+| exception finally escaped at | 1,598 MB, after 91 s |
+
+So the whole download ran despite a cancel firing thirteen times earlier than the end.
+With `HF_HUB_DISABLE_XET=1`, the classic HTTP backend behaves the way the work order
+assumes:
+
+| | classic HTTP | Xet |
+|---|---|---|
+| cancel at 50 MB | **stopped at 54 MB in 3.1 s** | ran to completion |
+| killed after 21 s | 306 MB transferred, 136 MB of `.incomplete` left | — |
+| byte-level progress | yes, through `tqdm_class` | only when progress bars are enabled |
+
+**Decision: the wizard sets `HF_HUB_DISABLE_XET=1` and downloads in a subprocess.** The
+subprocess is the part that makes cancel a guarantee rather than a hope — killing a
+process always works, whatever a library does with an exception raised on one of its
+worker threads. Progress comes back over a pipe. One backend is driven, deliberately:
+which one a download used is not something the rest of Open Nest is told.
+
+Confirmed end to end through `setup/downloader.py` rather than only through the spike:
+cancel at 80 MB stopped in **4.9 s after 7 progress reports**, and `is_installed`
+correctly answered False afterwards — a partial download is not a model.
+
+### 15B. Resume does not work, and the first measurement said it did
+
+This one was recorded wrongly before it was recorded correctly, so the wrong version is
+worth keeping visible.
+
+The first pass killed a download, restarted it, saw **total bytes on disk grow from
+158 MB to 347 MB**, and concluded "RESUMED". That number was real and the conclusion was
+wrong. Running it three times from a clean cache shows what is actually happening:
+
+| run | transferred **this run** | partial files afterwards |
+|---|---|---|
+| 1 | 75 MB | `…cc7eb0d5.incomplete` — 18 MB |
+| 2 | 73 MB | `…5e686913.incomplete` — 42 MB, **plus** the 18 MB orphan |
+| 3 | 73 MB | `…84a27040.incomplete` — 42 MB, **plus** both orphans |
+
+Every run re-transfers from the beginning into a **fresh partial file with a random
+suffix**, and abandons the previous one. The disk total grows because litter
+accumulates, not because progress carries over. Three cancels left 102 MB that nothing
+will ever read.
+
+Two consequences, both now in the code:
+
+- **Cancelling discards the partial.** Keeping it saves nothing and silently costs disk.
+  `_discard_partial_files` removes only `*.incomplete` under that one repository; a
+  completed model is never touched.
+- **The message tells the truth.** It used to say "starting again will carry on from
+  where it stopped", which was false. It now says the next attempt starts over.
+
+What *is* reused is a **complete** model: `is_installed` resolves the pinned revision
+offline, and a download that finds one never starts. That is the reuse §35A's "avoid
+downloading duplicate copies unnecessarily" is actually asking for.
+
+### 15C. A returned snapshot path is not evidence the model is usable
+
+This cost an hour and produced two wrong conclusions before it produced a right one.
+
+With Xet, a snapshot's large files are **symlinks into a shared, content-addressed blob
+store** at `<cache>/blobs/`, outside the repository's own directory. Consequences, all
+of which bit:
+
+- `du -sh` on a snapshot directory reports **116 KB for a fully downloaded 1.5 GB
+  model**. The weights are there; they are just not inside that folder.
+- Measuring the whole cache instead counts every *other* model — it reported 8.5 GB of
+  "resumable bytes" for a 1.5 GB download, because Qwen was in the same store.
+- Deleting `models--<repo>/` does **not** free the blobs, so a re-download of a
+  "deleted" model completes in **0.4 s** and looks like an impossibly fast success.
+
+The lesson is not "use `scan_cache_dir`" — it is that **the cache layout is not
+something Open Nest should be reasoning about at all.** `setup/downloader.py` therefore
+asks one question, `is_installed`, and answers it with `resolve_local_model` — the exact
+call `MLXProvider.load` makes. A True means the thing the application will actually do
+would succeed, which is the only sense of "installed" that matters. `scan_cache_dir` is
+there if a later feature genuinely needs per-repo sizes; nothing does today.
+
+The general point is the one §35A already legislates for: **`snapshot_download`
+returning is not proof of anything a parent cares about.** The wizard marks a model
+ready only after the real inference test, not after the download reports success.
+
+### Not measured
+
+- **Download speed was not compared** between the two backends. Xet is the newer path
+  and is presumably faster; disabling it is a cost that has not been quantified, and it
+  is worth quantifying before V1 if a parent complains about download time.
+- `dry_run=True` was tried as a source of expected download size and returned entries
+  with no usable size, so the catalogue's `download_gb` remains the source — which is
+  what §35A requires anyway ("download sizes should come from the model configuration
+  file rather than being hard-coded into wizard logic").
+- Everything here is one model on a fast connection. Resume across a **network drop**,
+  as opposed to a process kill, is untested.
+
+---
+
+## 16. Phase 8 closeout — the installer acceptance pass
+
+§35A's exit criterion is a real installation, so Phase 8 closed with one: a fresh copy
+of the tree with **no `.venv`**, a fresh `OPENNEST_HOME`, and the actual
+`Setup Open Nest.command`. 71 checks, 0 failures at the end — and four defects on the
+way there, three of which no hermetic test could have found.
+
+### What the real run measured
+
+| | |
+|---|---|
+| Python | no suitable interpreter found; the launcher **installed CPython 3.12.14 itself** |
+| Environment | 1.7 GB; PySide6 6.11.2, mlx 0.32.2, mlx-lm 0.31.3, pygame 2.6.1, pandas 2.3.3 |
+| Model download | Qwen3 4B, 2.28 GB, **204 s** |
+| Cancel | stopped at 63 MB in **4.5 s**; no orphaned partials; model correctly not "installed" |
+| Verification | **1.5 s**, replied exactly `OPEN NEST READY` |
+| Arduino toolchain | arduino-cli 1.5.1 + AVR core in **20 s**; 27 boards; fully contained |
+| Offline (Seatbelt) | download, update check and health check all answered in **under 1 s** |
+
+### The four defects
+
+**1. Nothing installed `requirements/macos-apple-silicon.txt`.** A fresh Mac got no mlx
+and no mlx-lm — no local AI engine at all, which makes Launcher DoD steps 9 and 10 (the
+model download and the inference test) impossible. This is the **third** time a manifest
+has been installed by nothing: Phase 7 found it for `projects.txt`, and the shape is
+identical. There is now a test that every `requirements/*.txt` except `dev.txt` is
+referenced by the bootstrap, which would have caught both.
+
+**2. The progress bar overstated the download.** A 2.28 GB model displayed
+*"4.2 GB of 4.2 GB"*. Two causes, compounding:
+
+- huggingface_hub **updates the same bar twice for the same bytes** — a bar with
+  `total=2515` receives `update(1570)` twice — so summing the `update()` arguments
+  overshoots by roughly 1.8x.
+- the denominator was `max(catalogue, announced, seen)`, so it *chased the numerator
+  upward* and the overshoot became invisible.
+
+Fixed by taking the denominator from the catalogue (which §35A names as the source of
+truth for a size) and accumulating each bar separately, clamped to that bar's own total.
+Re-measured on a real download: one stable total, monotonic, no overshoot,
+`100% 2.3 GB of 2.3 GB`.
+
+Two traps under this one, both worth knowing before touching that class:
+
+- **`unit` is not set on these bars**, so "count only the byte bars" cannot be written
+  that way. They are selected by size instead — a file counter's total is single digits.
+- **A disabled tqdm never increments `self.n`.** Progress bars are switched off in the
+  child, and tqdm's `update()` returns before touching its counter when `disable` is
+  set, so reading `self.n` yields 0 forever. The count has to be accumulated by hand.
+
+**3. The update check blamed the network for a missing branch.** `git ls-remote` exits 0
+with empty output when the remote has no such branch, and that was collapsed into "could
+not reach GitHub" — reported on a machine whose network was working perfectly. Found by
+running the pass on a branch that had not been pushed yet. `_remote_commit` now returns
+`(reached, commit)` and the two cases read differently.
+
+**4. A completed download reported "failed".** A stale `Reporting.seen` reference
+survived a rewrite of that class and raised `AttributeError` **after** 2.3 GB had
+finished downloading; the child's blanket `except BaseException` caught it and reported
+*"could not be downloaded"* — for a model that was on disk, passed `is_installed`, and
+answered its inference test seconds later. The success line now sits in an `else:`
+outside the `try`, with a test that fails if it moves back in.
+
+The general lesson, which cost two wrong hypotheses before the error was simply read:
+**a blanket `except` around both the work and the reporting of the work will eventually
+tell you the work failed when only the reporting did.**
+
+### Not reproduced
+
+- **A pristine macOS user account.** The closest available was a fresh tree, a fresh
+  `OPENNEST_HOME` and the real install-our-own-CPython path. The **pip wheel cache was
+  warm**, so dependency installation took seconds rather than the several minutes a cold
+  machine would see, and behaviour with no Xcode Command Line Tools at all is untested.
+  This is a release/integration acceptance item.
+- **Anything involving a human clicking.** The pass drives the wizard's step objects
+  under offscreen Qt. Layout, focus, tab order, and whether the copy reads well to an
+  actual parent are all unverified, and a modal dialog cannot be exercised at all —
+  it blocks forever with nobody to dismiss it.
+
+---
+
 ## Follow-ups for later phases
 
 - **Phase 2:** resolve models to a local path before loading; add an `HF_HUB_OFFLINE=1`
   test; build the multi-turn tool harness; normalise tool names.
 - **Phase 2:** port `scripts/offline.sh` into `opennest/security/sandbox.py` as the
   boundary for running child project code (work order §19).
-- **Phase 8:** installer must verify a model by real inference through the provider, which
-  means it needs the local-path resolution too.
+- ~~**Phase 8:** installer must verify a model by real inference through the provider,
+  which means it needs the local-path resolution too.~~ **Done** — `setup/downloader.verify`
+  builds the real provider and gets a real answer; measured at 2.1 s, replying exactly
+  `OPEN NEST READY`.
+- **Before V1:** walk §35A's Launcher Definition of Done on a **pristine macOS user
+  account**. Section 16 got as close as this machine allows — fresh tree, fresh
+  `OPENNEST_HOME`, real CPython install — but the pip cache was warm and no human
+  clicked anything.
+- **Before V1:** compare download speed with and without Xet. Disabling it is what makes
+  Cancel work (section 15A); the cost has not been quantified.
+- **Accepted as non-blocking** (developer direction at Phase 8 closeout): Xet versus
+  classic download speed, cross-process resume the library does not support, and
+  network-drop resume. Cancellation must stay truthful about all three.
 - **Run the runtime checks against Anthropic too.** `spike_luna_runtime.py` covers
   repair, rollover and truncation on Luna only (section 13). The bounds are
   provider-independent and unit-tested, but Claude's behaviour inside them is not.

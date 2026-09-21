@@ -1,9 +1,22 @@
 # Handoff — start here
 
-You are picking up Open Nest after Phase 7. **Phase 8 (setup wizard and installation
-lifecycle) is next.** This document is what you need before touching anything.
+You are picking up Open Nest after Phase 8. **Phase 9 (GitHub backup) is next.** This
+document is what you need before touching anything.
 
 Three things before the rest.
+
+**A parent can now install Open Nest without a Terminal, and the wizard is where every
+"you will need to do this by hand" ended up.** Nine steps (§6D). It collects the parent
+PIN, which changes the meaning of every gate that was previously approvable by whoever
+was at the keyboard — read §6D's note on that before you touch a permission. It also
+installs the Arduino toolchain, which until now only `scripts/fetch.sh arduino` could do.
+
+**`snapshot_download` does not resume, and the first measurement said it did.** Each run
+writes a partial with a fresh random suffix, re-transfers from the start, and orphans the
+previous one; three cancelled runs left 102 MB nothing would ever read. The disk total
+grows, which is what fooled the first pass. SPIKES.md §15B has the three-run table. The
+downloader therefore discards a cancelled partial and says so, and the one reuse that is
+real — a **complete** model is never fetched twice — is the one it offers.
 
 **Four of the five profiles had never worked, and nothing said so.** `profiles.json`
 named five starter templates and only `pygame_basic` existed; `create_project` skipped a
@@ -69,15 +82,19 @@ it belongs in section 4.
 | 5 — Assets | complete, not yet in a PR |
 | 6 — Cloud AI, credentials, parent controls | complete, committed on `phase-6-cloud`. All three cloud models verified against the real services |
 | 7 — Remaining profiles | complete, committed on `phase-7-profiles`. Arduino compile verified against the real toolchain; upload hardware-unverified |
-| **8 — Setup wizard and installation lifecycle** | **not started — yours** |
+| 8 — Setup wizard and installation lifecycle | complete, committed on `phase-8-setup`. Installer acceptance pass: 71 checks, 0 failures, four defects found and fixed. A pristine-account run is still open — see §6D |
+| **9 — GitHub backup** | **not started — yours** |
 
 Branches are **stacked**: each is based on the previous one, so each PR shows only its
-own phase. Nothing is merged to `main` yet. Branch from `phase-7-profiles`.
+own phase. Nothing is merged to `main` yet. Branch Phase 9 from `phase-8-setup`.
 
-The review chain is 1 → 2 → 3 → 4 → 6 → 7 → 5. The PR numbers do not match the review
-order, because #5 was opened before #6 and #7.
+The review chain is 1 → 2 → 3 → 4 → 6 → 7 → 5 → 8. The PR numbers do not match the
+review order, because #5 was opened before #6, #7 and #8.
 
-What works today: a child picks one of six project types, describes an idea, the local
+What works today: a parent clones the repository, double-clicks one file, and answers a
+wizard that installs the environment, downloads and *verifies* a local model, optionally
+adds the Arduino toolchain and cloud keys, sets a PIN and the permissions, and runs a
+health check. Then a child picks one of six project types, describes an idea, the local
 model edits the project, it runs, they can undo, the project remembers its decisions
 across conversations, and they can drag their own pictures, data and documents in and have
 the project use them. A Research project turns a dropped CSV into analysis and a chart they
@@ -86,25 +103,16 @@ turn cloud on, and the child can switch to Claude or OpenAI after a warning, or 
 pictures with an image model. Everything except Image Creation still works with cloud off,
 which is the default.
 
-538 tests pass, ruff is clean.
+660 tests pass, ruff is clean.
 
-**Phase 8 is the setup wizard**, and Phase 7 handed it two concrete items:
+**Phase 9 is GitHub backup**, and Phase 8 hands it two things:
 
-- **The Arduino toolchain needs a wizard step.** `scripts/fetch.sh arduino` installs it
-  for development — pinned v1.5.1, SHA256-verified, into `$OPENNEST_HOME/tools` — but a
-  parent has no way to get it. It is a ~17 MB binary plus **324 MB** of board cores, so it
-  belongs behind a choice rather than in the default install. `arduino.available()` and
-  `arduino.describe()` are what a health check should call.
-- **`projects.txt` is now in the bootstrap**, which makes the install bigger. Worth
-  showing in the wizard rather than letting it be a silent five-minute wait.
-
-And one item raised after Phase 7 closed: **the app has no concept of its own version.**
-`opennest.__version__` is `"0.1.0"` and only ever gets printed; `installation.json` is
-declared in `paths.py` and never written. The work order does ask for safe updates after a
-`git pull` (§"Repository update behavior", DoD 51–53), but only as migrations on the next
-launch — not noticing that a new version exists, not pulling from inside the app, and not
-restarting a running one. That is **D9**, and PLAN.md's Phase 8 section has the gap and the
-traps written out.
+- **D1 is still open and is now the only thing blocking it.** The wizard's Git step
+  configures the commit identity and says plainly that GitHub backup is not available
+  yet; `state.github_enabled` exists and is always False. Nothing fakes a connection.
+- **The update check already reaches GitHub without credentials**, because
+  `git ls-remote` against a public repository needs none. If D1 lands on a token, the
+  check does not need it and should not start using it.
 
 Still with no consumer: `raspberry_pi_deployment`. §7 calls SSH deployment future, so
 Phase 7 had nothing to gate without inventing a feature. When you build it, it takes the
@@ -115,7 +123,7 @@ privileged-action pattern in §5, not a new mechanism.
 ## 2. Get running in five minutes
 
 ```bash
-.venv/bin/python -m pytest -q      # 538 passing, about 40 seconds
+.venv/bin/python -m pytest -q      # 660 passing, about 40 seconds
 ```
 
 It is slower than it was (7 s at Phase 6). Phase 7 added tests that actually run each
@@ -205,6 +213,15 @@ opennest/
 │   ├── python_runner.py    out-of-process running, batch vs interactive
 │   ├── arduino.py          arduino-cli: is it here, boards, ports, compile, upload
 │   └── outputs.py          which pictures a run produced. Deterministic, not a tool.
+├── setup/                  installation lifecycle -- WORKORDER_01 section 35A
+│   ├── state.py            installation.json, and the fingerprint an update compares
+│   ├── wizard.py           the nine steps. The only file here that knows about Qt...
+│   ├── update_dialog.py    ...and this one, which is the two update windows
+│   ├── downloader.py       download with progress/cancel, and real-inference verify
+│   ├── toolchain.py        arduino-cli + AVR core, pinned and SHA256-verified
+│   ├── checks.py           the health check, reused by Repair Installation
+│   ├── updates.py          "is there a new version?" -- reads, never pulls
+│   └── migration.py        what the launch after a `git pull` does
 ├── versioning/             git_manager, checkpoint, autosave, secret_scanner
 ├── security/
 │   ├── sandbox.py          path confinement for Open Nest's own tools
@@ -292,6 +309,25 @@ does.** Do not "clean up" these without re-measuring:
 - **`isVisible()` is False on a widget you never showed**, so a Qt test asserting
   `not thing.isVisible()` passes whatever the code does. Use `isVisibleTo(parent)`. One of
   my own tests was vacuous until I checked it.
+
+**Phase 8 traps:**
+
+- **A modal dialog blocks forever under the `offscreen` platform too.** There is no one
+  to press the button, so a test that reaches a `QMessageBox.exec()` hangs rather than
+  failing. `tests/test_wizard.py` stubs the wizard's own `complain` and `confirm` for
+  this reason; they exist as named methods partly to give tests somewhere honest to cut.
+- **Qt widgets belong to the GUI thread, and one permission prompt is now reached from a
+  worker.** See §6D. `consent.approve` marshals; anything new that asks a parent from
+  inside a turn must go through it.
+- **`du` tells you almost nothing about a Hugging Face cache.** Large files are symlinks
+  into a shared content-addressed blob store, so a complete 1.5 GB model reads as 116 KB
+  and deleting `models--<repo>/` frees nothing. This produced two wrong conclusions in a
+  row before it produced a right one (SPIKES.md §15C). `is_installed` asks
+  `resolve_local_model` — the call the app itself makes — and nothing reasons about
+  layout.
+- **`opennest/` may import `bootstrap/`; the reverse is a test failure.** The wizard uses
+  `bootstrap.environment` for machine detection and `migration` uses it to reinstall,
+  both lazily and tolerantly. Keep the arrow pointing that way.
 
 ---
 
@@ -736,6 +772,142 @@ sees says so in as many words. The image model lives on the profile rather than 
 
 ---
 
+## 6D. How setup and the installation lifecycle work
+
+Phase 8 is built. `WORKORDER_01.md` §35A is the specification, and DoD 51–53 is the
+update half. Six things are not obvious from the code.
+
+**The wizard cannot live in `bootstrap/`, and that shaped the whole phase.** Three
+existing constraints collide: `tests/test_bootstrap_compatibility.py` enforces that
+`bootstrap/*.py` stays Python 3.9 and never imports `opennest`; §35A requires the
+installer's inference test to run *through the same provider code the app uses*; and
+PySide6 does not exist until the bootstrap has installed it. So the wizard is
+`opennest/setup/`, and `bootstrap.py` **starts it as a subprocess** once dependencies
+verify. §35A's "do not tightly couple the installer to the primary application runtime"
+is satisfied by process boundary rather than by duplicating anything. The dependency
+only goes one way — the wizard imports `bootstrap.environment` for machine detection,
+and the bootstrap still imports nothing from the app.
+
+**The parent PIN is collected now, so every gate actually gates.** This was the
+prediction in §6B and it has landed. `consent.ask_parent_pin` still returns True when no
+PIN is set, and a parent may still leave it blank — forcing one is a way to lock someone
+out of their own Mac. But once set, `arduino_upload`, `external_requests`,
+`package_installation` and Parent Settings all genuinely stop.
+
+One consequence needed fixing rather than noting. `Toolbox.network_policy` is consulted
+**in the middle of a turn**, and a turn runs on a `QThread` so the window does not
+freeze. Qt widgets may only be created and used on the GUI thread. Before Phase 8 this
+was unreachable — `external_requests` sat at its `deny` default and the approver was
+never called — and the wizard's parent page now offers "Ask Parent" as a supported
+choice. `consent.approve` therefore marshals onto the GUI thread and blocks the caller
+for the answer (`consent._on_gui_thread`). If you add another gate consulted from a
+worker, it gets the same treatment for free by going through `approve`.
+
+**A download reports success long before a model works.** Three separate measurements
+say so (SPIKES.md §15), and the code is shaped around them:
+
+- huggingface_hub 1.32 defaults to the **Xet** backend, where an exception raised from
+  `tqdm_class` is swallowed — a cancel at 127 MB still fetched all 1,598 MB.
+  `downloader` sets `HF_HUB_DISABLE_XET=1` and drives one backend. Do not "support both".
+- The download runs in a **subprocess**, so Cancel is a kill rather than a request, and
+  the read loop polls a queue so a stalled transfer cannot ignore the button.
+- **Resume does not work** and is not offered. See the top of this file.
+- A model is marked ready only after `downloader.verify` gets a real answer through
+  `MLXProvider` — measured at 2.1 s, replying exactly `OPEN NEST READY`. Verification
+  deliberately does *not* require those exact words: §35A's checklist is about the
+  machinery, and failing a working model over its phrasing is the worse error.
+
+**`installation.json` is written at last, and damaged metadata means repair.** It holds
+§35A's fields plus a `Fingerprint` — the requirement digests, both config schema
+versions, and every pinned model revision. Comparing two fingerprints *is* "detect
+dependency, configuration-schema and model-definition changes". A file that will not
+parse sets `unreadable`, answers `needs_setup()` True, and is **left exactly where it
+is**; nothing here has a destructive step.
+
+**The update protocol stops deliberately short of updating.** Decision D9, settled with
+the developer:
+
+- "Check for Updates" lives in Settings → Advanced, behind the parent PIN. Pressing it
+  *is* the permission, so there is no fifth switch — and `external_requests` would have
+  been the wrong one anyway, since that governs a *child's project* reaching the
+  network, not the application contacting its own source.
+- It runs `git ls-remote` and nothing else. No pull, merge, fetch-into-the-repo, reset
+  or checkout, and `test_the_check_only_ever_runs_read_only_git_commands` fails if a
+  future change reaches for one. Being offline is an answer, not an error.
+- The launch *after* someone runs `git pull` finishes the job: `migration.plan` works
+  out what moved, the work order's prompt is shown, dependencies are reinstalled through
+  the bootstrap's own installer, and the new fingerprint is adopted **last and only on
+  success** — recording it after a failed reinstall would tell the next launch there was
+  nothing to do.
+- A moved model pin is **reported, never started**. It implies gigabytes.
+- A one-click in-app updater is a separate product feature. Do not grow this into
+  self-update and restart machinery.
+
+**D7 is resolved as AVR only.** `setup/toolchain.py` installs arduino-cli v1.5.1 and the
+`arduino:avr` core, ~341 MB, behind its own wizard step. It is AVR alone because 324 MB
+is the one core size anybody has measured; offering a menu would mean printing sizes
+nobody checked, which is not how anything else here is sized. A child with an ESP32 or a
+Pico still gets a board list without their board, so the decision is narrowed rather
+than closed.
+
+### The acceptance pass, and the four defects it found
+
+**71 checks, 0 failures**, run against a *fresh copy of the tree with no `.venv` and a
+fresh `OPENNEST_HOME`* (`spikes/` is gitignored; the driver lived in the scratchpad).
+Measured, not asserted:
+
+| | |
+|---|---|
+| `Setup Open Nest.command` | found no suitable Python and **installed CPython 3.12.14 itself** |
+| Environment | 1.7 GB, all imports present |
+| Model download | Qwen3 4B, 2.28 GB, **204 s**, progress `100% 2.3 GB of 2.3 GB` |
+| Cancel | stopped at 63 MB in **4.5 s**, no orphaned partials, model correctly not "installed" |
+| Verification | **1.5 s**, replied exactly `OPEN NEST READY` |
+| Arduino toolchain | installed in **20 s**, 27 boards, entirely inside the containment root |
+| Offline (Seatbelt) | every network path failed in **under 1 s** with readable text; nothing hung |
+
+**Four defects, all now fixed.** Three of them only a real run could have found:
+
+1. **Nothing installed `requirements/macos-apple-silicon.txt`**, so a fresh Mac had no
+   mlx and no mlx-lm — no local AI engine at all, making Launcher DoD steps 9 and 10
+   impossible. Exactly the shape of the `projects.txt` gap Phase 7 found. The bootstrap
+   now installs it, Apple-silicon-gated and deliberately non-fatal, and
+   `test_every_requirements_manifest_is_installed_by_something` would have caught both.
+2. **The progress bar overstated the download.** `Reporting` summed `update()` across
+   huggingface_hub's bars, which update the same bar twice for the same bytes, and the
+   denominator was allowed to chase the count upward — a 2.28 GB model displayed
+   *"4.2 GB of 4.2 GB"*. The denominator is now the catalogue's, and each bar is
+   accumulated and clamped separately.
+3. **The update check blamed the network for a missing branch.** `git ls-remote` exits 0
+   with empty output for a branch the remote does not have, which was collapsed into
+   "could not reach GitHub" on a perfectly connected machine.
+4. **A completed download reported "failed".** A stale `Reporting.seen` reference
+   survived the rewrite and raised *after* 2.3 GB had downloaded; the child's blanket
+   `except` dressed it up as a download failure, for a model that was on disk and passed
+   its inference test seconds later. The success line is now outside the `try`, with a
+   test that fails if it moves back in.
+
+### What is still not done
+
+- **No pristine macOS user account.** This is the one part of §35A's exit criterion that
+  remains open, and it is a release/integration item. What *was* reproduced is more than
+  expected — fresh tree, no `.venv`, fresh `OPENNEST_HOME`, and the real
+  install-our-own-CPython path. What was not: the **pip wheel cache was warm**, so the
+  dependency install took seconds rather than the several minutes a truly cold machine
+  would see, and nothing proves the behaviour with no Xcode Command Line Tools at all.
+- **Nobody has clicked the wizard.** The pass drives the step objects directly under
+  offscreen Qt, so it exercises the behaviour behind each control and not the control.
+  The two dialogs where the wizard stops and asks a parent are stubbed, because a modal
+  `QMessageBox` blocks forever with nobody to click it. Layout, tab order, focus,
+  readability and whether the copy makes sense to an actual parent are all unverified.
+- **Xet-versus-classic download speed** is unquantified, **cross-process resume** is a
+  library limitation rather than a gap, and **network-drop resume** is untested. All
+  three are accepted as non-blocking.
+- **`_reinstall` runs pip synchronously behind an indeterminate progress bar.** Minutes
+  with no percentage. Acceptable after a `git pull`; first thing to improve if it annoys.
+
+---
+
 ## 7. Working agreements
 
 From `CLAUDE.md` and from the developer directly:
@@ -754,13 +926,27 @@ From `CLAUDE.md` and from the developer directly:
 
 | # | Decision | Needed by |
 |---|---|---|
-| D1 | GitHub auth — OAuth device flow, `gh` CLI, or PAT. `gh` is authenticated on the dev machine but authenticates the *parent's* account | Phase 9 |
-| D9 | **How the app updates itself, and whether checking is a parent-controlled action.** The work order already asks for migration *after* someone runs `git pull` (§"Repository update behavior", DoD 51–53). Noticing that upstream moved, pulling from inside the app, and restarting safely are all past that — PLAN.md's Phase 8 section has the gap analysis and the five traps. An update check is the *application* reaching the network, which `external_requests` does not govern | Phase 8 |
-| D7 | **Which Arduino board cores to install.** Only `arduino:avr` is installed (324 MB, 27 boards). ESP32, SAMD and RP2040 are each another download, and a child whose board is missing sees an honest but useless list. Installing everything is gigabytes; installing on demand needs network mid-project | Phase 8 wizard |
+| D1 | GitHub auth — OAuth device flow, `gh` CLI, or PAT. `gh` is authenticated on the dev machine but authenticates the *parent's* account. Now the only thing blocking Phase 9; the update check does **not** need it | Phase 9 |
 | D8 | **Whether image generation shows its cost.** ~800 KB and 10–15 s per image, billed per image, with no count or total anywhere. A parent who turned cloud on for chat has also turned this on | before real use |
-| — | Git author identity is currently `Open Nest <opennest@localhost>` until the setup wizard collects a real one | Phase 8 |
+| D10 | **Whether a one-click in-app updater is wanted at all**, and if so what it does about local modifications, a moved model pin, and restarting a running app. Phase 8 deliberately stopped at "notice and report" — see §6D | after V1 |
 | — | Only one model is verified and downloaded. The other three local ones are pinned and described but untested | — |
 | — | All measurements are from a 48 GB Mac. The target is 8 GB | before V1 |
+
+**Resolved in Phase 8 — D9.** Checking for updates is a **parent action, not a new
+permission**: it happens only when a parent presses a button in Settings behind the PIN,
+so pressing it is the permission. `external_requests` governs a child's project reaching
+the network and was the wrong gate. The check **reads and never writes** — `git
+ls-remote`, no pull, merge or reset — and the launch after a real `git pull` runs the
+migrations. Everything past that is D10. §6D has the detail.
+
+**Also resolved in Phase 8 — D7**, narrowed rather than closed: AVR only, behind its own
+wizard step, because 324 MB is the one core size that has been measured. A child with an
+ESP32 or a Pico still gets a board list without their board.
+
+**Closed in Phase 8:** the Git author identity. §35A step 2 collects it, it is stored in
+`installation.json`, and `MainWindow` passes it to `VersionHistory.start()`. A parent who
+skips the field still gets working version history — the fields fall back to
+`git_manager`'s defaults.
 
 Resolved in Phase 6: the `claude-sonnet` context budget, which PLAN.md flagged for
 revisiting. It came *down*, to 48000/36000, on cost rather than context — the reasoning

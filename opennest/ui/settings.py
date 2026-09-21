@@ -275,6 +275,19 @@ class SettingsWindow(QDialog):
         pin_row.addStretch(1)
         layout.addLayout(pin_row)
 
+        layout.addWidget(horizontal_rule())
+        layout.addWidget(section_label("Setup"))
+        layout.addWidget(_body(
+            "Run setup again to add a local AI model, change the name on saved "
+            "versions, or reconfigure cloud AI. Projects are never affected."
+        ))
+        rerun = QPushButton("Run Setup Again")
+        rerun.clicked.connect(self._run_setup_again)
+        rerun_row = QHBoxLayout()
+        rerun_row.addWidget(rerun)
+        rerun_row.addStretch(1)
+        layout.addLayout(rerun_row)
+
         layout.addStretch(1)
         self._refresh_parent_notes()
         return widget
@@ -298,6 +311,35 @@ class SettingsWindow(QDialog):
             "Technical information for troubleshooting. Nothing here needs changing "
             "for normal use."
         ))
+
+        layout.addWidget(horizontal_rule())
+        layout.addWidget(section_label("Updates"))
+        layout.addWidget(_body(
+            "Checking asks GitHub whether a newer version of Open Nest exists. It only "
+            "looks — it does not change anything on this Mac, and it is the only time "
+            "Open Nest itself uses the internet."
+        ))
+        check_row = QHBoxLayout()
+        check = QPushButton("Check for Updates")
+        check.clicked.connect(self._check_for_updates)
+        check_row.addWidget(check)
+        check_row.addStretch(1)
+        layout.addLayout(check_row)
+
+        layout.addWidget(horizontal_rule())
+        layout.addWidget(section_label("Repair Installation"))
+        layout.addWidget(_body(
+            "Checks everything Open Nest needs and reinstalls whatever is missing. "
+            "Projects, their saved versions, what they remember, and saved API keys "
+            "are never touched."
+        ))
+        repair_row = QHBoxLayout()
+        repair = QPushButton("Repair Installation")
+        repair.clicked.connect(self._repair)
+        repair_row.addWidget(repair)
+        repair_row.addStretch(1)
+        layout.addLayout(repair_row)
+
         layout.addWidget(horizontal_rule())
 
         self._diagnostics = QPlainTextEdit()
@@ -536,6 +578,69 @@ class SettingsWindow(QDialog):
                 "No parent PIN is set, so anyone using this Mac can change these."
             )
             self._pin_note.setText("No PIN is set.")
+
+    # -- installation lifecycle ---------------------------------------------
+
+    def _check_for_updates(self) -> None:
+        """Decision D9. Looks, reports, and changes nothing.
+
+        Behind the parent PIN like everything else on the parent page, which is what
+        makes it a parent-controlled action without inventing a fifth permission:
+        ``external_requests`` governs a *project* reaching the network, and this is the
+        application contacting its own source on an explicit press.
+        """
+        if not self._unlock():
+            return
+        from opennest.setup.update_dialog import show_update_check
+
+        show_update_check(self)
+
+    def _repair(self) -> None:
+        """Section 35A's "Repair setup". Has no destructive step, by design."""
+        if not self._unlock():
+            return
+        from opennest.setup import checks
+        from opennest.setup.state import InstallationState
+
+        record = InstallationState.load()
+        results = checks.run(
+            self.controls, self.credentials, preferred_model=record.preferred_model
+        )
+        plan = checks.plan_repair(results, preferred_model=record.preferred_model)
+
+        lines = [checks.report(results), "", checks.summary(results)]
+        if plan.anything_to_do or plan.notes:
+            lines.append("")
+            if plan.reinstall_dependencies:
+                lines.append("Run Setup again to reinstall the missing components.")
+            for model in plan.missing_models:
+                lines.append(f"The model {model} needs downloading again.")
+            for note in plan.notes:
+                lines.append(note)
+        else:
+            lines.append("Nothing needs repairing.")
+
+        QMessageBox.information(self, APP_NAME, "\n".join(lines))
+        self._diagnostics.setPlainText(self._diagnostic_text())
+
+    def _run_setup_again(self) -> None:
+        """Section 35A's "Setup rerun". Reuses the wizard rather than a second UI."""
+        if not self._unlock():
+            return
+        from opennest.setup.state import InstallationState
+        from opennest.setup.wizard import SetupWizard
+
+        wizard = SetupWizard(
+            self,
+            state=InstallationState.load(),
+            controls=self.controls,
+            credentials=self.credentials,
+        )
+        wizard.exec()
+        permissions.reload()
+        self._refresh_keys()
+        self._refresh_parent_notes()
+        self.changed.emit()
 
     def _diagnostic_text(self) -> str:
         try:

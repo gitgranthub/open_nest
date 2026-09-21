@@ -26,6 +26,10 @@ TITLE = "Open Nest Setup"
 #: Imports that must work before setup is allowed to report success.
 REQUIRED_IMPORTS = ("PySide6.QtWidgets", "keyring")
 
+#: Started in the managed environment, never imported here -- see _start().
+APP_MODULE = "opennest.app"
+WIZARD_MODULE = "opennest.setup.wizard"
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Prepare and launch Open Nest.")
@@ -71,6 +75,9 @@ def _setup_then_launch() -> int:
     _say("Installing what your projects need...")
     env.install_requirements([_requirements("projects.txt")])
 
+    if machine.is_apple_silicon:
+        _install_local_ai()
+
     missing = env.verify_imports(REQUIRED_IMPORTS)
     if missing:
         raise SetupError(
@@ -80,7 +87,35 @@ def _setup_then_launch() -> int:
         )
 
     _say("Ready.")
-    return _run_app()
+    return _launch_after_setup()
+
+
+def _install_local_ai() -> None:
+    """Install MLX, the local AI engine (WORKORDER_01 section 35A, "Dependency
+    installation", which names ``mlx`` and ``mlx-lm`` explicitly).
+
+    Apple silicon only, and **deliberately not fatal**. ``macos-apple-silicon.txt``
+    is a separate manifest so that the app and the setup wizard can still start and
+    report a useful error when MLX is unavailable; making a failure here stop setup
+    would throw that away. Section 35A also allows skipping local AI outright, with
+    cloud as the alternative. The wizard's health check reports MLX honestly either
+    way, and Repair Installation can try again.
+
+    Found by the Phase 8 acceptance pass: nothing installed this manifest, so a fresh
+    Mac had no local AI engine at all -- which makes Launcher DoD steps 9 and 10, the
+    model download and the inference test, impossible. Exactly the shape of the
+    ``projects.txt`` gap Phase 7 found.
+    """
+    _say("Installing the local AI engine...")
+    try:
+        env.install_requirements([_requirements("macos-apple-silicon.txt")])
+    except SetupError as exc:
+        report_error(
+            "Open Nest could not install the local AI engine, so it will not be able "
+            "to run AI on this Mac yet.\n\nEverything else is installed. You can try "
+            "again with Repair Installation, or use cloud AI instead.\n\n" + str(exc),
+            caution=True,
+        )
 
 
 def _install_python() -> str:
@@ -114,20 +149,43 @@ def _launch_only() -> int:
         raise SetupError(
             'Open Nest is not set up on this Mac yet.\n\nOpen "Setup Open Nest.command" first.'
         )
-    return _run_app()
+    if not env.setup_is_complete():
+        raise SetupError(
+            "Open Nest has not finished being set up on this Mac yet.\n\n"
+            'Open "Setup Open Nest.command" first.'
+        )
+    return _start(APP_MODULE)
 
 
-def _run_app() -> int:
-    """Start Open Nest and let the launcher exit.
+def _launch_after_setup() -> int:
+    """WORKORDER_01 section 35A, "Relaunch behavior".
+
+        Setup Open Nest.command
+                |
+                +-- setup incomplete -> Setup Wizard
+                |
+                +-- setup complete   -> Open Nest
+
+    The wizard is a separate module rather than part of this file because it needs
+    PySide6 and the application's own provider code -- section 35A requires the
+    installer's inference test to run through the same provider Open Nest uses. Neither
+    is available to the bootstrap, which must stay importable on the Python a Mac
+    already has. Starting it as a subprocess keeps the two decoupled.
+    """
+    if env.setup_is_complete():
+        return _start(APP_MODULE)
+    return _start(WIZARD_MODULE)
+
+
+def _start(module: str) -> int:
+    """Start a module in the managed environment and let the launcher exit.
 
     Detached on purpose: a .command keeps its Terminal window open for as long as the
     script runs, and WORKORDER_01 section 35A wants no visible Terminal dependency.
     """
-    # Phase 8 replaces this with the setup-wizard / app decision described in
-    # WORKORDER_01 section 35A ("Relaunch behavior").
     try:
         subprocess.Popen(
-            [env.venv_python(), "-m", "opennest.app"],
+            [env.venv_python(), "-m", module],
             cwd=env.repo_root(),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,

@@ -15,7 +15,10 @@ there.
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QInputDialog, QLineEdit, QMessageBox
+import threading
+
+from PySide6.QtCore import QObject, Qt, QThread, Signal
+from PySide6.QtWidgets import QApplication, QInputDialog, QLineEdit, QMessageBox
 
 from opennest import APP_NAME
 from opennest.ai.provider import ModelInfo
@@ -101,7 +104,23 @@ def ask_parent_pin(parent, credentials: keychain.Credentials | None = None,
 
 
 def approve(parent, gate: Gate, credentials: keychain.Credentials | None = None) -> bool:
-    """Answer an "Ask Parent" permission at the moment it is needed (section 25)."""
+    """Answer an "Ask Parent" permission at the moment it is needed (section 25).
+
+    **Safe to call from a worker thread**, which is not optional here.
+    ``Toolbox.network_policy`` consults this in the middle of a turn, and a turn runs on
+    a ``QThread`` so generation does not freeze the window. Qt widgets may only be
+    created and used on the GUI thread, so the dialog is marshalled there and the
+    calling thread blocks for the answer.
+
+    This mattered from Phase 8 onwards rather than before it. Until the wizard existed,
+    ``external_requests`` sat at its ``deny`` default and the approver was never
+    reached; the parent page now offers "Ask Parent" as a supported choice, which is
+    what makes this path live.
+    """
+    return _on_gui_thread(lambda: _approve(parent, gate, credentials))
+
+
+def _approve(parent, gate: Gate, credentials: keychain.Credentials | None) -> bool:
     box = QMessageBox(parent)
     box.setWindowTitle(APP_NAME)
     box.setText(f"Allow this: {gate.label.lower()}?")
@@ -122,3 +141,45 @@ def explain_api_keys(parent) -> None:
     box.setText("What is an API key?")
     box.setInformativeText(API_KEY_EXPLANATION)
     box.exec()
+
+
+# --------------------------------------------------------------------------- threading
+
+class _GuiCall(QObject):
+    """Runs one callable on the GUI thread and hands the result back."""
+
+    _requested = Signal()
+
+    def __init__(self, work) -> None:
+        super().__init__()
+        self._work = work
+        self._result = None
+        self._done = threading.Event()
+        # Living on the GUI thread is what makes the connection below a queued one,
+        # so the slot runs there rather than on whoever emitted it.
+        self.moveToThread(QApplication.instance().thread())
+        self._requested.connect(self._run, Qt.ConnectionType.QueuedConnection)
+
+    def _run(self) -> None:
+        try:
+            self._result = self._work()
+        finally:
+            self._done.set()
+
+    def call(self):
+        self._requested.emit()
+        self._done.wait()
+        return self._result
+
+
+def _on_gui_thread(work):
+    """Run ``work`` on the GUI thread, blocking the caller until it answers.
+
+    Calls already on the GUI thread run straight through. Queueing those would
+    deadlock: the queued slot cannot run until the current call returns, and the
+    current call is waiting for it.
+    """
+    app = QApplication.instance()
+    if app is None or QThread.currentThread() is app.thread():
+        return work()
+    return _GuiCall(work).call()

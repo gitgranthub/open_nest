@@ -807,14 +807,109 @@ Carried forward: **upload is hardware-unverified**; `raspberry_pi_deployment` st
 consumer; and §30's "Show technical details" toggle is **not built** — raw stderr still
 goes to the panel, deliberately left for the Phase 10 polish pass.
 
-### Phase 8 — Full setup wizard and installation lifecycle
+### Phase 8 — Full setup wizard and installation lifecycle — **complete**
 
-Complete PySide6 wizard: welcome, identity, local AI with download progress / resume /
-cancel and real-inference verification, optional cloud, optional GitHub, parent controls,
-health check, finish. Installation state file; relaunch detection; Repair Installation; Run
-Setup Again; migration after `git pull`.
+Nine steps: §35A's eight plus the Arduino toolchain (D7). Installation state file;
+relaunch detection; Repair Installation; Run Setup Again; migration after `git pull`; the
+parent PIN; the update check.
 
-**Exit:** Launcher Definition of Done (§35A steps 1–22) on a clean user account.
+**Exit criterion substantially met, with one gap stated rather than glossed.** Phase 8
+closed with a real installer acceptance pass — a fresh copy of the tree with no `.venv`,
+a fresh `OPENNEST_HOME`, and the actual `Setup Open Nest.command`. **71 checks, 0
+failures.** The launcher found no suitable Python and installed CPython 3.12.14 itself;
+Qwen3 4B downloaded in 204 s; Cancel stopped at 63 MB in 4.5 s leaving no orphans;
+verification answered `OPEN NEST READY` in 1.5 s; the Arduino toolchain installed in 20 s
+and listed 27 boards, fully contained; and every network path failed in under a second
+when run offline. SPIKES.md §16 has the table.
+
+What is **not** met: a pristine macOS user account. The pip wheel cache was warm, so
+dependency installation took seconds rather than minutes, and nobody has clicked the
+wizard — the pass drives the step objects under offscreen Qt, so layout, focus and
+whether the copy reads well to a real parent are unverified. That is a
+release/integration acceptance item. 660 tests, ruff clean.
+
+**The pass found four defects, three of which no hermetic test could have found.** Full
+detail in SPIKES.md §16; the one that matters most for this plan:
+
+**Nothing installed `requirements/macos-apple-silicon.txt`**, so a fresh Mac had no mlx
+and no mlx-lm — no local AI engine at all, making Launcher DoD steps 9 and 10 impossible.
+This is the **third** occurrence of the same shape: a manifest that exists and nothing
+installs. Phase 7 found it for `projects.txt`. There is now a test that every
+`requirements/*.txt` except `dev.txt` is referenced by the bootstrap, which would have
+caught both.
+
+The other three: the progress bar overstated a 2.28 GB download as *"4.2 GB of 4.2 GB"*;
+the update check blamed the network for a branch the remote simply did not have; and a
+completed download reported "failed" because a stale reference raised while *composing
+the success message*, inside a blanket `except` that then called the download itself a
+failure.
+
+**The wizard could not live in `bootstrap/`, which decided the architecture.** Two
+existing tests pin `bootstrap/*.py` to Python 3.9 and forbid it importing `opennest`;
+§35A requires the installer's inference test to go *through the application's own
+provider*; PySide6 does not exist until the bootstrap installs it. So the wizard is
+`opennest/setup/` and the bootstrap starts it as a subprocess — decoupled by process
+boundary rather than by a second implementation of anything. The arrow points one way:
+the wizard imports `bootstrap.environment`, never the reverse.
+
+**The parent PIN landed, and one latent Qt bug came with it.** `Toolbox.network_policy`
+is consulted mid-turn, on a `QThread`. Qt widgets may only be used on the GUI thread.
+This was unreachable while `external_requests` sat at its `deny` default and nothing ever
+called the approver; the wizard's parent page now offers "Ask Parent" as a supported
+choice, which makes it live. `consent.approve` marshals onto the GUI thread and blocks
+for the answer.
+
+**Three download findings, one of which was recorded wrongly first** (SPIKES.md §15):
+
+- huggingface_hub 1.32 defaults to the Xet backend, where an exception from `tqdm_class`
+  is swallowed — a cancel at 127 MB still fetched all 1,598 MB. One backend is driven,
+  deliberately.
+- **Resume does not work.** The first pass saw disk usage grow across two runs and
+  concluded it did. Three runs from a clean cache show each one re-transferring from the
+  start into a fresh randomly-suffixed partial and orphaning the last; the total grew
+  because litter accumulated. A cancelled download now discards its partial and the
+  message says the next attempt starts over. What *is* reused is a complete model.
+- A snapshot path means nothing: large files are symlinks into a shared blob store, so a
+  complete model reads as 116 KB and a "deleted" one re-downloads in 0.4 s. Nothing in
+  `opennest/` reasons about cache layout; `is_installed` asks the same function
+  `MLXProvider.load` asks.
+
+#### Decision D9 resolved — notice and report, do not pull
+
+Settled with the developer. The app may **check** and may **finish** an update someone
+else started; it may not perform one.
+
+- **Checking is a parent action, not a new permission.** It happens only on a button in
+  Settings behind the parent PIN, so pressing it is the permission. `external_requests`
+  governs a *child's project* reaching the network and is the wrong gate — this is the
+  application contacting its own source.
+- **The check is read-only by construction.** `git ls-remote`, which writes nothing into
+  `.git`, unlike `git fetch`. A test enumerates the git commands issued and fails on
+  `pull`, `merge`, `reset`, `checkout`, `stash`, `clean` or `push`.
+- **No credentials needed**, because the repository is public — so this did not wait on
+  D1.
+- **Offline is an answer**, phrased as one.
+- **The launch after a real `git pull`** runs the work order's migration: detect, prompt,
+  reinstall through the bootstrap's own installer, adopt the new fingerprint **last and
+  only on success**.
+- **A moved model pin is reported, never started.** Gigabytes.
+- **A one-click in-app updater is out of scope** and is now D10. The five traps this
+  section used to list are exactly the reasons.
+
+#### Decision D7 resolved — AVR only, narrowed rather than closed
+
+`setup/toolchain.py` installs arduino-cli v1.5.1 and `arduino:avr`, ~341 MB, behind its
+own wizard step — the same pinned, SHA256-verified artifact `scripts/fetch.sh arduino`
+fetches, now reachable by a parent. AVR alone because 324 MB is the one core size anybody
+has measured, and printing unmeasured sizes for ESP32, SAMD and RP2040 is not how
+anything else here is sized. A child with a board outside that family still sees a list
+without it.
+
+Carried forward: the **pristine-account run**, and the fact that nobody has clicked the
+wizard. Accepted as non-blocking by developer direction at closeout: Xet-versus-classic
+download speed, cross-process resume the library does not support, network-drop resume,
+cache-management tooling, and self-update machinery. Cancellation stays truthful about
+all of them — it does not claim a resume that cannot happen.
 
 #### The update protocol — partly specified, and the gap is the interesting part
 
