@@ -20,14 +20,17 @@ class AgentWorker(QObject):
     finished = Signal(object)  # Turn
     failed = Signal(str)       # message fit for a person to read
 
-    def __init__(self, controller: AgentController, text: str) -> None:
+    def __init__(self, controller: AgentController, text: str, attachments=()) -> None:
         super().__init__()
         self.controller = controller
         self.text = text
+        self.attachments = tuple(attachments)
 
     def run(self) -> None:
         try:
-            turn: Turn = self.controller.send(self.text, on_text=self.chunk.emit)
+            turn: Turn = self.controller.send(
+                self.text, attachments=self.attachments, on_text=self.chunk.emit
+            )
         except ProviderError as exc:
             self.failed.emit(str(exc))
         except Exception as exc:  # noqa: BLE001 - a crash here must not kill the app

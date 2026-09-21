@@ -13,7 +13,7 @@ from opennest import APP_NAME
 from opennest.agent.controller import AgentController
 from opennest.agent.tools import Toolbox
 from opennest.ai.provider import ProviderError
-from opennest.ai.router import build_provider, default_model_id
+from opennest.ai.router import build_provider, default_model_id, unmet_requirements
 from opennest.memory.manager import MemoryManager
 from opennest.projects.manager import Project, ProjectError, create_project
 from opennest.projects.profiles import Profile
@@ -95,6 +95,13 @@ class MainWindow(QMainWindow):
                 self, APP_NAME,
                 self._model_problem or "The local AI is not available yet.",
             )
+            return
+
+        # Say up front when the chosen model cannot do this kind of project, rather
+        # than letting the child discover it by watching nothing happen.
+        unmet = unmet_requirements(self._provider.info, project.profile)
+        if unmet:
+            QMessageBox.warning(self, APP_NAME, "\n\n".join(unmet))
             return
 
         versions = VersionHistory(project)

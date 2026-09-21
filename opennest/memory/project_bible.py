@@ -37,6 +37,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from opennest.assets import kinds
 from opennest.memory import markdown
 from opennest.memory.safety import write_memory_file
 from opennest.projects.manager import Project
@@ -63,7 +64,10 @@ FUTURE_IDEAS = "Future Ideas"
 SUPERSEDED = "Superseded Decisions"
 
 #: Directories whose contents count as project assets (section 15A: "asset roles").
-ASSET_DIRS = ("assets", "data")
+#: Shared with the asset layer so the bible's Asset Library and the one the child sees
+#: are the same list -- section 11's example holds a wiring PDF next to a sprite, and
+#: reference material is imported into ``docs``.
+ASSET_DIRS = kinds.LIBRARY_DIRECTORIES
 
 
 @dataclass

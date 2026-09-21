@@ -198,3 +198,57 @@ def test_no_profile_offers_a_tool_for_what_the_app_already_knows(profiles: list[
     for profile in profiles:
         assert "list_project_files" not in profile["tools"], profile["id"]
         assert "inspect_error" not in profile["tools"], profile["id"]
+
+
+# ------------------------------------- which model can build which kind of project
+#
+# WORKORDER_01 section 13 makes the application responsible for knowing what a model
+# can do. That reaches past attachments: a profile says what it needs, a model says
+# what it does, and the mismatch should be stated rather than discovered by a child
+# watching nothing happen.
+
+
+def test_a_model_without_tools_cannot_build_anything() -> None:
+    """gemma2-2b is in the catalogue with supports_tools false, and every profile
+    works by calling tools. It can discuss a game; it cannot make one."""
+    from opennest.ai.router import get_entry, unmet_requirements
+    from opennest.projects.profiles import get_profile
+
+    gemma = get_entry("gemma2-2b").info
+    assert not gemma.supports_tools
+    for profile_id in ("games", "research", "arduino", "raspberry_pi", "blank"):
+        problems = unmet_requirements(gemma, get_profile(profile_id))
+        assert problems, profile_id
+        assert "cannot use tools" in problems[0]
+
+
+def test_the_default_model_can_build_every_kind_of_project() -> None:
+    from opennest.ai.router import default_model_id, get_entry, unmet_requirements
+    from opennest.projects.profiles import load_profiles
+
+    info = get_entry(default_model_id()).info
+    for profile in load_profiles():
+        assert unmet_requirements(info, profile) == (), profile.id
+
+
+def test_not_being_able_to_see_a_picture_does_not_block_a_project() -> None:
+    """It is a limitation the asset layer states honestly, not a reason to refuse."""
+    from opennest.ai.router import get_entry, unmet_requirements
+    from opennest.projects.profiles import get_profile
+
+    info = get_entry("qwen3-4b-instruct").info
+    assert not info.supports_images
+    assert unmet_requirements(info, get_profile("games")) == ()
+
+
+def test_the_picker_can_be_filtered_to_models_that_would_work() -> None:
+    from opennest.ai.router import models_for_project
+    from opennest.projects.profiles import get_profile
+
+    usable = {e.info.id for e in models_for_project(get_profile("games"))}
+    assert "qwen3-4b-instruct" in usable
+    assert "gemma2-2b" not in usable
+    assert "claude-sonnet" not in usable          # cloud is off by default
+    assert "claude-sonnet" in {
+        e.info.id for e in models_for_project(get_profile("games"), allow_cloud=True)
+    }

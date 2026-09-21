@@ -7,11 +7,15 @@ technical detail stays visually secondary.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -26,6 +30,9 @@ from PySide6.QtWidgets import (
 
 from opennest.agent.controller import AgentController
 from opennest.agent.tools import Toolbox
+from opennest.ai.router import models_that_can_read
+from opennest.assets import kinds
+from opennest.assets import manager as assets
 from opennest.execution.python_runner import stop_project
 from opennest.projects.manager import Project
 from opennest.security.sandbox import visible_files
@@ -33,6 +40,15 @@ from opennest.ui.common import horizontal_rule, section_label, status_row
 from opennest.ui.worker import AgentWorker, run_in_thread
 from opennest.versioning.checkpoint import VersionHistory
 from opennest.versioning.git_manager import GitError, SecretsFound
+
+
+def _first_bytes(source: Path, count: int = 64) -> bytes:
+    """Enough of a dropped file to tell what it actually is, before importing it."""
+    try:
+        with Path(source).open("rb") as stream:
+            return stream.read(count)
+    except OSError:
+        return b""
 
 
 def panel(title: str) -> tuple[QFrame, QVBoxLayout]:
@@ -62,7 +78,13 @@ class Workbench(QWidget):
         self.toolbox: Toolbox = controller.toolbox
         self.versions = versions
         self._thread = None
+        #: Files dropped onto the chat, waiting to go with the next message.
+        self._pending: list[assets.Asset] = []
         self._build()
+        # WORKORDER_01 section 12: a file can be dragged onto the chat, the file panel
+        # or the asset panel. One handler covers all three; where it landed decides
+        # whether it is also attached to the next message.
+        self.setAcceptDrops(True)
         self.refresh_files()
 
     # -- construction -------------------------------------------------------
@@ -111,10 +133,22 @@ class Workbench(QWidget):
         return row
 
     def _files_panel(self) -> QFrame:
+        """Files and Assets, as WORKORDER_01 section 14 and DESIGN_DOC.md both show them."""
         frame, layout = panel("Project")
         self._files = QListWidget()
         self._files.itemActivated.connect(self._open_file)
-        layout.addWidget(self._files, 1)
+        layout.addWidget(self._files, 2)
+
+        layout.addWidget(section_label("Assets"))
+        self._assets = QListWidget()
+        self._assets.itemActivated.connect(self._describe_asset)
+        layout.addWidget(self._assets, 1)
+
+        add = QPushButton("+  Add to Project")
+        add.setToolTip("Add a picture, a sound, a document or some data")
+        add.clicked.connect(self._choose_files)
+        layout.addWidget(add)
+        self._assets_panel = frame
         return frame
 
     def _output_panel(self) -> QFrame:
@@ -132,6 +166,12 @@ class Workbench(QWidget):
         self._transcript.setReadOnly(True)
         layout.addWidget(self._transcript, 1)
 
+        # Shows what is going with the next message, so an attachment is never invisible.
+        self._attached_label = QLabel()
+        self._attached_label.setProperty("role", "mono")
+        self._attached_label.hide()
+        layout.addWidget(self._attached_label)
+
         entry = QHBoxLayout()
         self._input = QLineEdit()
         self._input.setPlaceholderText("Tell me your idea, or what to change.")
@@ -142,6 +182,7 @@ class Workbench(QWidget):
         entry.addWidget(self._input, 1)
         entry.addWidget(self._send_button)
         layout.addLayout(entry)
+        self._chat_panel = frame
         return frame
 
     def _footer(self) -> QHBoxLayout:
@@ -184,9 +225,120 @@ class Workbench(QWidget):
     # -- behaviour ----------------------------------------------------------
 
     def refresh_files(self) -> None:
+        """Files the child works on, and separately the things they have added."""
+        imported = assets.list_assets(self.project)
+        added = {asset.path for asset in imported}
+
         self._files.clear()
         for name in visible_files(self.project.directory):
-            self._files.addItem(QListWidgetItem(name))
+            if name not in added:
+                self._files.addItem(QListWidgetItem(name))
+
+        self._assets.clear()
+        for asset in imported:
+            item = QListWidgetItem(asset.name)
+            item.setData(Qt.ItemDataRole.UserRole, asset)
+            item.setToolTip(asset.summary)
+            self._assets.addItem(item)
+
+    # -- adding files (WORKORDER_01 sections 10-13) --------------------------
+
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    dragMoveEvent = dragEnterEvent
+
+    def dropEvent(self, event) -> None:
+        paths = [
+            Path(url.toLocalFile())
+            for url in event.mimeData().urls()
+            if url.isLocalFile()
+        ]
+        if not paths:
+            return
+        event.acceptProposedAction()
+        # Dropping onto the conversation means "and here is what I am talking about".
+        # Dropping onto the file or asset panel just adds it to the project.
+        self._add(paths, attach=self.is_chat_position(event.position().toPoint()))
+
+    def is_chat_position(self, point) -> bool:
+        """Whether a drop at this point landed on the conversation.
+
+        Takes a point rather than an event so the rule that decides "attach to the next
+        message" can be tested without synthesising a drag.
+        """
+        widget = self.childAt(point)
+        while widget is not None:
+            if widget is self._chat_panel:
+                return True
+            widget = widget.parentWidget()
+        return False
+
+    def _choose_files(self) -> None:
+        names, _ = QFileDialog.getOpenFileNames(self, "Add to Project")
+        if names:
+            self._add([Path(name) for name in names], attach=False)
+
+    def _add(self, paths: list[Path], *, attach: bool) -> None:
+        """Import each file, asking what it is, and say plainly what the AI can do with it."""
+        for source in paths:
+            role = self._ask_what_it_is(source)
+            if role is None:
+                continue
+            try:
+                asset = assets.import_file(self.project, source, role=role)
+            except assets.AssetError as exc:
+                QMessageBox.warning(self, "Open Nest", str(exc))
+                continue
+
+            self._say("Open Nest", assets.import_message(
+                asset, self._model_info(), self._models_that_could_read(asset)
+            ))
+            if attach:
+                self._pending.append(asset)
+
+        self.refresh_files()
+        self.controller.refresh_state()
+        self._show_pending()
+
+    def _ask_what_it_is(self, source: Path) -> str | None:
+        """Section 12: the application classifies, and the child can change the answer."""
+        guess = kinds.default_role(kinds.classify(source.name, _first_bytes(source)))
+        labels = [kinds.ROLE_LABELS[role] for role in kinds.ROLES]
+        chosen, accepted = QInputDialog.getItem(
+            self, "Add to Project", f"What is {source.name}?",
+            labels, kinds.ROLES.index(guess), False,
+        )
+        if not accepted:
+            return None
+        return kinds.ROLES[labels.index(chosen)]
+
+    def _model_info(self):
+        return getattr(self.controller.provider, "info", None)
+
+    def _models_that_could_read(self, asset: assets.Asset):
+        """Section 13's "offer a compatible model", only when one is actually usable.
+
+        Cloud stays off until a parent turns it on (section 21), so today this is empty
+        and the child is told the limitation rather than sent after a model they cannot
+        reach. It fills in on its own when the catalogue gains one.
+        """
+        return [entry.info for entry in models_that_can_read(asset.kind)]
+
+    def _show_pending(self) -> None:
+        if not self._pending:
+            self._attached_label.hide()
+            return
+        self._attached_label.setText(
+            "Going with your next message: "
+            + ", ".join(asset.name for asset in self._pending)
+        )
+        self._attached_label.show()
+
+    def _describe_asset(self, item: QListWidgetItem) -> None:
+        asset: assets.Asset = item.data(Qt.ItemDataRole.UserRole)
+        self._output.setPlainText(f"{asset.path}\n\n{asset.summary}")
 
     def set_model_status(self, state: str, text: str) -> None:
         layout = self.layout().itemAt(0).layout()
@@ -219,11 +371,14 @@ class Workbench(QWidget):
         if not text or self._thread is not None:
             return
         self._input.clear()
-        self._say("You", text)
+        attachments = tuple(self._pending)
+        self._pending.clear()
+        self._show_pending()
+        self._say("You", text + "".join(f"\n  [ {a.name} ]" for a in attachments))
         self._busy(True)
         self.set_model_status("working", "Thinking")
 
-        worker = AgentWorker(self.controller, text)
+        worker = AgentWorker(self.controller, text, attachments)
         worker.finished.connect(self._turn_finished)
         worker.failed.connect(self._turn_failed)
         self._thread = run_in_thread(self, worker)

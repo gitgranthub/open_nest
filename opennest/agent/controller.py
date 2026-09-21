@@ -15,12 +15,13 @@ loop itself behaves identically either way, which is what keeps them separately 
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 
 from opennest import paths
 from opennest.agent.tools import Toolbox, ToolResult, normalise_tool_name, schemas_for
 from opennest.ai.provider import Message, ModelProvider, Settings, ToolCall
+from opennest.assets import manager as assets
 from opennest.execution.python_runner import RunResult
 from opennest.memory.manager import MemoryManager
 from opennest.projects.manager import Project
@@ -75,6 +76,9 @@ class Turn:
     #: Whether the thread rolled over after this turn. For tests and logs only -- the
     #: child must never be told (WORKORDER_01 section 15A).
     rolled_over: bool = False
+    #: Whether the model was pulled up for describing a file it has not seen. For tests
+    #: and for measuring how often the prompt is not enough (SPIKES.md section 10).
+    corrected_invention: bool = False
 
 
 def build_system_prompt(
@@ -83,8 +87,14 @@ def build_system_prompt(
     build_style: str = "build",
     last_run: RunResult | None = None,
     memory: str = "",
+    asset_context: str = "",
 ) -> str:
-    """The new-thread bootstrap of section 15A: base + profile + style + state + memory."""
+    """The new-thread bootstrap of section 15A: base + profile + style + state + memory.
+
+    ``asset_context`` is the imported files and what is honestly known about them
+    (WORKORDER_01 section 13). It comes last, nearest the conversation, because when it
+    is non-empty the child has usually just attached something and is talking about it.
+    """
     base = (paths.prompts_dir() / "base.txt").read_text(encoding="utf-8").strip()
     profile_prompt = project.profile.system_prompt()
     style_file = "style_teach.txt" if build_style == "teach" else "style_build.txt"
@@ -92,6 +102,8 @@ def build_system_prompt(
     parts = [base, profile_prompt, style, TOOL_USE_RULES, project_state(project, last_run)]
     if memory:
         parts.append(memory)
+    if asset_context:
+        parts.append(asset_context)
     return "\n\n".join(parts)
 
 
@@ -155,6 +167,11 @@ class AgentController:
         self.versions = versions
         #: Project memory and thread rollover. Optional for the same reason.
         self.memory = memory
+        #: Files attached to the message being answered. Rebuilt each turn and never
+        #: kept, the same way memory's recall hits are -- the asset itself is permanent
+        #: and stays in the listing, but "this picture" only means something for the
+        #: message it arrived with.
+        self._attached: tuple[assets.Asset, ...] = ()
         self.history: list[Message] = []
         self._reset_history()
 
@@ -162,7 +179,11 @@ class AgentController:
         """Begin a thread: one system message carrying the whole bootstrap."""
         self.history = [
             Message(role="system", content=build_system_prompt(
-                self.project, build_style=self.build_style, memory=self._memory_block()))
+                self.project,
+                build_style=self.build_style,
+                memory=self._memory_block(),
+                asset_context=self._asset_block(),
+            ))
         ]
 
     def refresh_state(self) -> None:
@@ -174,34 +195,57 @@ class AgentController:
                 build_style=self.build_style,
                 last_run=self.toolbox.last_run,
                 memory=self._memory_block(),
+                asset_context=self._asset_block(),
             ),
         )
 
     def _memory_block(self) -> str:
         return self.memory.context_block() if self.memory is not None else ""
 
+    def _asset_block(self) -> str:
+        """What the child has imported, and what is honestly known about it.
+
+        Injected, not fetched. Section 18 lists a ``list_assets`` tool; building it would
+        repeat the mistake SPIKES.md section 4 measured, so the application states what
+        it already knows instead and the tool set stays at four.
+        """
+        return assets.context_block(
+            self.project,
+            getattr(self.provider, "info", None),
+            attached=self._attached,
+        )
+
     def send(
         self,
         text: str,
         *,
+        attachments: Sequence[assets.Asset] = (),
         on_text: Callable[[str], None] | None = None,
     ) -> Turn:
-        """One exchange: the child says something, the agent acts, and reports back."""
+        """One exchange: the child says something, the agent acts, and reports back.
+
+        ``attachments`` are files the child dropped onto this message (WORKORDER_01
+        sections 12 and 13). They are already imported into the project by the time they
+        arrive here -- what this adds is that *these* are the ones being talked about.
+        """
         # Checkpoint whatever state exists before touching anything, so "undo" goes
         # back to what the child had rather than to some earlier assistant turn.
         self._checkpoint(LABEL_BEFORE_CHANGE)
 
         # "Like we talked about before" is answered from memory, deterministically,
         # before the model sees the message (WORKORDER_01 section 15A, memory retrieval).
-        # The refresh is unconditional: a lookup that finds nothing must also clear the
-        # previous turn's, or the model keeps being handed an answer to an old question.
+        self._attached = tuple(attachments)
         if self.memory is not None:
             self.memory.recall_for(text)
-            self.refresh_state()
+        # Unconditional: a lookup that finds nothing must also clear the previous turn's,
+        # or the model keeps being handed an answer to an old question -- and the same is
+        # true of an attachment, which must not linger onto the next message.
+        self.refresh_state()
 
         self.history.append(Message(role="user", content=text))
         turn = Turn()
         challenged = False
+        corrected = False
 
         for _ in range(MAX_TOOL_CALLS_PER_TURN):
             reply = self._generate(on_text)
@@ -220,6 +264,18 @@ class AgentController:
                         "changed anything yet."
                     )))
                     continue
+                if not corrected:
+                    invented = self._described_a_file_it_cannot_see(reply.text, text)
+                    if invented is not None:
+                        corrected = True
+                        turn.corrected_invention = True
+                        self.history.append(Message(role="user", content=(
+                            f"You have not seen {invented} and neither has anyone else. "
+                            f"Do not say what is in it or what it looks like. Say what you "
+                            f"actually did with the file, and tell them plainly that you "
+                            f"do not know what the picture shows."
+                        )))
+                        continue
                 return self._finish_turn(turn)
 
             should_continue = self._run_tools(reply.tool_calls, turn)
@@ -231,6 +287,9 @@ class AgentController:
 
     def _finish_turn(self, turn: Turn) -> Turn:
         """Save a checkpoint if the assistant changed anything, then update memory."""
+        # The attachment belonged to the message just answered. The file stays in the
+        # project and keeps appearing in the listing; only "they just added this" goes.
+        self._attached = ()
         changed = any(result.changed_files for _, result in turn.tool_results)
         # State is refreshed before the checkpoint so the saved version contains both the
         # change and the note describing it.
@@ -286,6 +345,22 @@ class AgentController:
         # Versioning must never break the thing the child is doing -- except for a
         # credential, which save_quietly still raises for.
         return self.versions.save_quietly(label)
+
+    def _described_a_file_it_cannot_see(self, text: str, said: str) -> str | None:
+        """Catch the model describing an imported file nobody has looked inside.
+
+        The prompt already forbids this, and SPIKES.md section 10 measured that the
+        prompt is not enough: the honesty block took the model from 25% to 50% honest
+        and left it answering "does the dragon in my picture have wings?" with "Yes...
+        I see them clearly." So the application checks, exactly as it checks for a
+        claimed edit that never happened.
+
+        The decision of what counts lives in :func:`assets.invented_description`, and is
+        deliberately narrow -- naming the file, and repeating a word the child used, are
+        both fine.
+        """
+        unread = assets.unread_assets(self.project, getattr(self.provider, "info", None))
+        return assets.invented_description(text, said, unread)
 
     @staticmethod
     def _claimed_a_change_it_did_not_make(turn: Turn, text: str) -> bool:
