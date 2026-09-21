@@ -86,7 +86,7 @@ turn cloud on, and the child can switch to Claude or OpenAI after a warning, or 
 pictures with an image model. Everything except Image Creation still works with cloud off,
 which is the default.
 
-537 tests pass, ruff is clean.
+538 tests pass, ruff is clean.
 
 **Phase 8 is the setup wizard**, and Phase 7 handed it two concrete items:
 
@@ -107,7 +107,7 @@ privileged-action pattern in §5, not a new mechanism.
 ## 2. Get running in five minutes
 
 ```bash
-.venv/bin/python -m pytest -q      # 537 passing, about 40 seconds
+.venv/bin/python -m pytest -q      # 538 passing, about 40 seconds
 ```
 
 It is slower than it was (7 s at Phase 6). Phase 7 added tests that actually run each
@@ -118,8 +118,16 @@ and image tests are hermetic and fast; the profile runs are not.
 **Run the test suite unwrapped.** It is hermetic — temporary directories, no network, no
 model — so it needs nothing from the sandbox. Wrapping it in `scripts/offline.sh` used to
 be the documented instruction and it was wrong: see "Seatbelt does not nest" in section 4.
-A wrapped run is green now (233 passed, 16 skipped), but the skips are real coverage you
-lose, so prefer the unwrapped run.
+
+**A wrapped run is not green, and this file used to claim it was.** Measured at Phase 7:
+`scripts/offline.sh .venv/bin/python -m pytest -q` gives **4 failed, 501 passed, 33
+skipped**. The four are in `tests/test_budget.py` and they fail the same way at the
+Phase 6 commit, so this is not a Phase 7 regression — it is the nested-Seatbelt problem
+again. Twelve tests were taught to *skip* when the sandbox cannot be applied; these four
+exercise the repair loop, which runs the project, and they assert on a successful run
+instead, so they fail rather than skip. Either teach them the same skip or give them a
+stubbed runner. Until then: **run unwrapped.** The suite needs nothing the wrapper
+provides.
 
 If `.venv` does not exist yet, run `./Setup\ Open\ Nest.command` first. It installs its
 own CPython 3.12.14 — do not expect a system Python to be usable.

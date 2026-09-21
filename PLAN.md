@@ -4,7 +4,7 @@ Working plan derived from `WORKORDER_01.md` (functional scope) and `DESIGN_DOC.m
 (naming and visual direction). This document records phases, exit criteria, decisions,
 and open questions. It is expected to be amended as work proceeds.
 
-Status: **Phases 0-6 complete. Phase 7 (remaining profiles) is next.**
+Status: **Phases 0-7 complete. Phase 8 (setup wizard and installation lifecycle) is next.**
 
 New developers should start with [HANDOFF.md](HANDOFF.md).
 
@@ -691,7 +691,7 @@ per profile in `tests/test_profiles.py` against the real sandbox. DoD 32–34 is
 to end in
 `test_a_research_project_turns_a_dropped_csv_into_analysis_and_a_chart`: a CSV is dropped
 into `data/`, the analysis reports the file, its row count and its columns, and a PNG
-chart is written and found by the application. 537 tests, ruff clean.
+chart is written and found by the application. 538 tests, ruff clean.
 
 **Four of the five profiles had never worked, and nothing said so.** `profiles.json` named
 five starter templates; only `pygame_basic` had ever existed. `create_project` skipped a
