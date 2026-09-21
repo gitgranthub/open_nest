@@ -8,6 +8,15 @@ import pytest
 
 from opennest.agent.tools import Toolbox, normalise_tool_name
 from opennest.projects.manager import create_project
+from opennest.security.process_sandbox import sandbox_available
+
+#: run_project fails closed when the process sandbox cannot be applied, which is the
+#: correct behaviour and not something to work around -- so tests that start a project
+#: skip instead. This is what happens when the suite is run inside scripts/offline.sh,
+#: because Seatbelt profiles cannot be nested.
+needs_sandbox = pytest.mark.skipif(
+    not sandbox_available(), reason="the process sandbox cannot be applied here"
+)
 
 
 @pytest.fixture
@@ -97,6 +106,7 @@ def test_inspect_error_is_not_a_tool(box: Toolbox) -> None:
     assert not box.dispatch("inspect_error", {}).ok
 
 
+@needs_sandbox
 def test_failed_run_is_reported_with_the_error(box: Toolbox) -> None:
     (box.project.directory / "src" / "game.py").write_text("raise ValueError('boom')\n")
     run = box.dispatch("run_project", {})
@@ -104,10 +114,29 @@ def test_failed_run_is_reported_with_the_error(box: Toolbox) -> None:
     assert box.last_run is not None and "boom" in box.last_run.failure_text
 
 
+@needs_sandbox
 def test_successful_run_is_reported(box: Toolbox) -> None:
     (box.project.directory / "src" / "game.py").write_text("print('it works')\n")
     result = box.dispatch("run_project", {})
     assert result.ok and "it works" in result.content
+
+
+@needs_sandbox
+def test_a_successful_run_is_remembered_in_the_manifest(box: Toolbox) -> None:
+    """Section 15A: run status is a fact the application records, not one it asks for."""
+    from opennest.projects.manager import read_manifest
+
+    (box.project.directory / "src" / "game.py").write_text("print('ok')\n")
+    assert box.project.manifest.last_successful_run is None
+    box.dispatch("run_project", {})
+    assert read_manifest(box.project.directory).last_successful_run is not None
+
+
+@needs_sandbox
+def test_a_failed_run_is_not_remembered_as_a_success(box: Toolbox) -> None:
+    (box.project.directory / "src" / "game.py").write_text("raise ValueError('no')\n")
+    box.dispatch("run_project", {})
+    assert box.project.manifest.last_successful_run is None
 
 
 def test_edit_file_replaces_one_exact_line(box: Toolbox) -> None:

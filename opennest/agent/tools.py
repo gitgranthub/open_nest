@@ -15,9 +15,11 @@ Two things here come straight out of Phase 1 (SPIKES.md section 4):
 
 from __future__ import annotations
 
+import contextlib
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from opennest.execution.python_runner import RunResult, run_project
 from opennest.projects.manager import Project
@@ -249,12 +251,27 @@ class Toolbox:
             interactive=self.project.profile.is_interactive,
         )
         self.last_run = result
+        if result.ok:
+            self._record_success()
         if result.still_running:
             return ToolResult(True, "It started and is running now.", run=result)
         if result.ok:
             body = result.stdout.strip() or "(the project produced no output)"
             return ToolResult(True, f"It ran successfully.\n\n{body}", run=result)
         return ToolResult(False, result.failure_text or "It failed with no output.", run=result)
+
+    def _record_success(self) -> None:
+        """Remember that the project worked, so memory can say so after a restart.
+
+        WORKORDER_01 section 15A names successful run status as a fact the application
+        populates programmatically. Without this the manifest field stays None forever
+        and ``project_state.md`` can never report it.
+        """
+        self.project.manifest.last_successful_run = (
+            datetime.now(timezone.utc).isoformat(timespec="seconds")
+        )
+        with contextlib.suppress(OSError):
+            self.project.save()
 
     def _compile_project(self, args: dict) -> ToolResult:
         command = self.project.profile.compile_command

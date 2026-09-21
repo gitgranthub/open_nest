@@ -1,7 +1,7 @@
 # Handoff — start here
 
-You are picking up Open Nest after Phase 3. **Phase 4 (memory and thread rollover) is
-next.** This document is what you need before touching anything.
+You are picking up Open Nest after Phase 4. **Phase 5 (assets) is next.** This document
+is what you need before touching anything.
 
 Read in this order: this file → [PLAN.md](PLAN.md) (phases and decisions) →
 [SPIKES.md](SPIKES.md) (measurements the design rests on). `WORKORDER_01.md` and
@@ -22,25 +22,31 @@ it belongs in section 4.
 | 1 — Sandbox and risk spikes | complete, [PR #2](https://github.com/gitgranthub/open_nest/pull/2) |
 | 2 — Core vertical slice | complete, [PR #3](https://github.com/gitgranthub/open_nest/pull/3) |
 | 3 — Durability | complete, [PR #4](https://github.com/gitgranthub/open_nest/pull/4) |
-| **4 — Memory and thread rollover** | **not started — yours** |
+| 4 — Memory and thread rollover | complete, not yet in a PR |
+| **5 — Assets** | **not started — yours** |
 
 Branches are **stacked**: each is based on the previous one, so each PR shows only its
-own phase. Nothing is merged to `main` yet. Branch from `phase-3-durability`.
+own phase. Nothing is merged to `main` yet. Branch from `phase-4-memory`.
 
 What works today: a child picks a project type, describes an idea, the local model edits
-the project, it runs, and they can undo. Everything is local; there is no cloud provider,
-no asset import, and no persistent memory.
+the project, it runs, they can undo, and the project remembers its decisions across
+conversations. Everything is local; there is no cloud provider and no asset import.
 
-185 tests pass, ruff is clean.
+249 tests pass, ruff is clean.
 
 ---
 
 ## 2. Get running in five minutes
 
 ```bash
-source scripts/sandbox.sh          # contain everything under .opennest-sandbox/
-scripts/offline.sh .venv/bin/python -m pytest -q
+.venv/bin/python -m pytest -q      # 249 passing
 ```
+
+**Run the test suite unwrapped.** It is hermetic — temporary directories, no network, no
+model — so it needs nothing from the sandbox. Wrapping it in `scripts/offline.sh` used to
+be the documented instruction and it was wrong: see "Seatbelt does not nest" in section 4.
+A wrapped run is green now (233 passed, 16 skipped), but the skips are real coverage you
+lose, so prefer the unwrapped run.
 
 If `.venv` does not exist yet, run `./Setup\ Open\ Nest.command` first. It installs its
 own CPython 3.12.14 — do not expect a system Python to be usable.
@@ -50,12 +56,13 @@ own CPython 3.12.14 — do not expect a system Python to be usable.
 | Phase | Command | Network |
 |---|---|---|
 | Fetch | `scripts/fetch.sh model <id>` / `scripts/fetch.sh deps` | **on**, pinned artifacts only |
-| Everything else | `scripts/offline.sh <command>` | **off** |
+| Anything touching the model | `scripts/offline.sh <command>` | **off** |
+| The test suite | `.venv/bin/python -m pytest -q` | not used |
 
-Run tests and any model work through `scripts/offline.sh`. It denies network and confines
-writes to the project using macOS Seatbelt. This exists because the developer requires
-downloaded models and libraries to be contained on a work-managed machine, and because
-running the suite inside it has already caught two test bugs that passed outside it.
+`scripts/offline.sh` is for the case it was built for: spikes, end-to-end runs, and
+anything that loads the downloaded model or could reach the network. It denies network and
+confines writes to the project using macOS Seatbelt, because the developer requires
+downloaded models and libraries to stay contained on a work-managed machine.
 
 Launch the app: `./Launch\ Open\ Nest.command`, or
 `OPENNEST_HOME=$PWD/.opennest-sandbox .venv/bin/python -m opennest.app`.
@@ -74,14 +81,26 @@ opennest/
 │   ├── flight_deck.py      home screen
 │   ├── workbench.py        project workspace
 │   ├── worker.py           QThread plumbing; generation never blocks the UI
-│   └── main_window.py      shell, owns the provider and VersionHistory lifecycle
+│   └── main_window.py      shell; owns the provider, VersionHistory and memory lifecycle
 ├── ai/
 │   ├── provider.py         ModelProvider interface, Message/ToolCall/Reply
 │   ├── mlx_provider.py     local MLX; resolves a local snapshot path before loading
 │   └── router.py           curated catalogue, refuses cloud when disabled
 ├── agent/
-│   ├── controller.py       the loop: prompt, tools, repair, checkpoints
+│   ├── controller.py       the loop: prompt, tools, repair, checkpoints, rollover
 │   └── tools.py            read_file / edit_file / write_file / run_project
+├── memory/
+│   ├── manager.py          the only memory object the controller holds
+│   ├── project_bible.py    durable knowledge; app owns Project and Assets
+│   ├── project_state.py    current state, all of it deterministic
+│   ├── compactor.py        supersede on conflict, then cap. No model call.
+│   ├── history_search.py   lookup, injected into context — deliberately not a tool
+│   ├── safety.py           the one place memory files get written. Secret-scanned.
+│   └── markdown.py         the little bit of Markdown the memory files use
+├── conversations/
+│   ├── context_budget.py   per-model policy, usage, when to hand over
+│   ├── archive.py          thread_vNN.jsonl, sequential, never overwritten
+│   └── rollover.py         the section 15A handover sequence
 ├── projects/               manifest, profiles, starter templates
 ├── execution/              out-of-process running, batch vs interactive
 ├── versioning/             git_manager, checkpoint, autosave, secret_scanner
@@ -121,6 +140,13 @@ does.** Do not "clean up" these without re-measuring:
 
 **Other traps:**
 
+- **Seatbelt does not nest.** Applying a `sandbox-exec` profile inside an existing one
+  fails with `sandbox_apply: Operation not permitted`, so the twelve tests that start a child
+  project cannot pass from inside `scripts/offline.sh` — `run_project` correctly refuses
+  to run anything it cannot confine. `process_sandbox.sandbox_available()` now *probes*
+  the capability by applying a trivial profile once, rather than checking that the binary
+  exists, so those tests skip instead of failing. Do not weaken the sandbox to make them
+  pass; failing closed is the point.
 - `mlx_lm.load("<repo-id>")` contacts the Hub even for a fully cached model and fails
   offline. Always resolve a local snapshot path first — see `ai/mlx_provider.py`.
 - Every model in `models.json` is pinned to a commit SHA. `mlx-community` publishes
@@ -157,52 +183,70 @@ in the macOS Keychain and nowhere else.
 
 ---
 
-## 6. Phase 4 — what you are building
+## 6. How memory works, now that it does
 
-Persistent project memory and invisible conversation rollover. `WORKORDER_01.md` §15A is
-the specification; read it in full. `PLAN.md` has the phase entry and exit criteria.
+Phase 4 is built. `WORKORDER_01.md` §15A is the specification. Four decisions in it are
+not obvious from the code, and one of them looks like a deviation until you read why.
 
-Target: **DoD steps 39–43** — the child keeps working, the thread silently rolls over, and
-the new thread still knows the project's decisions without replaying the conversation.
+**Memory is injected, never fetched.** There is no `search_memory` tool and there should
+not be one. Adding a fifth tool cost 19 points of selection accuracy in Phase 1, and the
+dominant failure was the model reaching for a lookup instead of acting. So when a child
+says "like we talked about before", `memory/history_search.py` finds the answer
+deterministically and the application puts it in the system prompt. The model never
+chooses to search and cannot fail to.
 
-### Already in place for you
+**`project_state.md` is written but not injected — deliberately.** §15A lists it in the
+new-thread bootstrap. `controller.project_state()` has injected the same facts live since
+Phase 2, straight from the application, so reading the file back would put them in the
+prompt twice and slightly stale. What the live block cannot know — the carried task and
+open problems — *is* injected, via `project_state.carried_notes()`. Same for the handoff
+summary: its decisions are merged into the bible and its "where we left off" line becomes
+the carried task, so injecting the file as well would repeat both.
 
-- `paths.project_internal_dir(project)` → `.opennest/`, already created per project,
-  already protected from the model by `security/sandbox.py`, already gitignored for
-  `conversations/` while `project_bible.md` and `project_state.md` are versioned.
-- `versioning/autosave.atomic_write_text` — use it for memory files. A half-written bible
-  is worse than none.
-- `agent/controller.py::project_state()` — the existing deterministic context block. Memory
-  should extend this, not replace it.
-- `models.json` already carries a `context_policy` per model
-  (`max_context_tokens`, `rollover_threshold`, `memory_reserved_tokens`), and a test
-  enforces that rollover happens before the hard limit.
-- `Reply` carries `prompt_tokens` and `generated_tokens` from the provider, so you can
-  measure budget without re-tokenising.
+Auditing that claim found two facts the live block genuinely did not carry, both now
+fixed: the package list (the base prompt tells the model to stop rather than install,
+while never saying what exists) and `manifest.last_successful_run`, which nothing wrote,
+so the section that renders it was dead. If you add a section to `project_state.md`,
+check which side of this line it falls on.
 
-### What §15A insists on, and is easy to get wrong
+**`## Superseded Decisions` never reaches the prompt.** A model handed a list of things
+that are no longer true will act on some of them. `Bible.render_for_prompt()` leaves it
+out; the file keeps it for a person to read. §15A shows that section for the reader's
+benefit, not the model's.
 
-- **Deterministic facts are written by the application, not the model.** File names,
-  dependencies, model selection, run status, Git state. Only the semantic summary comes
-  from the model. This is the same principle that made tool selection work in Phase 2.
-- **The child never sees it happen.** No "context window full", no New Chat button.
-- **Roll over early**, while there is still enough context to write a good handoff.
-- **Never store credentials in memory files.** `versioning/secret_scanner.py` already
-  exists — reuse it before writing memory, not only before committing.
+**Supersession is mechanical and depends on dropping numbers.** `compactor.subject()`
+reduces a decision to its first three meaningful words with digits removed, so "Player
+speed is 5" and "Player speed is 8" collapse to the same subject and the old one moves to
+`## Superseded Decisions`. Keeping the number would miss the exact case the mechanism
+exists for. Comparison is by prefix, not equality, because a restatement is usually
+longer than the original.
 
-### Suggested order
+**A rollover cannot fail because the model had a bad turn.** One call, plain prose under
+two headings, leniently parsed, and a deterministic fallback built from facts when it
+yields nothing. §15A requires that fallback in its own right.
 
-1. `memory/project_bible.py` and `memory/project_state.py` — read/write with atomic writes,
-   deterministic sections owned by the app.
-2. `conversations/context_budget.py` — token accounting against the model's policy.
-3. `conversations/archive.py` — `thread_vNN.jsonl`, sequential, never overwritten.
-4. `conversations/rollover.py` — handoff summary, archive, new thread bootstrap.
-5. `memory/compactor.py` and `memory/history_search.py`.
-6. Wire into `AgentController`, which already owns the message list.
+Everything that writes a memory file goes through `memory/safety.py`, which secret-scans
+first and drops the offending line. Chat archives too — a child can paste a key into chat
+as easily as into a file.
 
-Build a **scripted-provider test** for rollover the way `tests/test_agent.py` does — force
-a low threshold in test config and prove the new thread retains decisions. Do not rely on
-the real model for the loop's correctness; use it to check quality separately.
+### What is not done
+
+- **Rollover latency is unmeasured with the real model.** Summarising sends the thread's
+  prose back through the model a second time, and closing a project does the same. Phase
+  1 measured prompt throughput at 39.6 tok/s on a short prompt; if that figure holds for
+  a few thousand tokens, a rollover is a visible pause after a turn and quitting pauses
+  too. Measure it before Phase 10. If it is bad, the lever is already there —
+  `close(summarise=False)` — and the real fix is running the handoff on the worker
+  thread rather than inline.
+- **The recall cue list is an unmeasured heuristic.** `history_search.CUES` decides when
+  the application searches memory. A phrasing nobody thought of is simply missed; the
+  failure is soft, because the bible is in the prompt either way. It was deliberately not
+  tuned by intuition — measure it, the way everything else here was.
+- **The live thread is not persisted as it grows.** It is archived at rollover and at
+  close, so a crash loses the current transcript — never the project or the bible.
+- **Memory quality has not been checked against the real model.** The loop is proven by
+  `tests/test_rollover.py`; whether a 4B model writes a *good* handoff is a separate
+  measurement, the way Phase 2 measured tool selection separately from tool wiring.
 
 ---
 

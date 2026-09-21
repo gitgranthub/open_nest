@@ -3,12 +3,11 @@
 A fake provider keeps these tests deterministic and fast. Real-model behaviour was
 measured separately in Phase 1; what matters here is that the loop wires tools correctly,
 refreshes state, and honours the repair cap.
+
+The provider and the project fixture live in conftest.py, shared with test_rollover.py.
 """
 
 from __future__ import annotations
-
-from collections.abc import Iterator, Sequence
-from pathlib import Path
 
 import pytest
 
@@ -19,46 +18,15 @@ from opennest.agent.controller import (
     project_state,
 )
 from opennest.agent.tools import Toolbox
-from opennest.ai.provider import Chunk, Message, ModelInfo, ModelProvider, Reply, ToolCall
-from opennest.projects.manager import create_project
+from opennest.ai.provider import Reply, ToolCall
+from opennest.security.process_sandbox import sandbox_available
+from tests.conftest import ScriptedProvider
 
-
-class ScriptedProvider(ModelProvider):
-    """Replays a fixed list of replies, recording what it was asked."""
-
-    def __init__(self, replies: list[Reply]) -> None:
-        self.info = ModelInfo(id="fake", name="Fake", provider="fake")
-        self.replies = list(replies)
-        self.calls: list[list[Message]] = []
-        self.tools_offered: list[list[dict]] = []
-        self._current = Reply()
-        self._loaded = False
-
-    @property
-    def is_loaded(self) -> bool:
-        return self._loaded
-
-    def load(self) -> None:
-        self._loaded = True
-
-    def unload(self) -> None:
-        self._loaded = False
-
-    def chat(self, messages: Sequence[Message], *, tools=None, settings=None) -> Iterator[Chunk]:
-        self.calls.append(list(messages))
-        self.tools_offered.append(list(tools or []))
-        self._current = self.replies.pop(0) if self.replies else Reply(text="(nothing left)")
-        if self._current.text:
-            yield Chunk(text=self._current.text)
-        yield Chunk(done=True)
-
-    def finish(self) -> Reply:
-        return self._current
-
-
-@pytest.fixture
-def project(tmp_path: Path):
-    return create_project("Asteroid Game", "games", root=tmp_path)
+#: See tests/test_tools.py: run_project fails closed without the process sandbox, so a
+#: test that starts a project skips rather than fails when it cannot be applied.
+needs_sandbox = pytest.mark.skipif(
+    not sandbox_available(), reason="the process sandbox cannot be applied here"
+)
 
 
 def make(project, replies, build_style="build"):
@@ -79,6 +47,13 @@ def test_project_state_lists_files_so_no_tool_is_needed(project) -> None:
     state = project_state(project)
     assert "game.py" in state
     assert "you already know these" in state
+
+
+def test_project_state_names_the_packages_that_exist(project) -> None:
+    """The base prompt tells it to stop rather than install, so it must know what it has."""
+    state = project_state(project)
+    assert "pygame" in state
+    assert "there are no others" in state
 
 
 def test_project_state_hides_internal_directories(project) -> None:
@@ -131,6 +106,7 @@ def test_file_list_is_refreshed_after_a_write(project) -> None:
     assert "fresh.py" in provider.calls[-1][0].content
 
 
+@needs_sandbox
 def test_failed_run_triggers_repair_and_succeeds(project) -> None:
     (project.directory / "src" / "game.py").write_text("raise ValueError('boom')\n")
     controller, _ = make(project, [
