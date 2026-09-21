@@ -1,6 +1,9 @@
 {
   "_note": "Curated model list (WORKORDER_01 section 3). Model behaviour must never be hard-coded elsewhere in the application. Every mlx entry is pinned to an explicit commit SHA: the mlx-community namespace holds community MLX conversions of upstream models, not the original publishers' repositories, so downloads must be reproducible rather than tracking whatever main contains. Bumping a pin is a deliberate edit. 'verified' means a real inference has been run through the application's own provider code.",
-  "schema_version": 2,
+  "_note_provider_options": "'provider_options' is merged into the request body by the cloud providers, untouched. It is how a model declares its own request shape without a branch in Python: Claude Sonnet 5 takes thinking {type: adaptive} and returns 400 for budget_tokens, while Haiku 4.5 is the other way round.",
+  "_note_capabilities": "'supports_temperature', 'supports_thinking_budget' and 'output_headroom_tokens' are per-model capabilities, NOT inferences the provider makes from the rest of the request. Whether a model accepts a sampling temperature is a fact about that model: one may reason and still accept it, another may reject it with no thinking at all. Declare it here and the provider obeys. They default to the local-model answer (temperature yes, no manual thinking budget, no extra output room), so only a model that differs needs to say so. 'output_headroom_tokens' was called 'reasoning_reserve_tokens' until it was measured: on Luna, reasoning is 14-334 tokens while a long answer wanted 2179 against a 1200 default cap, so the field is really headroom for the whole output and is now named for what it does.",
+  "_note_cloud_context": "The cloud context_policy values are a COST budget, not a context limit. Claude Sonnet 5's real window is 1M tokens; at $2 per 1M input tokens a turn near a 120000-token budget costs about $0.24 of input alone, every turn, for a child changing one line of a game. 48000/36000 keeps a turn near $0.10 on Sonnet and half that on Haiku while still giving three times the room of the largest local model. Raise it deliberately, knowing the per-turn price, not because the window allows it.",
+  "schema_version": 3,
   "default_local_model": "qwen3-4b-instruct",
   "models": [
     {
@@ -99,36 +102,75 @@
       "model_id": "claude-sonnet-5",
       "description": "Uses the internet",
       "recommended": false,
-      "verified": false,
+      "verified": true,
       "requires_internet": true,
       "may_cost_money": true,
       "supports_images": true,
       "supports_documents": true,
       "supports_tools": true,
+      "supports_temperature": false,
+      "supports_thinking_budget": false,
+      "output_headroom_tokens": 2000,
+      "provider_options": {
+        "thinking": { "type": "adaptive" }
+      },
       "context_policy": {
-        "max_context_tokens": 120000,
-        "rollover_threshold": 90000,
+        "max_context_tokens": 48000,
+        "rollover_threshold": 36000,
         "memory_reserved_tokens": 6000
-      }
+      },
+      "notes": "Adaptive thinking, and no manual budget_tokens. Temperature is omitted because this model does not accept a sampling temperature -- declared, not inferred.",
+      "verified_notes": "SPIKES.md section 11: real request through the application's own provider code. Streamed text, a run_project tool call, and usage (38 in / 36 out) all returned. Both capability flags were PROBED by contradicting them: the service rejected a temperature and rejected budget_tokens, so both 'false' values are measured rather than assumed."
+    },
+    {
+      "id": "claude-haiku",
+      "name": "Claude Haiku",
+      "provider": "anthropic",
+      "model_id": "claude-haiku-4-5",
+      "description": "Uses the internet",
+      "recommended": false,
+      "verified": true,
+      "requires_internet": true,
+      "may_cost_money": true,
+      "supports_images": true,
+      "supports_documents": true,
+      "supports_tools": true,
+      "supports_temperature": false,
+      "supports_thinking_budget": true,
+      "output_headroom_tokens": 2000,
+      "provider_options": {
+        "thinking": { "type": "enabled", "budget_tokens": 1024 }
+      },
+      "context_policy": {
+        "max_context_tokens": 48000,
+        "rollover_threshold": 36000,
+        "memory_reserved_tokens": 6000
+      },
+      "notes": "The cheaper rung, and the one to use for integration testing where cost matters more than judgement. Present mainly so the provider layer is exercised against BOTH Anthropic request shapes: this entry takes a manual budget_tokens, which Sonnet 5 rejects with a 400.",
+      "verified_notes": "SPIKES.md section 11: real request through the application's own provider code. Streamed text, a run_project tool call, and usage (60 in / 109 out) all returned. budget_tokens was ACCEPTED here and rejected on Sonnet 5, which is the split this entry exists to prove. The budget is 1024 rather than 4000 because max_tokens must exceed it and thinking tokens are billed as output -- see _make_room_for_thinking."
     },
     {
       "id": "openai-gpt",
       "name": "OpenAI",
       "provider": "openai",
-      "model_id": null,
+      "model_id": "gpt-5.6-luna",
       "description": "Uses the internet",
       "recommended": false,
-      "verified": false,
+      "verified": true,
       "requires_internet": true,
       "may_cost_money": true,
       "supports_images": true,
       "supports_documents": true,
       "supports_tools": true,
+      "supports_temperature": false,
+      "output_headroom_tokens": 2000,
       "context_policy": {
-        "max_context_tokens": 120000,
-        "rollover_threshold": 90000,
+        "max_context_tokens": 48000,
+        "rollover_threshold": 36000,
         "memory_reserved_tokens": 6000
-      }
+      },
+      "notes": "Built against the Responses API. Image GENERATION is a separate model (gpt-image-2.5-flare) and decision D6; it is deliberately not a catalogue entry, because a catalogue entry is something that answers a conversation and an image model is not. Note that supports_images here means this model could READ a picture -- it does not mean Open Nest sends it one. See provider.IMAGE_INPUT_IMPLEMENTED.",
+      "verified_notes": "SPIKES.md section 11, real request through the application's own provider code on 2026-09-21: connect 2.3s, 78 chars streamed, usage 34 in / 24 out, run_project tool call assembled. supports_temperature was PROBED by contradicting it and the service refused a temperature, so 'false' is measured. output_headroom_tokens 2000 was measured on gpt-5-mini rather than on luna, which barely reasoned on the test prompt (24 output tokens for 78 characters); it is a ceiling, not a spend, so it costs nothing when unused."
     }
   ]
 }

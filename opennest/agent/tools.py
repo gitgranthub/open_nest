@@ -119,10 +119,30 @@ def schemas_for(tool_names: tuple[str, ...]) -> list[dict]:
 class Toolbox:
     """Executes tool calls against one project. Holds the last run for inspect_error."""
 
-    def __init__(self, project: Project, *, python_executable: str | None = None) -> None:
+    def __init__(
+        self,
+        project: Project,
+        *,
+        python_executable: str | None = None,
+        network_policy: Callable[[], bool] | None = None,
+    ) -> None:
         self.project = project
         self.python_executable = python_executable
+        #: Answers "may this run reach the internet?" at the moment of the run
+        #: (WORKORDER_01 section 25). A callable rather than a flag because the answer
+        #: can be "Ask Parent", which is a dialog, not a value known at construction.
+        #: None means no -- the same fail-closed default the sandbox has always had.
+        self.network_policy = network_policy
         self.last_run: RunResult | None = None
+
+    def _network_allowed(self) -> bool:
+        if self.network_policy is None:
+            return False
+        try:
+            return bool(self.network_policy())
+        except Exception:
+            # A permission check that fails is not a permission granted.
+            return False
 
     @property
     def allowed(self) -> tuple[str, ...]:
@@ -249,6 +269,7 @@ class Toolbox:
             command,
             python_executable=self.python_executable,
             interactive=self.project.profile.is_interactive,
+            allow_network=self._network_allowed(),
         )
         self.last_run = result
         if result.ok:

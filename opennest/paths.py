@@ -31,6 +31,11 @@ PROJECT_INTERNAL_DIRNAME = ".opennest"
 #: those belong in the macOS Keychain.
 INSTALLATION_STATE_FILENAME = "installation.json"
 
+#: Parent controls and switch positions (WORKORDER_01 section 25). Plain JSON, readable
+#: by anyone on the Mac, and for that reason never a place for a credential -- section 22
+#: names plaintext preferences explicitly. ``security.permissions`` enforces it.
+SETTINGS_FILENAME = "settings.json"
+
 #: Set this to contain every Open Nest file under one directory.
 HOME_ENV_VAR = "OPENNEST_HOME"
 
@@ -125,6 +130,10 @@ def projects_root() -> Path:
 
 def installation_state_file() -> Path:
     return app_support_dir() / INSTALLATION_STATE_FILENAME
+
+
+def settings_file() -> Path:
+    return app_support_dir() / SETTINGS_FILENAME
 
 
 def project_internal_dir(project_dir: Path) -> Path:

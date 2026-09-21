@@ -5,6 +5,11 @@ at all without the real model. It replays a fixed list of replies and records wh
 asked, so a test asserts on the prompt the model *would* have received. Real-model
 behaviour is measured separately and recorded in SPIKES.md; these tests are about whether
 the application wires itself together correctly.
+
+:class:`FakeKeyring` is the same idea for credentials, added in Phase 6. Nothing in this
+suite may touch the real macOS Keychain: a test whose result depends on whether the
+developer happens to have saved an API key is not a test. Anything that reads a
+credential takes an injected store, and this is what gets injected.
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ import pytest
 
 from opennest.ai.provider import Chunk, Message, ModelInfo, ModelProvider, Reply
 from opennest.projects.manager import create_project
+from opennest.security import keychain
 
 
 class ScriptedProvider(ModelProvider):
@@ -60,6 +66,64 @@ class ScriptedProvider(ModelProvider):
             return ""
         first = self.calls[-1][0]
         return first.content if first.role == "system" else ""
+
+
+class PasswordDeleteError(Exception):
+    """What ``keyring`` raises when deleting an item that is not there.
+
+    Named rather than imported: ``keychain._is_missing_entry`` recognises it by class
+    name, so this reproduces the real backend's behaviour without the test suite
+    depending on the library's exception hierarchy.
+    """
+
+
+class FakeKeyring:
+    """An in-memory stand-in for the macOS Keychain."""
+
+    def __init__(self, items: dict | None = None) -> None:
+        self.items: dict[tuple[str, str], str] = dict(items or {})
+
+    def get_password(self, service: str, account: str):
+        return self.items.get((service, account))
+
+    def set_password(self, service: str, account: str, value: str) -> None:
+        self.items[(service, account)] = value
+
+    def delete_password(self, service: str, account: str) -> None:
+        if (service, account) not in self.items:
+            raise PasswordDeleteError(account)
+        del self.items[(service, account)]
+
+
+@pytest.fixture
+def credentials():
+    """An empty credential store that touches nothing outside the test."""
+    return keychain.Credentials(backend=FakeKeyring())
+
+
+@pytest.fixture
+def configured_credentials():
+    """A store with both cloud keys saved, for the "a parent has set this up" cases."""
+    store = keychain.Credentials(backend=FakeKeyring())
+    store.save_key("anthropic", "sk-ant-api03-" + "a" * 40)
+    store.save_key("openai", "sk-proj-" + "b" * 40)
+    return store
+
+
+@pytest.fixture
+def can_send_images(monkeypatch):
+    """Pretend a provider can put image bytes in front of a model.
+
+    None can, today (``provider.IMAGE_INPUT_IMPLEMENTED``). Tests of the *capability
+    rule* -- "a model that can see should not be told it cannot" -- need the
+    precondition to hold, and those rules are correct and worth keeping tested. Tests of
+    today's behaviour must not use this fixture.
+
+    Delete it in the change that implements image transmission, along with the constant.
+    """
+    from opennest.ai import provider as provider_module
+
+    monkeypatch.setattr(provider_module, "IMAGE_INPUT_IMPLEMENTED", True)
 
 
 @pytest.fixture

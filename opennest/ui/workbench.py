@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 
 from opennest.agent.controller import AgentController
 from opennest.agent.tools import Toolbox
-from opennest.ai.router import models_that_can_read
+from opennest.ai.router import models_for_project, models_that_can_read, why_unavailable
 from opennest.assets import kinds
 from opennest.assets import manager as assets
 from opennest.execution.python_runner import stop_project
@@ -65,18 +65,28 @@ class Workbench(QWidget):
     """One project, one model, one conversation."""
 
     back_requested = Signal()
+    #: A model the child picked. MainWindow owns the provider, so it decides whether the
+    #: switch may happen -- a cloud model needs the master switch and, usually, consent.
+    model_change_requested = Signal(str)
 
     def __init__(
         self,
         project: Project,
         controller: AgentController,
         versions: VersionHistory | None = None,
+        *,
+        allow_cloud: bool = False,
+        credentials=None,
     ) -> None:
         super().__init__()
         self.project = project
         self.controller = controller
         self.toolbox: Toolbox = controller.toolbox
         self.versions = versions
+        self.allow_cloud = allow_cloud
+        #: Only ever asked whether a key exists, never for its value. Injectable so the
+        #: headless tests do not depend on what is in the developer's own Keychain.
+        self.credentials = credentials
         self._thread = None
         #: Files dropped onto the chat, waiting to go with the next message.
         self._pending: list[assets.Asset] = []
@@ -122,15 +132,79 @@ class Workbench(QWidget):
         kind = QLabel(f"{self.project.profile.name} — Workbench")
         kind.setProperty("role", "mono")
 
-        self._model_status = status_row("Local AI", "idle", "Loading")
+        self._models = QComboBox()
+        self._models.setToolTip("Which AI is helping")
+        self._models.currentIndexChanged.connect(self._model_picked)
+        self.refresh_models()
+
+        self._model_status = status_row(self._status_name(), "idle", "Loading")
 
         row.addWidget(back)
         row.addSpacing(8)
         row.addWidget(title)
         row.addWidget(kind)
         row.addStretch(1)
+        row.addWidget(section_label("Model"))
+        row.addWidget(self._models)
+        row.addSpacing(12)
         row.addWidget(self._model_status)
         return row
+
+    def refresh_models(self) -> None:
+        """Rebuild the picker. Called at build time and after Settings changes.
+
+        DESIGN_DOC section 13 wants the two kinds visually distinguished and forbids
+        presenting cloud models as better -- so every row says where the model runs and
+        nothing says which is preferable. A model that cannot be used yet is shown
+        disabled with the reason, rather than hidden: a parent looking for "where is
+        Claude" should find it, not wonder.
+        """
+        current = self.current_model_id()
+        self._models.blockSignals(True)
+        self._models.clear()
+        for entry in models_for_project(self.project.profile, allow_cloud=True):
+            where = "Internet" if entry.info.requires_internet else "On this Mac"
+            self._models.addItem(f"{entry.info.name} — {where}", entry.info.id)
+            index = self._models.count() - 1
+            reason = why_unavailable(
+                entry, allow_cloud=self.allow_cloud, credentials=self.credentials
+            )
+            if reason:
+                self._models.setItemData(index, reason, Qt.ItemDataRole.ToolTipRole)
+                item = self._models.model().item(index)
+                if item is not None:
+                    item.setEnabled(False)
+        self.select_model(current or self._active_model_id())
+        self._models.blockSignals(False)
+
+    def current_model_id(self) -> str | None:
+        return self._models.currentData() if self._models.count() else None
+
+    def _active_model_id(self) -> str | None:
+        info = getattr(self.controller.provider, "info", None)
+        return getattr(info, "id", None)
+
+    def select_model(self, model_id: str | None) -> None:
+        """Move the picker without asking for a switch. Used to put it back."""
+        if not model_id:
+            return
+        index = self._models.findData(model_id)
+        if index < 0:
+            return
+        blocked = self._models.signalsBlocked()
+        self._models.blockSignals(True)
+        self._models.setCurrentIndex(index)
+        self._models.blockSignals(blocked)
+
+    def _model_picked(self) -> None:
+        model_id = self._models.currentData()
+        if model_id and model_id != self._active_model_id():
+            self.model_change_requested.emit(model_id)
+
+    def _status_name(self) -> str:
+        """"LOCAL AI" or "CLOUD AI" -- section 34 wants the difference always visible."""
+        info = getattr(self.controller.provider, "info", None)
+        return "Cloud AI" if getattr(info, "requires_internet", False) else "Local AI"
 
     def _files_panel(self) -> QFrame:
         """Files and Assets, as WORKORDER_01 section 14 and DESIGN_DOC.md both show them."""
@@ -320,11 +394,17 @@ class Workbench(QWidget):
     def _models_that_could_read(self, asset: assets.Asset):
         """Section 13's "offer a compatible model", only when one is actually usable.
 
-        Cloud stays off until a parent turns it on (section 21), so today this is empty
-        and the child is told the limitation rather than sent after a model they cannot
-        reach. It fills in on its own when the catalogue gains one.
+        With cloud off this is empty and the child is told the limitation rather than
+        sent after a model they cannot reach. With cloud on *and a key saved* it fills
+        in on its own -- no change was needed here in Phase 6, which is what the
+        catalogue lookup was for.
         """
-        return [entry.info for entry in models_that_can_read(asset.kind)]
+        return [
+            entry.info
+            for entry in models_that_can_read(
+                asset.kind, allow_cloud=self.allow_cloud, credentials=self.credentials
+            )
+        ]
 
     def _show_pending(self) -> None:
         if not self._pending:
@@ -342,7 +422,7 @@ class Workbench(QWidget):
 
     def set_model_status(self, state: str, text: str) -> None:
         layout = self.layout().itemAt(0).layout()
-        replacement = status_row("Local AI", state, text)
+        replacement = status_row(self._status_name(), state, text)
         layout.replaceWidget(self._model_status, replacement)
         self._model_status.deleteLater()
         self._model_status = replacement

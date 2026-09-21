@@ -1,9 +1,17 @@
 # Measurements
 
 Everything here was measured, not estimated. Sections 1-7 are the Phase 1 risk spikes
-that the agent and execution layers were built on; sections 8 and 9 record what Phases 2
-to 4 observed afterwards, including where a Phase 1 conclusion turned out not to transfer
+that the agent and execution layers were built on; sections 8 to 13 record what Phases 2
+to 6 observed afterwards, including where a Phase 1 conclusion turned out not to transfer
 and where the documented workflow turned out to be wrong.
+
+Sections 11 to 13 are worth reading even if cloud is not what you are working on. They
+are the clearest examples in this document of why these measurements exist: **eleven
+defects that a complete, passing, hermetic test suite could not see**, plus one case
+where a phase silently switched off a safety property an earlier phase had measured into
+place. Section 13 includes the one that should be most uncomfortable — a sentence in the
+system prompt that told the model to do something the tools refuse, billed once per turn
+for as long as it stood.
 
 **Measured on:** Apple silicon (arm64), macOS 15.7.9, 48 GB unified memory, mlx 0.32.2,
 mlx-lm 0.31.3, Python 3.12.14.
@@ -413,6 +421,346 @@ tested.
 
 ---
 
+## 11. Phase 6 — both cloud providers, against the real services
+
+`spikes/spike_cloud_providers.py`, real requests, real accounts, through the
+application's own provider code — which is what §35A requires of model verification and
+also means the script never handles a key. **Both providers pass every check.**
+
+| Check | claude-haiku-4-5 | claude-sonnet-5 | gpt-5.6-luna | gpt-5-mini |
+|---|---|---|---|---|
+| `connect` — non-streaming, the path Settings uses | 0.7 s | 1.0 s | 2.3 s | 1.5 s |
+| `text` — streamed reply, non-empty | 1.2 s, 95 ch | 1.9 s, 84 ch | 2.0 s, 78 ch | 5.2 s, 78 ch |
+| `usage` — token accounting the context budget relies on | 60 / 94 | 38 / 26 | 34 / 24 | 34 / 183 |
+| `tool` — a call assembled from streamed JSON fragments | `run_project({})` | `run_project({})` | `run_project({})` | `run_project({})` |
+| `temp` — probe: is `supports_temperature: false` true? | **rejected** ✓ | **rejected** ✓ | **rejected** ✓ | **rejected** ✓ |
+| `budget` — probe: is `supports_thinking_budget` true? | **accepted** ✓ | **rejected** ✓ | n/a | n/a |
+| `no key` / `bad key` | pass | pass | pass | pass |
+
+All four are the shipped catalogue entries except `gpt-5-mini`, which is not in the
+catalogue at all.
+
+**The first OpenAI key could not reach `gpt-5.6-luna`** — 403 `model_not_found`,
+*"Project `proj_…` does not have access to model `gpt-5.6-luna`"* — so the provider was
+verified against `gpt-5-mini` through the spike's `--as` override. A second,
+correctly-scoped key then verified luna itself. Both columns are kept because they are
+not the same measurement: `gpt-5-mini` is where findings (4) and (5) were found, and
+**luna behaves noticeably differently** — 24 output tokens for a 78-character answer
+against mini's 183, so luna barely reasoned on the same prompt. `reasoning_reserve_tokens`
+is therefore sized on mini's behaviour, not luna's; it is a ceiling rather than a spend,
+so an unused reserve costs nothing.
+
+The `--as` override is spike-only and has no path into the application. Nothing falls
+back to another model at runtime — see finding (6).
+
+**Every capability flag was probed by contradicting it.** The spike hands the provider a
+`ModelInfo` that claims the model *does* take a temperature, and asks the service. A 400
+confirms the declaration; a success would mean `models.json` is wrong and needlessly
+strict. Same for `budget_tokens`. This is the difference between a config file that
+records what someone was told and one that records what was checked — and it is why
+`supports_temperature: false` and the Sonnet/Haiku budget split are now facts rather
+than claims.
+
+PLAN.md's three "will otherwise bite" details all hold. Sonnet 5 rejects `budget_tokens`
+and Haiku 4.5 accepts it, exactly as stated.
+
+### Six real defects, none of which a hermetic test could have found
+
+The point of the exercise. Each failed on a first real request and is now handled and
+regression-tested. Note the pattern: in every one the request was well-formed and the
+*semantics* were wrong, which is exactly what a scripted transport cannot catch — the
+script agrees with whatever the code sends.
+
+**1. `max_tokens` must exceed `thinking.budget_tokens`.** On this API `max_tokens` covers
+thinking *and* the visible answer. With Haiku's budget at 4000 and the `Settings` default
+of 1200, **every single call failed**. Neither side could have caught it: the budget comes
+from the catalogue, `max_tokens` from the caller, and neither knows about the other. The
+provider now reconciles them in `_make_room_for_thinking`, adding the caller's requested
+output room *on top of* the budget rather than letting it eat the answer. The catalogue
+budget also came down to 1024 — thinking tokens are billed as output, and Haiku's 109
+output tokens for an 84-character answer is most of the bill.
+
+**2. Running out of credit is a 400, not a 402.** The provider mapped 402 to "no credit
+left" and nothing sends one. A real empty account returns 400 with the reason in the body,
+which surfaced to the parent as *"That AI service refused the request (error 400)"* — true
+and useless. Now matched on the body, so the status cannot mislead.
+
+**3. An organisation-scoped key cannot be used at all.** An Anthropic key created at the
+organisation level rather than inside a workspace needs an `anthropic-workspace-id` header
+on every request. The service says so clearly, but in terms of an HTTP header a parent has
+no way to set, so the raw JSON reached the dialog. Now explained in one sentence that tells
+them to create a workspace-scoped key instead. **This is the likeliest thing a real parent
+will hit**, because the console offers both and the difference is not obvious.
+
+**4. The gpt-5 family does not accept `temperature` either.** The catalogue had
+`openai-gpt` defaulting to accepting one, and every request that carried it was refused.
+`connect` still passed, because `check_connection` sends no temperature — so a "Test
+Connection" button would have gone green on a model that could not answer a single
+message. `supports_temperature: false` on that entry now, measured.
+
+**5. A reasoning model can answer with complete silence.** With `max_output_tokens` at
+120, gpt-5-mini reported **34 in / 64 out and streamed zero characters**: it spent the
+entire allowance reasoning and never began the visible answer. The response was a
+success by every mechanical measure. This is the same defect as (1) in a different
+costume — an output cap that covers hidden work *and* the reply — and it is worse,
+because there is no error to notice. Two fixes: `reasoning_reserve_tokens` gives the
+model room on top of what the caller asked for, and
+`_StreamReader.raise_if_silently_truncated` turns a still-empty reply into a sentence a
+child can read instead of nothing at all.
+
+**6. "This project has no access to that model" arrives as a 403, not a 404.** Which
+meant it hit the authentication branch and told the parent *"That AI service did not
+accept the API key"* — sending them to replace a key that was perfectly good. The
+model-access case is now checked ahead of the auth case, on the body rather than the
+status. Found by pointing the shipped catalogue entry at a real key that could not reach
+`gpt-5.6-luna`.
+
+### Still not verified
+
+- **Multi-turn and repair against a cloud model.** One exchange each. The agent loop's
+  repair cycle, rollover and the asset-honesty check have only ever run against the local
+  model — and note that finding (5) is exactly the kind of thing a longer conversation
+  makes likelier, since reasoning grows with the problem.
+- **Cost in practice.** The whole verification run was a handful of tiny calls. A real
+  session is not, and the 48000/36000 budget is still arithmetic rather than an observed
+  bill. gpt-5-mini's 183 output tokens for a 78-character answer is the shape to watch:
+  hidden reasoning is billed and does not appear on screen.
+- **`gpt-5.5-2026-04-23`** was visible on the second key and is not in the catalogue.
+  Nobody has asked for it; noted only so the next person knows it exists.
+
+---
+
+## 12. Phase 6 follow-on — image generation, and a hole it exposed
+
+`spikes/spike_image_generation.py`, one real image per run. This is groundwork for
+decision D6 (an optional "create an image" tab), not an implementation of it.
+
+**Generation works.** `POST /v1/images/generations`, model `gpt-image-2.5-flare`:
+
+| | |
+|---|---|
+| Round trip | 10.8–15.4 s for 1024×1024 |
+| Delivery | **`b64_json` inline** — no URL to fetch, nothing to expire |
+| Size | ~805 KB PNG, `quality=low` by default |
+| Usage | 19 text tokens in, 196 image tokens out |
+
+Three things D6 should take from that. The bytes arrive **in the response**, so there is
+no second fetch and no expiring link — a generated picture can go straight through
+`assets.import_file`, which is the Phase 5 rule it was supposed to inherit, and it does:
+the file imports, classifies as an image, and `describe.py` reads its header correctly
+("PNG image, 1024x1024 pixels, no transparency") without Pillow. **Fifteen seconds is a
+long time**, so this belongs on the worker thread with visible progress, not inline. And
+`quality` came back `low` without being asked for, so the parameter matters and costs
+money.
+
+### The hole: Phase 6 silently disarmed Phase 5's honesty machinery
+
+This is the real finding, and the spike only caught it because it checked rule 2 —
+*generating is not seeing* — rather than stopping at "the image arrived".
+
+`assets.can_interpret` decided an image was readable from `model.supports_images` alone.
+That was right in Phase 5, when no cloud model was reachable and the answer was always
+False. Phase 6 made Claude and OpenAI selectable **without making either able to receive
+an image** — neither provider contains a single line that transmits image bytes. So with
+cloud on, a key saved, and a vision model selected:
+
+- `can_interpret` → **True**
+- the picture left `unread_assets`, so the prompt stopped saying **NOBODY HAS LOOKED**
+- and because `invented_description` only examines unread assets, **the deterministic
+  check stopped examining it too**
+
+Both defences off, zero pixels sent. That is exactly the configuration §10 measured
+producing *"Yes, the dragon in the picture has wings. I see them clearly."*
+
+The fix is `provider.IMAGE_INPUT_IMPLEMENTED`, a single flag stating whether **any**
+provider can put pixels in front of a model. It is False, and `can_interpret` and
+`models_that_can_read` both consult it, so a vision model with no way to receive an
+image is correctly still blind. Flip it in the same change that implements transmission,
+and delete the `can_send_images` test fixture with it.
+
+The lesson generalises past images: **a capability flag on a model is not a capability
+of the system.** `supports_images` was always true and always correct; what was missing
+was the transport, and nothing was checking for it.
+
+### Not done
+
+- **Image *input* is not implemented.** No provider sends an image to a model. Until one
+  does, a vision model is worth nothing to the asset layer.
+- **D6 itself.** This proves generation is reachable and imports cleanly. The tab, the
+  prompt UI, size and quality choices, cost display and where the button lives are all
+  unbuilt.
+- **`gpt-image-2.5-flare` is not in `models.json`,** deliberately: a catalogue entry is
+  something that answers a conversation, and an image model is not. D6 should decide
+  whether it belongs there or in its own list.
+
+### Measured without needing a service
+
+- **The Keychain behaves as Phase 1 measured** (§6). `Credentials.available()` probes by
+  using it, the same reasoning as `sandbox_available()`.
+- **The diagnostic report carries no credential** with both keys configured. Worth
+  recording the near-miss: the secret scanner deliberately ignores obvious placeholders,
+  so an early version of that test used `sk-ant-api03-xxxx...` and passed while proving
+  nothing.
+
+---
+
+## 13. Phase 6 closeout — what a cloud turn costs, and what bounds it
+
+`spikes/spike_luna_budget.py` and `spikes/spike_luna_runtime.py`, real requests against
+`gpt-5.6-luna`. Sections 11 and 12 established that the providers work; this is about
+what happens when a *turn* goes wrong, which is where the money is.
+
+### Luna's token appetite
+
+Five prompts against a real project with the real system prompt (~900 tokens of it), so
+the input side is what ships:
+
+| case | in | out | reasoning | visible chars | secs |
+|---|---|---|---|---|---|
+| simple question | 1041 | 36 | 14 | 0 (called `read_file`) | 1.5 |
+| ordinary edit | 1040 | 74 | 25 | 80 | 2.3 |
+| debug request | 1049 | 43 | 21 | 0 (called `read_file`) | 1.3 |
+| prose answer, no tools | 849 | 143 | 76 | 222 | 3.0 |
+| **long prose answer** | 859 | **2179** | 334 | 7883 | 20.6 |
+
+Two things follow, and the second is not what was expected.
+
+**Luna reasons far less than gpt-5-mini** — 14 to 334 reasoning tokens against mini's
+183 on a one-line answer. Reasoning alone would justify a reserve of a few hundred.
+
+**But the reserve is not really protecting reasoning.** The long prose answer spent
+**2179 output tokens**, and `Settings.max_tokens` defaults to 1200. Without the reserve
+that answer would have been cut off; with it the cap was 3200 and it fit. So
+`reasoning_reserve_tokens: 2000` is **kept for Luna**, now on measured grounds: it is
+the room a substantial answer needs beyond the default cap, of which reasoning is the
+smaller part. A reserve is a ceiling and not a spend, so an unused one costs nothing,
+while one set too low turns a hard question into silence.
+
+Offering tools changes behaviour sharply: with them available Luna reaches for
+`read_file` first and streams no prose at all. Any measurement of "visible response
+size" taken only from tool-calling turns reads zero and means nothing.
+
+**Verbosity was addressed in the prompt, not in the cap.** 7,883 characters is a lot of
+words for a 10-year-old, and the instinct is to clamp `max_tokens` down. That would be
+the wrong lever: a hard cap does not make a model concise, it makes it stop mid-sentence,
+and the failure it produces is the silent-truncation one above. So `prompts/base.txt` now
+says to be brief by default and expand only when asked or genuinely needed, and the
+headroom stays where it is. If a long answer is still wanted, it fits.
+
+**`reasoning_reserve_tokens` was renamed `output_headroom_tokens` after this.** It was
+introduced for reasoning and the measurement showed reasoning is the smaller claim on
+it. A name describing half the reason is how the next person sets it to 400 and
+truncates a good answer.
+
+### The per-turn call ceiling: twelve
+
+Chosen from the flows below, not from a policy. The worst real turn observed used
+**five** calls (four primary plus a rollover). The longest legitimate path that can be
+constructed is a change that fails twice — read, edit, run, repair, run, repair, run,
+reply — at eight, plus an honesty correction and a rollover at ten. **Twelve** leaves
+headroom over that without letting a confused model run indefinitely.
+
+At the ~1,050 input tokens a real turn measured, a turn that somehow reached the ceiling
+costs a few cents. Deliberately not tight: the real spend limit belongs on the API key,
+where a parent sets it, and a ceiling that makes ordinary hard work fail is worse than
+one that occasionally allows an expensive turn.
+
+### The runtime checks
+
+| check | calls | tokens | result |
+|---|---|---|---|
+| `repair` — a real typo'd game | 4 (1 primary, 3 repair) | 5762 in / 271 out | fixed, clean run, did not give up |
+| `repair-bound` — a run that can never succeed | 4 | 4897 in / 290 out | stopped at the 3-attempt cap, child-safe message |
+| `rollover` — thread pushed over threshold | 5, then 2 | 6013 in / 355 out | handoff carried the decision; next turn answered from it |
+| `truncation` — a 16-token cap | 2 | — | detected, retried once, then stopped |
+| `compound` — repair + rollover, ceiling 4 | 4 | 4917 in / 283 out | stayed within the ceiling |
+
+The rollover check is the one worth reading closely. After the thread was archived the
+next turn answered *"We decided on a player speed of **8 pixels per frame**"* — from the
+bible, with the conversation gone. That is DoD 39–43 against a real cloud model rather
+than a scripted one. It also cost **two calls for one thing the child said**, which is
+what "a rollover is billable" means in practice.
+
+### Anthropic parity
+
+The same two flows against `claude-sonnet-5`, to check the runtime behaviour is not
+Luna-shaped. Both pass:
+
+| check | calls | tokens | result |
+|---|---|---|---|
+| `repair` | 4 (1 primary, 3 repair) | 10701 in / 329 out | `run_project(failed) → read_file → edit_file → run_project`; fixed, clean run, no `write_file` detour |
+| `rollover` | 4, then 2 | 8336 in / 387 out | decision persisted, thread archived, next turn recovered it |
+| `truncation` | 2 | — | detected, retried once, then stopped |
+
+The repair trace is the required sequence with no `write_file` detour, and the next
+turn after the rollover answered *"We set PLAYER_SPEED to 8 (up from 5)"* from the
+bible with the conversation gone. Every call, including both rollovers, was counted by
+the shared budget.
+
+Sonnet's input tokens run noticeably higher than Luna's for the same work — 7,674
+against 5,762 on the repair flow — because thinking tokens are folded into the
+conversation. Worth knowing before assuming the two cost the same.
+
+**This run found two more defects**, below.
+
+### Four defects the real repair loop exposed
+
+Neither could have been found with a scripted provider, because a script does whatever
+the test author expected.
+
+**1. The prompt contradicted the tools.** `TOOL_USE_RULES` said *"To change a file, call
+write_file with the complete new contents"* — while `write_file` refuses to overwrite
+(the Phase 2 decision in section 8) and its own schema says to use `edit_file`. Luna
+followed the prompt, was refused, and spent a repair attempt learning what the prompt
+should have said. The trace was
+`run_project(failed) → read_file → write_file(failed) → edit_file`. After the wording
+was corrected it became `run_project(failed) → read_file → edit_file → run_project`: one
+fewer call, and a working game instead of an apology. **A prompt that disagrees with a
+tool is billed every time a model believes it.**
+
+**2. Repair never checked its own work.** Because the fix landed on the last attempt
+with no run after it, the loop reported *"I tried three times and could not get this
+working"* about a game that was, by then, fixed. `_repair_actually_worked` now runs the
+project once before despairing — a local tool call, **no provider call** — and only when
+repair actually changed something. Telling a child their working project is broken is
+worse than the original bug.
+
+**3. A turn could succeed and say nothing at all.** Found by the Anthropic parity run.
+Sonnet 5 repaired the broken game correctly — read, edit, clean run — and produced no
+prose whatsoever, so `turn.text` was empty and the Workbench, which renders an Assistant
+line only when there is one, showed the child **nothing**. Their game was fixed and
+nothing said so.
+
+Luna narrates, which is the only reason this had not been seen; it is not
+provider-specific and the local model can do it too. `_describe_what_happened` now
+states what the tool results already prove — *"I changed src/game.py and ran it. It
+works."* — and costs **no provider call**, because the application knows what happened
+and does not need to buy the sentence. The model's own words are never overwritten.
+
+**4. Anthropic could not detect a silent reply at all, and had less room to avoid one.**
+Found while verifying the fix for (3). `raise_if_silently_truncated` existed only on the
+OpenAI provider, and so did `output_headroom_tokens` — Anthropic got extra room solely
+via `_make_room_for_thinking`, which needs an explicit `budget_tokens` that **Sonnet
+rejects**. So Sonnet ran on the bare 1,200 default with no detection behind it: the
+provider most likely to be squeezed was the one with neither guard. Both are now
+symmetric, and "one truncation recovery" is true on both providers rather than on one.
+
+A fifth, found by the budget tests rather than by any model: **a call that failed
+mid-stream was not counted**, because usage was recorded on completion. That made a
+failing call free, and a free failure is one a retry loop can repeat forever. Calls are
+now counted on dispatch and settled on completion; an unsettled record is a call that
+errored, with zero reported tokens rather than a guess.
+
+### Still not verified
+
+- **A long real session.** Every measurement here is one or two turns. Rollover was
+  forced with a 900-token threshold rather than reached naturally at 36,000.
+- **Cost over a session**, as opposed to per turn. The arithmetic behind 48000/36000 is
+  still arithmetic.
+- **A long real session.** Everything here is one or two turns.
+
+---
+
 ## Follow-ups for later phases
 
 - **Phase 2:** resolve models to a local path before loading; add an `HF_HUB_OFFLINE=1`
@@ -421,8 +769,15 @@ tested.
   boundary for running child project code (work order §19).
 - **Phase 8:** installer must verify a model by real inference through the provider, which
   means it needs the local-path resolution too.
+- **Run the runtime checks against Anthropic too.** `spike_luna_runtime.py` covers
+  repair, rollover and truncation on Luna only (section 13). The bounds are
+  provider-independent and unit-tested, but Claude's behaviour inside them is not.
 - **Before Phase 10:** measure rollover latency with the real model (section 9), check
   handoff quality separately from handoff wiring, and widen the asset-honesty pass
   (section 10) across several filenames and real child phrasings.
+- **When cloud is in real use:** rollover latency has a second, worse case now. Section 9
+  worries about a local model pausing after a turn; a cloud rollover is a *billable*
+  extra call on a transcript of up to 36000 tokens. The lever is the same
+  (`close(summarise=False)`), and the budget arithmetic is in `models.json`.
 - **Re-measure on 8 GB hardware** before V1.
 - Remaining models stay unverified until something actually needs them.
