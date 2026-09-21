@@ -129,9 +129,43 @@ def test_profile_ids_are_unique(profiles: list[dict]) -> None:
     assert len(ids) == len(set(ids))
 
 
-def test_all_five_v1_profiles_are_present(profiles: list[dict]) -> None:
-    expected = {"games", "raspberry_pi", "arduino", "research", "blank"}
+def test_all_v1_profiles_are_present(profiles: list[dict]) -> None:
+    """WORKORDER_01 section 5's five, plus Image Creation (PLAN.md decision D6)."""
+    expected = {"games", "raspberry_pi", "arduino", "research", "blank", "image_creation"}
     assert {p["id"] for p in profiles} == expected
+
+
+def test_every_profile_starter_template_exists_and_holds_its_entrypoint(
+    profiles: list[dict],
+) -> None:
+    """The test that was missing for seven phases.
+
+    ``profiles.json`` named five starter templates and only ``pygame_basic`` had ever
+    existed. ``create_project`` skipped a missing one silently, so four of the five
+    profiles created a project containing nothing but ``project.json``, with the
+    manifest pointing at an entrypoint that was not there. Nothing failed; the projects
+    were simply empty.
+
+    Checking the entrypoint too, not just the directory, is what makes this bite: the
+    Arduino template has to be ``project/project.ino`` rather than ``project.ino``,
+    because arduino-cli requires a sketch folder whose name matches its sketch
+    (SPIKES.md section 14).
+    """
+    templates = paths.package_root() / "projects" / "templates"
+    for profile in profiles:
+        template = templates / profile["starter_template"]
+        assert template.is_dir(), "profile {} names missing template {}".format(
+            profile["id"],
+            profile["starter_template"],
+        )
+        entrypoint = template / profile["entrypoint"]
+        assert entrypoint.is_file(), (
+            "profile {} points at {} which its template {} does not contain".format(
+                profile["id"],
+                profile["entrypoint"],
+                profile["starter_template"],
+            )
+        )
 
 
 def test_every_profile_prompt_file_exists(profiles: list[dict]) -> None:
@@ -163,10 +197,24 @@ def test_every_profile_package_is_allowlisted(profiles: list[dict]) -> None:
         )
 
 
-def test_every_profile_can_be_run_or_compiled(profiles: list[dict]) -> None:
+def test_every_profile_gives_the_child_a_button_that_does_something(
+    profiles: list[dict],
+) -> None:
+    """Run, compile, or generate -- but never nothing.
+
+    Image Creation is the one profile that executes no code at all: the process sandbox
+    denies network, so generation has to happen in the application. It therefore has
+    neither command, and ``run_mode: generate`` is what says so.
+    """
     for profile in profiles:
-        assert profile.get("run_command") or profile.get("compile_command"), (
-            "profile {} offers the child no way to run what they made".format(profile["id"])
+        generates = profile.get("run_mode") == "generate"
+        has_command = bool(profile.get("run_command") or profile.get("compile_command"))
+        assert generates or has_command, (
+            "profile {} offers the child no way to make anything happen".format(profile["id"])
+        )
+        # A profile cannot claim both: one executes inside the sandbox, one does not.
+        assert not (generates and has_command), (
+            "profile {} is both a generate profile and a run/compile one".format(profile["id"])
         )
         assert profile.get("run_label")
 

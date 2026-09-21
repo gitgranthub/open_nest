@@ -375,11 +375,19 @@ the prompt states in as many words that nothing has looked at the file. 317 test
 requirement that happens to involve an asset, not an asset requirement that happens to
 need Research: it needs the `research_basic` starter template (which does not exist — a
 Research project today creates an empty `src/`), the pandas/matplotlib runner and chart
-display that are Phase 7's line item verbatim, a measurement of matplotlib under Seatbelt
-(`MPLCONFIGDIR` has to sit inside the project), and a packaging change, since the
-bootstrap installs only `base.txt`. **32–34 moved onto Phase 7's exit.** The asset half of
-it is done and tested here for every profile: a dropped CSV classifies as Data, lands in
+display that are Phase 7's line item verbatim, and a packaging change, since the bootstrap
+installs only `base.txt`. **32–34 moved onto Phase 7's exit.** The asset half of it is
+done and tested here for every profile: a dropped CSV classifies as Data, lands in
 `data/`, and reaches the prompt as its column names and row count.
+
+> **Corrected in Phase 7.** This paragraph also listed "a measurement of matplotlib under
+> Seatbelt (`MPLCONFIGDIR` has to sit inside the project)" as a blocker. It was measured
+> (SPIKES.md §14A) and it is not one: matplotlib works under the sandbox as shipped,
+> exit 0 with the chart written, falling back to `TMPDIR`, which the profile already makes
+> writable. What it does is rebuild its font cache on **every** run — 6.1 s and three
+> lines of stderr each time, against 0.2 s and silence once `MPLCONFIGDIR` persists. A
+> worthwhile one-line fix for speed and noise, never a blocker. The claim was carried for
+> two phases without being checked.
 
 Four decisions worth knowing.
 
@@ -671,17 +679,133 @@ so it belongs on the worker thread with visible progress; ~800 KB per 1024×1024
 want to see. The image model is deliberately **not** a `models.json` entry — a catalogue
 entry is something that answers a conversation — so D6 has to decide where it lives.
 
-### Phase 7 — Remaining profiles
+### Phase 7 — Remaining profiles — **complete**
 
 Raspberry Pi (explicit "runs on this Mac" vs. "runs on the Pi" distinction), Arduino
-(`project.ino`, `README.md`, `wiring.md`; compile via `arduino-cli` when present; never
-invent pin assignments), Research (pandas/matplotlib runner and chart display), Blank.
-Starter idea cards per profile.
+(`project.ino`, `README.md`, `wiring.md`; compile via `arduino-cli`; never invent pin
+assignments), Research (pandas/matplotlib runner and chart display), Blank. Starter idea
+cards per profile. Plus **Image Creation**, added during the phase — see below.
 
-**Exit:** each profile creates and runs or compiles its template, **and DoD 32–34** — a
-Research project takes a dropped CSV and produces Python analysis and a chart. Moved here
-from Phase 5, which owns the asset half of it and has it working; what is missing is the
-`research_basic` template, the runner, chart display, and matplotlib under Seatbelt.
+**Exit criterion met.** All six profiles create and run or compile their template, proved
+per profile in `tests/test_profiles.py` against the real sandbox. DoD 32–34 is proved end
+to end in
+`test_a_research_project_turns_a_dropped_csv_into_analysis_and_a_chart`: a CSV is dropped
+into `data/`, the analysis reports the file, its row count and its columns, and a PNG
+chart is written and found by the application. 537 tests, ruff clean.
+
+**Four of the five profiles had never worked, and nothing said so.** `profiles.json` named
+five starter templates; only `pygame_basic` had ever existed. `create_project` skipped a
+missing template silently (`if source.is_dir():`), so a Raspberry Pi, Arduino, Research or
+Blank project was a directory containing `project.json` and nothing else, with a manifest
+pointing at an entrypoint that was not there. No error, no empty-state message, just no
+project. This dated from Phase 0 and survived six phases of review.
+
+Two changes so it cannot recur: `create_project` now raises, **before** creating anything,
+so a packaging fault does not leave a half-made directory blocking the name; and
+`test_every_profile_starter_template_exists_and_holds_its_entrypoint` checks the
+entrypoint and not just the directory. Checking the entrypoint is what makes it bite —
+the Arduino sketch has to be at `project/project.ino`, and the obvious flat path is the
+one that silently cannot compile.
+
+**No profile's dependencies were installed on a fresh Mac, Games included.** The bootstrap
+installed `base.txt` only, and `requirements/projects.txt` — pygame, pandas, matplotlib,
+numpy, pillow — was installed by *nothing*, not the bootstrap and not
+`scripts/fetch.sh deps`. Games appeared to work because developer machines already had
+pygame. Both now install it. Measured cost: **~188 MB**, against the 1,179 MB PySide6 the
+bootstrap already fetches, on a 1.76 GB environment. The alternative — installing
+per-profile on first use behind the `package_installation` gate — was rejected because it
+needs network at project-creation time in an offline-first app, and that gate exists for a
+parent approving a *new* package, not for bootstrapping the curated allowlist.
+
+**Arduino compiles for real, and getting there needed a pinned toolchain.** arduino-cli
+v1.5.1, SHA256-verified, installed by `scripts/fetch.sh arduino` into
+`$OPENNEST_HOME/tools`. A confined compile takes 1.3 s cold and 0.4 s warm and reports
+*"Sketch uses 924 bytes (2%) of program storage space"*; a broken sketch yields a real
+compiler diagnostic. SPIKES.md §14B has the four findings that shaped it, of which two
+matter most: a sketch folder must be named after its sketch, and **every** arduino-cli
+invocation must name its data directory or the tool builds itself a home in
+`~/Library/Arduino15`.
+
+The board list and port list come from `arduino-cli`, never from a list written here, and
+nothing is preselected. §8 forbids inventing pin assignments; choosing a board for a child
+chooses every pin on it, so an unset board is a question.
+
+**The Compile button was broken in a way only pressing it would show.** `Workbench._run`
+always dispatched `run_project`. Arduino has no run command and no such tool, so the
+Toolbox refused it with text written for a model — *"'run_project' is not available here.
+You can use: read_file, edit_file, write_file, compile_project."* — straight into the
+child's Build/Preview panel. It now dispatches by profile, and §30's `✓` replaces `▶`
+for a profile that compiles.
+
+**Chart display is deterministic, and deliberately not a tool.** The application compares
+the project's pictures before and after a run and shows the newest thing that changed
+(`execution/outputs.py`). Asking the model to report where it saved a chart would be the
+Phase 5 problem again: a model reporting a path can report the wrong one, forget, or
+invent it. Comparing the directory cannot be wrong about what is on disk. It is not
+Research-specific — "an image appeared" is a fact about a run, not about a profile.
+
+#### The privileged-action rule
+
+Direction from the developer, arising from SPIKES.md §14C: the ordinary sandbox profile
+denies writes to `/dev/cu.*`, which is exactly how an Arduino appears, so upload could
+never have worked no matter what was attached.
+
+The rule, which generalises past Arduino and should be reused:
+
+- **Normal child code stays sandboxed.** Unchanged, and an ordinary profile is
+  byte-identical to before this existed.
+- **Compile stays sandboxed and offline.**
+- **Export, publish, deploy and upload are privileged application actions** — they cross
+  the project boundary because crossing it is the point, and they are the application's
+  own actions on an explicit instruction, not something a model decided to do.
+- **Each action gets the minimum access it needs**, named explicitly, per action.
+- **Arduino upload may access only the selected `/dev/cu.*` device**, and stays behind the
+  existing `arduino_upload` gate. Enforced, not intended:
+  `process_sandbox.grant_devices` refuses anything that is not a serial port, because the
+  port string originates outside the application.
+- **No arbitrary `/dev`, filesystem, network or shell access** is granted to support it.
+  An upload is still offline.
+- **The same pattern is the one to reuse** for Raspberry Pi deployment and for file and
+  export workflows.
+- **A privileged action that cannot be verified because hardware is absent is
+  implemented, gated, and marked hardware-verification-pending** rather than blocking the
+  phase.
+
+`arduino_upload` is that gate's first consumer since Phase 6 declared it.
+`raspberry_pi_deployment` is still unconsumed: §7 calls SSH deployment future, so there is
+nothing in Phase 7 for it to gate without inventing a feature.
+
+#### Decision D6 resolved — Image Creation is a profile, not a tab
+
+D6 asked where image generation lives. It is a **profile card on the Flight Deck**, not
+the optional tab the decision originally sketched, because that is where a child looks
+for "a thing I can make".
+
+Both Phase 5 rules it inherits are honoured and tested. A generated PNG goes through
+`assets.import_file` like a dragged-in file, and **generating is not seeing**:
+`can_interpret` still answers False afterwards, the picture is listed as unread, and the
+prompt still carries `NOBODY HAS LOOKED`. That last one is the trap Phase 6 fell into in a
+new costume, so it has its own test.
+
+Three things about its shape:
+
+- **The image model is not a `models.json` entry.** A catalogue entry is something that
+  answers a conversation, and `gpt-image-2.5-flare` takes a sentence and returns a PNG.
+  It lives on the profile. Keeping it out of the catalogue is what stops it appearing in
+  the model picker as something a child could talk to.
+- **`run_mode: generate` is the first profile that executes nothing.** The process
+  sandbox denies network, so a child's own code could never call an image service — which
+  means generation has to be an application action rather than another run command. The
+  config test that required every profile to run or compile was taught this, and forbids
+  a profile claiming both.
+- **Shown disabled with the reason when it cannot be used**, following Phase 6's choice
+  for cloud models in the picker: hiding it leaves a parent hunting for a feature they
+  were told exists. Cloud off and no key saved are two different sentences, because they
+  have two different remedies.
+
+Carried forward: **upload is hardware-unverified**; `raspberry_pi_deployment` still has no
+consumer; and §30's "Show technical details" toggle is **not built** — raw stderr still
+goes to the panel, deliberately left for the Phase 10 polish pass.
 
 ### Phase 8 — Full setup wizard and installation lifecycle
 

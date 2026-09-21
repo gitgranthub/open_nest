@@ -25,12 +25,61 @@ case "${1:-}" in
             .venv/bin/python spikes/download_model.py "$2"
         ;;
     deps)
+        # projects.txt is the curated set a child's project may import. It is installed
+        # here and by the bootstrap: without it no profile's starter template runs, and
+        # Games looked fine only because a developer machine already had pygame.
         .venv/bin/python -m pip install -r requirements/base.txt \
                                         -r requirements/macos-apple-silicon.txt \
+                                        -r requirements/projects.txt \
                                         -r requirements/dev.txt
         ;;
+    arduino)
+        # Pinned to a release tag and verified against the checksum Arduino publishes
+        # alongside it. Never "latest": the same rule models.json follows for model
+        # weights. Lands in $OPENNEST_HOME/tools, which is where paths.tools_dir()
+        # looks, and every arduino-cli call afterwards is told to keep its data there
+        # (it creates ~/Library/Arduino15 otherwise -- SPIKES.md section 14).
+        ARDUINO_VERSION="1.5.1"
+        case "$(uname -m)" in
+            arm64) ARDUINO_ARCH="macOS_ARM64" ;;
+            x86_64) ARDUINO_ARCH="macOS_64bit" ;;
+            *) echo "Unsupported architecture $(uname -m)" >&2; exit 1 ;;
+        esac
+        TOOLS="$OPENNEST_HOME/tools"
+        TARGET="$TOOLS/arduino-cli-$ARDUINO_VERSION"
+        BASE="https://github.com/arduino/arduino-cli/releases/download/v$ARDUINO_VERSION"
+        TARBALL="arduino-cli_${ARDUINO_VERSION}_${ARDUINO_ARCH}.tar.gz"
+
+        if [ -x "$TARGET/arduino-cli" ]; then
+            echo "arduino-cli $ARDUINO_VERSION already installed."
+        else
+            mkdir -p "$TARGET"
+            echo "Fetching arduino-cli $ARDUINO_VERSION ($ARDUINO_ARCH)..."
+            curl -fsSL -o "$TOOLS/$ARDUINO_VERSION-checksums.txt" \
+                "$BASE/$ARDUINO_VERSION-checksums.txt"
+            curl -fsSL -o "$TOOLS/$TARBALL" "$BASE/$TARBALL"
+
+            EXPECTED="$(grep "$TARBALL" "$TOOLS/$ARDUINO_VERSION-checksums.txt" | awk '{print $1}')"
+            ACTUAL="$(shasum -a 256 "$TOOLS/$TARBALL" | awk '{print $1}')"
+            if [ -z "$EXPECTED" ] || [ "$EXPECTED" != "$ACTUAL" ]; then
+                echo "Checksum mismatch for $TARBALL -- refusing to install." >&2
+                rm -f "$TOOLS/$TARBALL"
+                exit 1
+            fi
+            tar -xzf "$TOOLS/$TARBALL" -C "$TARGET"
+            rm -f "$TOOLS/$TARBALL"
+        fi
+
+        # Board cores are a separate download and the only part that needs network at
+        # compile time -- once installed, compiling is fully offline.
+        echo "Installing the AVR board core (about 324 MB of tool data)..."
+        ARDUINO_DIRECTORIES_DATA="$TOOLS/arduino-data" \
+        ARDUINO_DIRECTORIES_USER="$TOOLS/arduino-user" \
+        ARDUINO_DIRECTORIES_DOWNLOADS="$TOOLS/arduino-downloads" \
+            "$TARGET/arduino-cli" core install arduino:avr
+        ;;
     *)
-        echo "usage: scripts/fetch.sh {model <id>|deps}" >&2
+        echo "usage: scripts/fetch.sh {model <id>|deps|arduino}" >&2
         exit 64
         ;;
 esac

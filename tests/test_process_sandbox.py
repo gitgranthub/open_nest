@@ -114,6 +114,67 @@ def test_profile_confines_writes_to_the_project(tmp_path: Path) -> None:
     assert str(tmp_path.resolve()) in profile
 
 
+def test_an_ordinary_run_is_granted_no_serial_device(tmp_path: Path) -> None:
+    """The privileged-action machinery must be invisible to normal project execution.
+
+    An Arduino upload may write to one approved serial port. Nothing else may, and the
+    profile a child's code runs under has to be exactly what it was before that
+    capability existed -- not "the same in spirit".
+    """
+    plain = build_profile(tmp_path)
+    assert "/dev/cu" not in plain
+    assert plain == build_profile(tmp_path, devices=())
+
+
+def test_a_privileged_action_is_granted_exactly_the_port_it_was_given(
+    tmp_path: Path,
+) -> None:
+    granted = build_profile(tmp_path, devices=("/dev/cu.usbmodem1101",))
+    assert '(literal "/dev/cu.usbmodem1101")' in granted
+    # Still confined in every other respect: a privileged action is granted one more
+    # thing, not let out.
+    assert "(deny network*)" in granted
+    assert "(deny file-write*)" in granted
+    # And only the one port, not the family.
+    assert "/dev/cu.usbmodem1102" not in granted
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        "/dev/disk0",
+        "/etc/passwd",
+        "/dev/cu.ok/../../etc/passwd",
+        "~/secrets",
+        "/dev/ttys000",
+        "/dev/",
+        "",
+    ],
+)
+def test_only_a_serial_port_can_ever_be_granted(tmp_path: Path, candidate: str) -> None:
+    """The port string comes from outside the application, so it is validated.
+
+    WORKORDER_01 section 19 and the Phase 7 design rule: a privileged action gets the
+    minimum access it needs. "The minimum" has to be enforced, not intended -- otherwise
+    a bad port string is a way to ask for arbitrary write access.
+    """
+    with pytest.raises(ValueError):
+        build_profile(tmp_path, devices=(candidate,))
+
+
+def test_run_project_refuses_rather_than_running_with_a_bad_device(
+    tmp_path: Path,
+) -> None:
+    """A rejected grant must stop the run, not fall back to running it unconfined."""
+    (tmp_path / "src").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "src" / "main.py").write_text("print('should not run')")
+    result = run_project(
+        tmp_path, ("python", "src/main.py"), timeout=20, devices=("/etc/passwd",)
+    )
+    assert not result.ok
+    assert "should not run" not in result.stdout
+
+
 def test_network_can_be_allowed_for_a_future_parent_permission(tmp_path: Path) -> None:
     """WORKORDER_01 section 25 makes this a parent control. Off everywhere in V1."""
     assert "(deny network*)" not in build_profile(tmp_path, allow_network=True)

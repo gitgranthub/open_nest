@@ -22,6 +22,7 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -87,6 +88,8 @@ def run_project(
     python_executable: str | None = None,
     interactive: bool = False,
     allow_network: bool = False,
+    extra_env: dict[str, str] | None = None,
+    devices: Sequence[str] = (),
 ) -> RunResult:
     """Run a project's command from its directory and capture everything.
 
@@ -113,9 +116,15 @@ def run_project(
 
     # The real security boundary. opennest.security.sandbox guards paths going through
     # Open Nest's tools; it cannot constrain a process, and generated code is a process.
+    # ``devices`` is empty for every ordinary run. It is non-empty only for a privileged
+    # application action -- an Arduino upload -- which is still confined, just granted
+    # the one serial port a parent approved. See process_sandbox.grant_devices.
     try:
-        argv = wrap(argv, project_dir, allow_network=allow_network)
+        argv = wrap(argv, project_dir, allow_network=allow_network, devices=devices)
     except SandboxUnavailable as exc:
+        return RunResult(None, "", str(exc), time.monotonic() - started, False)
+    except ValueError as exc:
+        # A device that is not a grantable serial port. Refused, not run.
         return RunResult(None, "", str(exc), time.monotonic() - started, False)
 
     try:
@@ -126,7 +135,7 @@ def run_project(
             stderr=subprocess.PIPE,
             text=True,
             errors="replace",
-            env=_child_environment(project_dir),
+            env=_child_environment(project_dir, extra_env),
             start_new_session=True,
         )
     except OSError as exc:
@@ -191,7 +200,13 @@ def _terminate(process: subprocess.Popen) -> tuple[str, str]:
         return "", ""
 
 
-def _child_environment(project_dir: Path) -> dict[str, str]:
+#: Where matplotlib may keep its font cache. Inside the project, so the sandbox permits
+#: the write, and under ``.opennest/tmp`` so it is already git-ignored and already hidden
+#: from the file list the model sees.
+MATPLOTLIB_CACHE = ".opennest/tmp/matplotlib"
+
+
+def _child_environment(project_dir: Path, extra: dict[str, str] | None = None) -> dict[str, str]:
     """A deliberately small environment for the child process.
 
     Passing the parent's environment wholesale would hand a generated script every token
@@ -202,4 +217,14 @@ def _child_environment(project_dir: Path) -> dict[str, str]:
     env["PYTHONUNBUFFERED"] = "1"          # so partial output survives a crash
     env["PYTHONDONTWRITEBYTECODE"] = "1"   # no __pycache__ litter in the child's project
     env["OPENNEST_PROJECT"] = str(project_dir)
+
+    # Without this, matplotlib finds ~/.matplotlib unwritable under Seatbelt, falls back
+    # to a fresh temporary directory, and rebuilds its font cache on EVERY run: measured
+    # at 6.6 s per run plus three lines of stderr warning, against 0.3 s and silence once
+    # the cache persists. See SPIKES.md section 14. It is a speed and noise fix, not a
+    # correctness one -- the chart was always written.
+    env["MPLCONFIGDIR"] = str(Path(project_dir) / MATPLOTLIB_CACHE)
+
+    if extra:
+        env.update(extra)
     return env

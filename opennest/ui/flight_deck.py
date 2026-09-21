@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from opennest import APP_NAME
+from opennest.ai import images
 from opennest.projects.manager import Project, list_projects
 from opennest.projects.profiles import Profile, load_profiles
 from opennest.ui.common import (
@@ -33,6 +34,13 @@ from opennest.ui.common import (
 )
 
 
+def _short(reason: str | None) -> str | None:
+    """The first line of a reason -- a card has room for a sentence, not a paragraph."""
+    if not reason:
+        return None
+    return reason.strip().splitlines()[0]
+
+
 def greeting(name: str | None, now: datetime | None = None) -> str:
     """"Good evening, Elliot." Calm and short, per DESIGN_DOC section 20."""
     hour = (now or datetime.now()).hour
@@ -41,11 +49,18 @@ def greeting(name: str | None, now: datetime | None = None) -> str:
 
 
 class ProfileCard(ClickableFrame):
-    """One choice of thing to make. A bordered panel, not a floating card."""
+    """One choice of thing to make. A bordered panel, not a floating card.
 
-    def __init__(self, profile: Profile) -> None:
+    A profile that cannot be used right now is shown anyway, dimmed, with the reason --
+    the same choice Phase 6 made for cloud models in the picker. Hiding Image Creation
+    when cloud is off leaves a parent hunting for a feature they were told exists;
+    showing it greyed out with "needs OpenAI turned on" tells them what to do.
+    """
+
+    def __init__(self, profile: Profile, unavailable_reason: str | None = None) -> None:
         super().__init__("profileCard")
         self.profile = profile
+        self.unavailable_reason = unavailable_reason
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
         layout = QVBoxLayout(self)
@@ -54,11 +69,16 @@ class ProfileCard(ClickableFrame):
 
         name = QLabel(profile.name.upper())
         name.setProperty("role", "cardTitle")
-        tagline = QLabel(profile.tagline)
+        tagline = QLabel(unavailable_reason or profile.tagline)
         tagline.setProperty("role", "cardBody")
 
         layout.addWidget(name)
         layout.addWidget(tagline)
+
+        if unavailable_reason:
+            self.setEnabled(False)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+            self.setToolTip(unavailable_reason)
 
 
 class RecentProjectRow(ClickableFrame):
@@ -84,9 +104,19 @@ class FlightDeck(QWidget):
     project_opened = Signal(object)          # Project
     settings_requested = Signal()
 
-    def __init__(self, user_name: str | None = None) -> None:
+    def __init__(
+        self,
+        user_name: str | None = None,
+        *,
+        allow_cloud: bool = False,
+        credentials=None,
+    ) -> None:
         super().__init__()
         self.user_name = user_name
+        #: Needed to say whether a profile that requires a cloud provider can be used.
+        #: Only ever asked whether a key exists, never for its value.
+        self.allow_cloud = allow_cloud
+        self.credentials = credentials
         self._build()
 
     def _build(self) -> None:
@@ -127,10 +157,10 @@ class FlightDeck(QWidget):
         layout.addWidget(question)
         layout.addSpacing(16)
 
-        for profile in load_profiles():
-            card = ProfileCard(profile)
-            card.clicked.connect(lambda p=profile: self.new_project_requested.emit(p))
-            layout.addWidget(card)
+        self._profile_area = QVBoxLayout()
+        self._profile_area.setSpacing(4)
+        layout.addLayout(self._profile_area)
+        self.refresh_profiles()
 
         layout.addSpacing(26)
         self._recent_area = QVBoxLayout()
@@ -152,6 +182,22 @@ class FlightDeck(QWidget):
         scroll.setWidget(body)
         outer.addWidget(scroll)
         self.refresh()
+
+    def refresh_profiles(self) -> None:
+        """Rebuild the profile cards, so a parent turning cloud on takes effect here."""
+        while self._profile_area.count():
+            item = self._profile_area.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        for profile in load_profiles():
+            reason = images.unmet_requirements(
+                profile, allow_cloud=self.allow_cloud, credentials=self.credentials
+            )
+            card = ProfileCard(profile, unavailable_reason=_short(reason))
+            if reason is None:
+                card.clicked.connect(lambda p=profile: self.new_project_requested.emit(p))
+            self._profile_area.addWidget(card)
 
     def refresh(self) -> None:
         """Reload the recent-project list from disk."""

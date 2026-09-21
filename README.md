@@ -16,6 +16,7 @@ Open Nest supports different kinds of projects, including:
 - Raspberry Pi and robotics projects
 - Arduino projects
 - Research and data projects
+- Pictures made with AI (needs a cloud provider a parent has enabled)
 - Small software tools
 - Experiments and original ideas
 

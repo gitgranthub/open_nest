@@ -28,7 +28,8 @@ class Profile:
     run_label: str
     tools: tuple[str, ...]
     #: "interactive" projects stay on screen until the child closes them (games, Pi
-    #: loops); "batch" projects run to completion and are captured (analyses, compiles).
+    #: loops); "batch" projects run to completion and are captured (analyses, compiles);
+    #: "generate" projects run nothing at all -- see :attr:`generates`.
     run_mode: str = "batch"
     packages: tuple[str, ...] = ()
     frameworks: tuple[str, ...] = ()
@@ -36,14 +37,36 @@ class Profile:
     starter_ideas: tuple[str, ...] = ()
     run_command: tuple[str, ...] | None = None
     compile_command: tuple[str, ...] | None = None
+    #: Which cloud provider this profile cannot work without, if any. Image Creation
+    #: needs OpenAI; every other profile works with the local model and no key.
+    requires_cloud_provider: str | None = None
+    #: Image generation, for a "generate" profile. Deliberately not a models.json entry
+    #: (PLAN.md D6): a catalogue entry is something that answers a conversation.
+    image_provider: str | None = None
+    image_model: str | None = None
 
     @property
     def can_run(self) -> bool:
         return self.run_command is not None
 
     @property
+    def can_compile(self) -> bool:
+        return self.compile_command is not None
+
+    @property
     def is_interactive(self) -> bool:
         return self.run_mode == "interactive"
+
+    @property
+    def generates(self) -> bool:
+        """Whether pressing the main button asks a service for something.
+
+        The distinction that matters: a run or a compile executes something inside the
+        process sandbox, and generation happens in the application instead. The sandbox
+        denies network, so a child's own code could never call an image service -- which
+        is why this is not simply another run command.
+        """
+        return self.run_mode == "generate"
 
     def system_prompt(self) -> str:
         return (paths.prompts_dir() / self.prompt_file).read_text(encoding="utf-8").strip()
@@ -94,6 +117,9 @@ def _build(raw: dict) -> Profile:
         compile_command=(
             _as_tuple(raw["compile_command"]) or None if raw.get("compile_command") else None
         ),
+        requires_cloud_provider=raw.get("requires_cloud_provider"),
+        image_provider=raw.get("image_provider"),
+        image_model=raw.get("image_model"),
     )
 
 

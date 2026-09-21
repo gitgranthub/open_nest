@@ -761,6 +761,126 @@ errored, with zero reported tokens rather than a guess.
 
 ---
 
+## 14. Phase 7 — matplotlib, and a real Arduino toolchain
+
+Two measurements, plus a correction to something PLAN.md asserted without measuring.
+`spikes/spike_matplotlib_sandbox.py` and `spikes/spike_arduino.py`.
+
+### 14A. matplotlib under Seatbelt — PLAN.md was wrong about the shape of it
+
+PLAN.md listed, among the things blocking DoD 32–34, "a measurement of matplotlib under
+Seatbelt (`MPLCONFIGDIR` has to sit inside the project)". That reads as *matplotlib does
+not work until you move MPLCONFIGDIR*. It is not true, and the difference matters because
+it was being carried as a blocker.
+
+**matplotlib works under the sandbox exactly as shipped.** Exit 0, chart written, no
+intervention. It finds `~/.matplotlib` unwritable, falls back to a fresh directory under
+`TMPDIR` — which `build_profile` already makes writable — and carries on.
+
+What it actually does is rebuild its font cache on **every single run**, because the
+fallback directory is new each time:
+
+| | per run | stderr |
+|---|---|---|
+| As shipped, no `MPLCONFIGDIR` | **6.1 s**, every run | 3 lines of warning, every run |
+| `MPLCONFIGDIR` in the project, first run | 6.1 s | 1 line |
+| `MPLCONFIGDIR` in the project, after that | **0.2 s** | none |
+
+So it is a **speed and noise fix worth making, not an unblocking one**. A child pressing
+Run Analysis waited six seconds every time and got told, in red, that something was wrong
+with a path they have never heard of. `MPLCONFIGDIR` now points at
+`.opennest/tmp/matplotlib` — inside the project so the sandbox permits the write, under
+`.opennest/tmp` because that is already git-ignored and already hidden from the file list
+the model sees. Two facts that made the location free rather than a new decision.
+
+PLAN.md's Phase 5 note has been corrected in place.
+
+### 14B. Arduino — arduino-cli 1.5.1, pinned and verified
+
+`arduino-cli` was not installed on this machine. It now is: release **v1.5.1**, commit
+`01f3d4f2b`, macOS ARM64, SHA256 verified against Arduino's published checksum
+(`cb952e8c…d4c9`), installed into `$OPENNEST_HOME/tools` by `scripts/fetch.sh arduino`.
+Pinned to a tag, never "latest", for the same reason every model is pinned to a SHA.
+
+**A compile works, fully confined.** Network denied, writes confined to the project,
+toolchain read-only:
+
+| | |
+|---|---|
+| Starter sketch | exit 0, **1.3 s cold / 0.4 s warm**, stderr empty |
+| Child-facing output | *"Sketch uses 924 bytes (2%) of program storage space"* |
+| Broken sketch | exit 1 with a real `gcc` diagnostic the repair loop can act on |
+| Artifacts | `.hex` and `.elf`, inside the project |
+| Tool data | **324 MB** for the AVR core alone |
+
+Four findings, none of them in the documentation:
+
+**A sketch folder must be named after its sketch.** `arduino-cli compile src/` fails with
+`main file missing from sketch: src/src.ino`. `profiles.json` had `entrypoint:
+project.ino`, which would have put the sketch at `src/project.ino` and **could never have
+compiled**. The template is now `src/project/project.ino` and the entrypoint carries the
+subdirectory. `README.md` and `wiring.md` sit beside the sketch, which arduino-cli
+tolerates — checked, because it was not obvious.
+
+**Every invocation needs its data directory named, not just the ones that write.**
+arduino-cli creates `~/Library/Arduino15` the moment it runs without one — including
+`version` and `board listall`, which write nothing a caller asked for. Found twice during
+this spike by running a probe without the override. `arduino._environment()` is therefore
+used by every call in the module.
+
+**Three paths have to move inside the project for a confined compile**, discovered one
+failure at a time: the staging directory (`Failed to create downloads directory: mkdir
+.../staging: operation not permitted`), then the build cache (`cleaning build path:
+unlinkat ~/Library/Caches/arduino/...: operation not permitted`), then the sketchbook.
+The toolchain itself stays **outside** the project and therefore read-only under the
+sandbox — a bonus rather than a compromise: a compile cannot modify its own compiler.
+
+**The board list is data from the tool.** `board listall --format json` gives 27 boards
+as clean `name`/`fqbn` pairs. Nothing is hard-coded and nothing is preselected: §8 forbids
+inventing pin assignments, and choosing a board on a child's behalf chooses every pin on
+it. An unset board is a question.
+
+### 14C. The sandbox denies a serial port, which is what an Arduino is
+
+Measured, not assumed:
+
+| write target | ordinary profile |
+|---|---|
+| `/dev/null` | allowed |
+| `/dev/cu.debug-console` | **`Operation not permitted`** |
+
+The profile whitelists `/dev/tty*` and nothing matching `/dev/cu.*`. So `arduino-cli
+upload` could never have succeeded, whatever was plugged in — a second blocker behind the
+missing hardware, and the one that mattered.
+
+This produced the **privileged-action rule** now recorded in PLAN.md and HANDOFF §5:
+ordinary project execution stays confined exactly as it was, and an action that
+deliberately crosses the project boundary gets an explicit, minimal, per-action grant.
+`process_sandbox.grant_devices` is the first instance. Verified:
+
+- an ordinary profile is **byte-identical** to before the capability existed
+  (`build_profile(p) == build_profile(p, devices=())`)
+- a granted profile adds exactly one line, and still denies network and all other writes
+- `/dev/disk0`, `/etc/passwd`, `/dev/ttys000`, `~/secrets` and
+  `/dev/cu.ok/../../etc/passwd` are all **refused** rather than passed through — the port
+  string comes from outside the application, so it is validated
+
+**Upload is implemented, gated, and hardware-unverified.** No board has been attached to
+a machine running this code, so the grant is known to be *necessary* and not yet known to
+be *sufficient*. One incidental finding while probing: opening a `/dev/cu.*` device
+**blocks** waiting for carrier, so an upload to an absent board hangs rather than
+erroring — which is what the timeout is for.
+
+### 14D. Image generation still holds up through the profile
+
+`spike_image_generation.py` re-run unchanged now that Image Creation is a profile rather
+than a sketch of one: 798,590 bytes in 10.9 s, PNG magic correct, imported through
+`assets.import_file` to `assets/`, described as *"PNG image, 1024x1024 pixels, no
+transparency"*, `can_interpret` → **False**, listed as unread, prompt still says
+`NOBODY HAS LOOKED`. Every §12 figure reproduces.
+
+---
+
 ## Follow-ups for later phases
 
 - **Phase 2:** resolve models to a local path before loading; add an `HF_HUB_OFFLINE=1`

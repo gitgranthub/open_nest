@@ -104,6 +104,21 @@ def runtime_dir() -> Path:
     return app_support_dir() / "python"
 
 
+def tools_dir() -> Path:
+    """Managed third-party toolchains -- today just arduino-cli and its board cores.
+
+    The same reasoning as :func:`models_dir`: a toolchain Open Nest downloads is Open
+    Nest's to keep inside its own containment root, not something to scatter through
+    ``~/Library``. arduino-cli in particular will create ``~/Library/Arduino15`` the
+    first time it runs without being told otherwise, so every invocation has to point
+    it here (SPIKES.md section 14).
+    """
+    home = opennest_home()
+    if home:
+        return home / "tools"
+    return app_support_dir() / "tools"
+
+
 def cache_dir() -> Path:
     """Scratch for third-party tooling caches (Hugging Face, pip) when contained.
 
@@ -147,6 +162,7 @@ def managed_locations() -> dict[str, Path]:
         "logs": logs_dir(),
         "models": models_dir(),
         "runtime": runtime_dir(),
+        "tools": tools_dir(),
         "cache": cache_dir(),
         "projects": projects_root(),
     }
