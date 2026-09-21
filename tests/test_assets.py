@@ -329,12 +329,34 @@ def test_what_the_child_says_about_a_file_is_still_allowed(project, dropped) -> 
     assert "If they tell you what one is, believe them" in block(project)
 
 
-def test_a_model_that_can_see_is_not_told_it_cannot(project, dropped) -> None:
-    """Capability-driven, not a hard-coded apology. Adding a vision model is a data edit."""
+def test_a_model_that_can_see_is_not_told_it_cannot(project, dropped, can_send_images):
+    """Capability-driven, not a hard-coded apology. Adding a vision model is a data edit.
+
+    Needs ``can_send_images``: a vision model only counts once Open Nest can actually
+    put the pixels in front of it. The rule this asserts is right and unchanged; the
+    fixture is what makes its precondition true. See ``IMAGE_INPUT_IMPLEMENTED``.
+    """
     assets.import_file(project, dropped("spaceship.png", SPACESHIP))
     text = block(project, model=SIGHTED)
     assert "assets/spaceship.png" in text
     assert "NOBODY HAS LOOKED" not in text
+
+
+def test_a_vision_model_with_no_way_to_receive_the_picture_is_still_blind(
+    project, dropped
+) -> None:
+    """Today's reality, and the regression that made this fixture necessary.
+
+    Phase 6 made a vision model *selectable* without making it *reachable* by an image:
+    neither cloud provider transmits bytes. For a while that meant the honesty block
+    vanished from the prompt and ``invented_description`` stopped examining the file --
+    both defences off, no pixels sent, which is the configuration SPIKES.md section 10
+    measured producing "I see them clearly."
+    """
+    assets.import_file(project, dropped("spaceship.png", SPACESHIP))
+    text = block(project, model=SIGHTED)
+    assert "NOBODY HAS LOOKED" in text
+    assert not assets.can_interpret(assets.list_assets(project)[0], SIGHTED)
 
 
 def test_a_readable_file_is_never_called_unread(project, dropped) -> None:
@@ -362,10 +384,33 @@ def test_no_local_model_can_read_a_picture_today(project) -> None:
     assert models_that_can_read("image") == ()
 
 
-def test_turning_cloud_on_surfaces_the_models_that_can(project) -> None:
-    """Section 13's "offer a compatible model", driven by models.json rather than code."""
-    names = {entry.info.name for entry in models_that_can_read("image", allow_cloud=True)}
+def test_turning_cloud_on_surfaces_the_models_that_can(
+    project, configured_credentials, can_send_images
+) -> None:
+    """Section 13's "offer a compatible model", driven by models.json rather than code.
+
+    Phase 5 predicted this would start working with no change to the asset layer once
+    cloud arrived. Two conditions were added since: a saved key, and the ability to
+    actually send the picture (``can_send_images``). Offering a switch that would not
+    help is the same lie as claiming to have looked.
+    """
+    names = {
+        entry.info.name
+        for entry in models_that_can_read(
+            "image", allow_cloud=True, credentials=configured_credentials
+        )
+    }
     assert {"Claude", "OpenAI"} <= names
+
+
+def test_cloud_on_but_no_key_still_offers_nothing(project, credentials) -> None:
+    """Two conditions, not one: the master switch *and* a key that exists.
+
+    Phase 5's rule was that the child is told the limitation rather than sent after a
+    model they cannot reach. A cloud model with no key saved is exactly that model, so
+    turning the switch on is not on its own enough to start offering it.
+    """
+    assert models_that_can_read("image", allow_cloud=True, credentials=credentials) == ()
 
 
 def test_the_import_message_says_what_the_model_cannot_do(project, dropped) -> None:
@@ -581,13 +626,28 @@ def test_an_honest_reply_costs_no_extra_round_trip(project, dropped) -> None:
     assert len(provider.calls) == 1
 
 
-def test_a_model_that_can_see_is_never_pulled_up(project, dropped) -> None:
-    """Capability-driven: with a vision model there is nothing dishonest about it."""
+def test_a_model_that_can_see_is_never_pulled_up(project, dropped, can_send_images):
+    """Capability-driven: with a vision model that was actually sent the picture,
+    there is nothing dishonest about describing it."""
     asset = assets.import_file(project, dropped("red-dragon-with-wings.png", SPACESHIP))
     controller, provider = build(project, [Reply(text=REPLY_CLAIMED_SIGHT)], model=SIGHTED)
     turn = controller.send("Does it have wings?", attachments=[asset])
     assert not turn.corrected_invention
     assert len(provider.calls) == 1
+
+
+def test_a_vision_model_that_was_sent_nothing_is_still_pulled_up(project, dropped):
+    """The other half of the regression: the deterministic check must stay armed.
+
+    ``invented_description`` only examines unread assets, so a picture wrongly counted
+    as readable is a picture the check never looks at.
+    """
+    asset = assets.import_file(project, dropped("red-dragon-with-wings.png", SPACESHIP))
+    controller, _ = build(project, [
+        Reply(text=REPLY_CLAIMED_SIGHT), Reply(text="I used the file you gave me."),
+    ], model=SIGHTED)
+    turn = controller.send("Does it have wings?", attachments=[asset])
+    assert turn.corrected_invention
 
 
 # --------------------------------------------------------------- DoD 26-28

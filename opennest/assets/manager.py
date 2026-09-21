@@ -30,6 +30,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from opennest.ai import provider as provider_module
 from opennest.ai.provider import ModelInfo
 from opennest.assets import describe, kinds
 from opennest.projects.manager import Project
@@ -207,12 +208,19 @@ def can_interpret(asset: Asset, model: ModelInfo | None) -> bool:
     edit, and an image stops being unreadable the moment one is in use.
 
     A PDF or a sound file is unreadable here for a different reason -- Open Nest has no
-    way to extract either, so no model can be offered one. When a provider that accepts
-    whole files arrives (Phase 6, cloud), this is the one function that changes.
+    way to extract either, so no model can be offered one.
+
+    **A vision model is not enough on its own.** ``supports_images`` says the model
+    could see a picture if it were given one; ``IMAGE_INPUT_IMPLEMENTED`` says whether
+    Open Nest actually sends any. Until both are true the honest answer is no, and the
+    second one is currently False -- see the note on that constant for what went wrong
+    when only the first was checked.
     """
     if asset.readable:
         return True
     if asset.kind == kinds.IMAGE:
+        if not provider_module.IMAGE_INPUT_IMPLEMENTED:
+            return False
         return bool(model is not None and model.supports_images)
     return False
 

@@ -68,6 +68,18 @@ class MemoryManager:
         policy = ContextPolicy.for_model(info) if info else ContextPolicy()
         return cls(project=project, policy=policy, versions=versions)
 
+    def adopt(self, provider: ModelProvider | None) -> None:
+        """Switch to a different model's context budget, mid-thread.
+
+        The conversation carries over unchanged; only the budget does not. Token counts
+        reported by the previous model were produced by a different tokeniser, so the
+        running total is reset rather than reinterpreted -- the next reply re-establishes
+        it, and until then the estimate backstop in ``ContextBudget`` covers the gap.
+        """
+        info: ModelInfo | None = getattr(provider, "info", None)
+        self.policy = ContextPolicy.for_model(info) if info else ContextPolicy()
+        self.budget = ContextBudget(self.policy)
+
     @property
     def thread_number(self) -> int:
         return self.project.manifest.active_thread

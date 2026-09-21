@@ -10,11 +10,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QScrollArea,
     QSizePolicy,
     QVBoxLayout,
@@ -81,6 +82,7 @@ class FlightDeck(QWidget):
 
     new_project_requested = Signal(object)   # Profile
     project_opened = Signal(object)          # Project
+    settings_requested = Signal()
 
     def __init__(self, user_name: str | None = None) -> None:
         super().__init__()
@@ -103,8 +105,18 @@ class FlightDeck(QWidget):
         wordmark.setProperty("role", "wordmark")
         deck = QLabel("FLIGHT DECK")
         deck.setProperty("role", "descriptor")
-        layout.addWidget(wordmark)
-        layout.addWidget(deck)
+
+        masthead = QHBoxLayout()
+        titles = QVBoxLayout()
+        titles.setSpacing(0)
+        titles.addWidget(wordmark)
+        titles.addWidget(deck)
+        settings = QPushButton("Settings")
+        settings.clicked.connect(self.settings_requested.emit)
+        masthead.addLayout(titles)
+        masthead.addStretch(1)
+        masthead.addWidget(settings, 0, Qt.AlignmentFlag.AlignTop)
+        layout.addLayout(masthead)
         layout.addSpacing(26)
 
         hello = QLabel(greeting(self.user_name))
@@ -132,6 +144,10 @@ class FlightDeck(QWidget):
         layout.addSpacing(10)
         self._status = status_row("Local AI", "idle", "Checking")
         layout.addWidget(self._status)
+        # DESIGN_DOC section 14 shows CLOUD as its own status line, and section 34 wants
+        # the internet/on-this-Mac distinction visible without opening anything.
+        self._cloud_status = status_row("Cloud", "idle", "Off")
+        layout.addWidget(self._cloud_status)
 
         scroll.setWidget(body)
         outer.addWidget(scroll)
@@ -156,13 +172,22 @@ class FlightDeck(QWidget):
             self._recent_area.addWidget(row)
 
     def set_model_status(self, state: str, text: str) -> None:
-        parent = self._status.parentWidget()
+        self._status = self._replace_status(self._status, "Local AI", state, text)
+
+    def set_cloud_status(self, state: str, text: str) -> None:
+        self._cloud_status = self._replace_status(
+            self._cloud_status, "Cloud", state, text
+        )
+
+    def _replace_status(self, existing, name: str, state: str, text: str):
+        parent = existing.parentWidget()
         layout = parent.layout() if parent else None
-        replacement = status_row("Local AI", state, text)
-        if layout is not None:
-            layout.replaceWidget(self._status, replacement)
-            self._status.deleteLater()
-            self._status = replacement
+        replacement = status_row(name, state, text)
+        if layout is None:
+            return existing
+        layout.replaceWidget(existing, replacement)
+        existing.deleteLater()
+        return replacement
 
 
 def connect_new_project(deck: FlightDeck, handler: Callable[[Profile], None]) -> None:

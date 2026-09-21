@@ -4,7 +4,7 @@ Working plan derived from `WORKORDER_01.md` (functional scope) and `DESIGN_DOC.m
 (naming and visual direction). This document records phases, exit criteria, decisions,
 and open questions. It is expected to be amended as work proceeds.
 
-Status: **Phases 0-5 complete. Phase 6 (cloud AI, credentials, parent controls) is next.**
+Status: **Phases 0-6 complete. Phase 7 (remaining profiles) is next.**
 
 New developers should start with [HANDOFF.md](HANDOFF.md).
 
@@ -151,6 +151,16 @@ Phase 5: `assets/` is `kinds.py`, `describe.py` and `manager.py` rather than
 `image_handler` / `document_handler` / `data_handler`. Those three would have been three
 small functions; splitting by job instead of by file type keeps the rule that matters —
 what may honestly be said about a file — in one place rather than repeated three times.
+
+Phase 6: `security/keychain.py` as sketched, but the parent controls are
+`security/permissions.py` rather than the sketch's `agent/permissions.py` — they govern
+cloud access, project network access and device actions, none of which the agent loop
+ever consults. `ai/cloud.py` (shared transport, injectable), `ui/consent.py` (the cloud
+warning, the parent PIN, the permission prompt), `agent/budget.py` (the per-turn call
+ceiling and usage accounting) and `diagnostics.py` are additions the sketch did not
+anticipate. The sketch's `agent/repair_loop.py` remains part of `controller.py`: it is
+thirty lines that need the conversation, and moving it out would mean two owners of the
+message list — the mistake Phase 2 already made once.
 
 ---
 
@@ -359,8 +369,7 @@ messaging when a model cannot read an attachment.
 with a scripted provider whose model has `supports_images: False`, exactly like all four
 local entries in `models.json`: a 64×64 RGBA PNG is imported, the child says "Use this
 picture for my spaceship", and `game.py` ends up loading `assets/spaceship.png` — while
-the prompt states in as many words that nothing has looked at the file. 317 tests, ruff
-clean.
+the prompt states in as many words that nothing has looked at the file. 317 tests, ruff clean.
 
 **The exit was narrowed from "DoD 26–28 and 32–34" to DoD 26–28.** 32–34 is a Research
 requirement that happens to involve an asset, not an asset requirement that happens to
@@ -460,14 +469,151 @@ the commonest path (drag one sprite in) and should be watched with a real child;
 reference material imported into `docs/` appears in the bible's Asset Library the way
 §11's own example shows it.
 
-### Phase 6 — Cloud AI, credentials, parent controls
+### Phase 6 — Cloud AI, credentials, parent controls — **complete**
 
 Keychain credential manager; OpenAI and Anthropic providers on the same interface; cloud
 master switch defaulting OFF; per-use consent dialog; parent PIN; permission gates for
 packages, network, Arduino upload, Pi deployment; Settings including Parent and Advanced.
 
-**Exit:** DoD 35–37. With cloud disabled the app is fully functional, and no key appears in
-any file or log.
+**Verified against the real services.** All three cloud models pass every provider check
+(SPIKES.md §11), image generation is reachable and imports cleanly (§12), and Luna's
+repair loop, rollover, truncation handling and per-turn budget are measured, with
+Sonnet 5 parity on repair and rollover (§13). 456 tests, ruff clean.
+
+**Exit criterion met.** DoD 35–37 is proved end to end in
+`tests/test_cloud_consent.py::test_switching_to_claude_shows_the_warning_and_then_switches`,
+driven through the real `MainWindow._switch_model`: a key is configured, the child picks
+Claude, §24's warning appears, and only then does the provider change. The refusal path
+is a separate test and matters more — declining leaves both the provider *and* the picker
+where they were. With cloud off the other 400 tests pass untouched, which is the "fully
+functional without cloud" half. 456 tests, ruff clean.
+
+Six decisions worth knowing.
+
+**No SDK.** `requests` was already in `base.txt`, and both APIs used here are a POST and
+an SSE stream. Adding `openai` and `anthropic` would pull two dependency trees onto a
+work-managed machine to save a few hundred lines that are mostly translation anyway —
+translation that has to exist regardless, because Open Nest's internal message shape is
+neither vendor's. `ai/cloud.py` holds the transport; it is injectable, which is what
+keeps the provider tests hermetic. **No test in the suite opens a socket, and Phase 6
+did not change that.**
+
+**Per-model request shapes are data, and capabilities are declared rather than
+inferred.** The warning above — Sonnet 5 takes `thinking: {"type": "adaptive"}` and
+returns a 400 for `budget_tokens`, Haiku 4.5 is the other way round — is exactly the
+thing §3 forbids hard-coding, so `provider_options` is merged into the request body
+untouched. Alongside it, `supports_temperature` and `supports_thinking_budget` are
+per-model fields the providers read.
+
+That second half was a correction. The first implementation omitted `temperature`
+whenever a thinking block was present. It produced the right request for both catalogue
+entries and was still wrong: whether a model accepts a sampling temperature is a fact
+about that model, not something derivable from the rest of the request — a model could
+reason and still take one, or refuse one with no thinking at all. Both flags were then
+**probed against the live API by contradicting them** (SPIKES.md §11), so they are
+measurements rather than claims.
+
+**Neither Claude model can be pinned to temperature 0, and that is a real departure.**
+Phase 1 measured temperature 0 as load-bearing for tool selection — but on a 4B local
+model, and that is not the same risk here. What carries over unchanged is the
+application's distrust: `_claimed_a_change_it_did_not_make` and `invented_description`
+run against whatever produced the sentence.
+
+**The real spikes found six defects the hermetic suite could not**, in code with 45
+passing tests. Recorded in full in SPIKES.md §11, because the *kind* matters more than
+the fixes: in every one the request was well-formed and the semantics were wrong, which
+is precisely what a scripted transport cannot catch — the script agrees with whatever
+the code sends. Two were the same bug in different costumes, and are the ones to
+remember: **an output cap covers hidden work as well as the visible answer**, on both
+services. Anthropic's `max_tokens` must exceed `thinking.budget_tokens`, or every call
+fails; OpenAI's `max_output_tokens` must leave room past reasoning, or the model returns
+a mechanically successful response containing nothing at all. Neither side could see it
+— the budget comes from the catalogue and the cap from the caller — so the provider,
+which sees both, reconciles them.
+
+**All three cloud models are now verified against the real services**, including
+`gpt-5.6-luna`. Getting there needed two keys: the first could not reach luna (403
+`model_not_found`), so the provider was verified against `gpt-5-mini` through a
+spike-only `--as` override, and a correctly-scoped key then verified luna itself. Both
+columns are kept in §11 because they are not the same measurement — luna used 24 output
+tokens where mini used 183 on the same prompt. There is deliberately **no runtime
+fallback**: §38 forbids substituting a model behind the user's back, so an unreachable
+model is reported and the request stops.
+
+**Phase 6 briefly disarmed Phase 5's asset honesty, and that is the most important
+thing this phase learned.** Making a vision model selectable made `assets.can_interpret`
+answer True for images — which removed the "nobody has looked" block from the prompt and
+took the file out of the set `invented_description` examines — while neither provider
+sent a single pixel. Both defences off in the exact configuration SPIKES.md §10 measured
+producing *"I see them clearly."* `provider.IMAGE_INPUT_IMPLEMENTED` fixes it, and the
+generalisation is worth keeping: **a capability flag on a model is not a capability of
+the system.** `supports_images` was always correct; the transport was missing and nothing
+checked for it. Found by SPIKES.md §12, a spike about image *generation* that happened to
+check whether generating counted as seeing.
+
+**The cloud context budget was revisited, and came down rather than up.** The note said
+120000 "was a deliberate budget rather than a limit — revisit it now that the real number
+is known". The real number is 1M, and it is the wrong thing to size against. At $2 per 1M
+input tokens, a turn near a 120000-token budget costs about **$0.24 of input alone, every
+turn**, for a child changing one line of a game. The binding constraint on a cloud model
+in a consumer app is cost, not context. Now 48000/36000: about $0.10 a turn on Sonnet,
+half that on Haiku, and still three times the room the largest local model has. The
+arithmetic is in `models.json` so the next person raising it does so knowing the price.
+
+**Cloud models need two things, not one.** Phase 5 predicted `models_that_can_read` would
+start offering Claude "with no code change" once cloud arrived. It does — but the
+condition gained a second half: the master switch **and** a key in the Keychain. Phase 5's
+own rule is why. Offering a model the child cannot reach is what §13 says not to do, and a
+cloud model with no key saved is precisely that model. The Phase 5 test was updated and a
+companion added for the keyless case. The *picker* still shows it, disabled with the
+reason, because hiding it leaves a parent hunting for where Claude went.
+
+**One call budget per turn, shared by every subsystem.** Added at closeout, and the
+reason is arithmetic: the tool loop allowed eight iterations, repair three, each honesty
+correction one, and a rollover happened whenever the threshold said so — so a bad turn
+could stack fourteen billable requests and nothing was counting. Now twelve, shared, and
+`MeteredProvider` collects them by wrapping the provider rather than threading a budget
+through memory and rollover. Counted on dispatch, because a call that dies mid-stream is
+still a call and counting only successes made failures free. Twelve is measured: the
+worst real turn used five (SPIKES.md §13), and the ceiling is deliberately loose because
+the real spend limit belongs on the API key where a parent sets it.
+
+**Running the repair loop against the real model found two defects, one of them
+embarrassing.** `TOOL_USE_RULES` told the model to change files with `write_file` —
+which refuses to overwrite, by the Phase 2 decision SPIKES.md §8 measured, and whose own
+schema says to use `edit_file`. Every model that believed the prompt paid for a refused
+call. And repair declared failure without re-testing, so a game Luna had actually fixed
+on its last attempt was reported to the child as broken. Both fixed; the second costs no
+provider call, because verifying is a local run.
+
+**Unanswered means no.** A permission set to "Ask Parent" with nothing available to ask
+resolves to refused, not granted — the same fail-closed stance `process_sandbox` takes,
+and the reason `Toolbox.network_policy` is a callable rather than a flag: the answer can
+be a dialog, so it cannot be known when the project opened. `build_profile(allow_network=)`
+has existed unused since Phase 2; §25 is what finally supplies it.
+
+Departures from the module sketch in section 3. `security/permissions.py` rather than
+`agent/permissions.py`: these are not agent permissions but parent controls, consulted by
+the UI and the runner and never by the agent loop. `ai/cloud.py` and `diagnostics.py` are
+new. `ui/consent.py` holds the three places Open Nest stops and asks, kept together
+because they share one rule — say what will actually happen, in the fewest words that are
+still true.
+
+Carried forward: **no provider sends an image to a model**, so a vision model buys the
+asset layer nothing (SPIKES.md §12). Also `arduino_upload` and
+`raspberry_pi_deployment` are declared and enforceable but have no consumer until Phase 7,
+only one exchange per cloud model has been run so the repair loop and rollover are
+untested against one, and there is still no logging subsystem (see "Later: logging" below).
+
+#### Later: logging
+
+§33 asks for internal logs and an Export Diagnostic Log button. The button exists and
+`diagnostics.py` builds its report from live state at the moment it is asked for. What is
+*not* built is a logging subsystem — nothing writes a log file. That is a smaller gap than
+it looks: the exit criterion's "no key appears in any file or log" is currently true by
+construction rather than by discipline, because there is no log to leak from. If one is
+added, it inherits an obligation: §33's list of things a log must never contain, and the
+same scan `diagnostics.report()` runs over itself.
 
 #### Model choices for the cloud providers
 
@@ -503,7 +649,7 @@ now that the real number is known.
 OpenAI-only via `gpt-image-2` unless another provider is added — an asymmetry the model
 picker has to show honestly rather than hide.
 
-#### Later: image generation
+#### Later: image generation — now measured, still unbuilt
 
 Wanted as an *option*, not a default: a way for a child to generate or edit a picture for
 their project, surfaced as its own tab and linked optionally from Settings or the setup
@@ -512,6 +658,18 @@ it. Two things it inherits from Phase 5: a generated image is an ordinary import
 and should go through `assets.import_file` rather than a second path into the project;
 and a model that generated a picture still has not *seen* it, so `can_interpret` governs
 what may be said about it afterwards exactly as it does for a dragged-in PNG.
+
+**Both rules were checked against the real service** — SPIKES.md §12, via
+`spikes/spike_image_generation.py`. `gpt-image-2.5-flare` returns a PNG **inline as
+base64**, not a URL, so there is no second fetch and nothing to expire; it imports
+through `assets.import_file` and `describe.py` reads its header correctly without
+Pillow. Checking the second rule is what exposed the `can_interpret` hole above.
+
+Three things the tab will have to deal with, all measured: **10–15 seconds** per image,
+so it belongs on the worker thread with visible progress; ~800 KB per 1024×1024 PNG; and
+`quality` defaulting to `low` unless asked otherwise, which is a cost knob a parent may
+want to see. The image model is deliberately **not** a `models.json` entry — a catalogue
+entry is something that answers a conversation — so D6 has to decide where it lives.
 
 ### Phase 7 — Remaining profiles
 

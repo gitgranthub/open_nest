@@ -19,8 +19,25 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 
 from opennest import paths
+from opennest.agent.budget import (
+    CORRECTION,
+    PRIMARY,
+    RECOVERY,
+    REPAIR,
+    ROLLOVER,
+    BudgetExhausted,
+    CallBudget,
+    MeteredProvider,
+    TurnUsage,
+)
 from opennest.agent.tools import Toolbox, ToolResult, normalise_tool_name, schemas_for
-from opennest.ai.provider import Message, ModelProvider, Settings, ToolCall
+from opennest.ai.provider import (
+    Message,
+    ModelProvider,
+    Settings,
+    ToolCall,
+    TruncatedReply,
+)
 from opennest.assets import manager as assets
 from opennest.execution.python_runner import RunResult
 from opennest.memory.manager import MemoryManager
@@ -35,22 +52,32 @@ from opennest.versioning.checkpoint import (
 #: WORKORDER_01 section 28: "Maximum automatic repair attempts: 3".
 MAX_REPAIR_ATTEMPTS = 3
 
-#: A hard stop on tool calls per turn, so a confused model cannot loop forever.
-MAX_TOOL_CALLS_PER_TURN = 8
+#: The tool loop used to have its own iteration cap here. It no longer needs one: the
+#: loop runs until the model stops asking for tools or the turn's shared call budget is
+#: spent (``agent/budget.py``). One ceiling is the point -- a per-loop cap plus a
+#: per-repair cap plus a rollover meant nothing counted the total.
 
 #: Phase 1 measured a "call exactly one tool" instruction as worth 30 points of
 #: single-turn selection accuracy. Carried into the multi-turn loop verbatim it actively
 #: caused failure: the model read a file, then reported an edit it had never made,
 #: because it had been told to stop after one call. The "do not explore" property is
 #: what mattered; the "exactly one" part had to go.
+#: These sentences must agree with what the tools actually do. They did not: this said
+#: "to change a file, call write_file", while ``write_file`` refuses to overwrite and
+#: its own schema says to use ``edit_file`` -- the Phase 2 decision SPIKES.md section 8
+#: measured. Running the repair loop against the real model showed the cost: Luna
+#: followed the prompt, ``write_file`` refused, and a whole repair attempt was spent
+#: learning what the prompt should have said (SPIKES.md section 13).
 TOOL_USE_RULES = (
     "Use your tools to actually change the project. Do not look around first -- the "
     "files in this project are listed below and you already know what exists.\n"
-    "- To change a file, call write_file with the complete new contents.\n"
-    "- Never say you changed, added or fixed something unless you actually called "
-    "write_file and it succeeded. Saying it is not doing it.\n"
+    "- To change a file that already exists, call edit_file with the exact text to "
+    "replace. This is how you make almost every change.\n"
+    "- write_file only creates a file that does not exist yet. It will refuse to "
+    "overwrite one that does.\n"
+    "- Never say you changed, added or fixed something unless the tool call succeeded. "
+    "Saying it is not doing it.\n"
     "- If they ask to run or play it, call run_project.\n"
-    "- To create a file that does not exist yet, call write_file.\n"
     "- Read a file first only when you do not already know what is in it."
 )
 
@@ -71,6 +98,12 @@ class Turn:
     tool_results: list[tuple[str, ToolResult]] = field(default_factory=list)
     repair_attempts: int = 0
     gave_up: bool = False
+    #: Every provider call this turn made, and what each cost. Provider-reported.
+    usage: TurnUsage = field(default_factory=TurnUsage)
+    #: True when the turn stopped because it hit the shared call ceiling.
+    hit_call_limit: bool = False
+    #: Whether an empty reply was retried once with more room.
+    recovered_truncation: bool = False
     #: Ref of the checkpoint saved after this turn, if anything changed.
     checkpoint: str | None = None
     #: Whether the thread rolled over after this turn. For tests and logs only -- the
@@ -186,6 +219,24 @@ class AgentController:
             ))
         ]
 
+    def use_provider(self, provider: ModelProvider) -> None:
+        """Change which model this conversation is talking to, keeping the conversation.
+
+        WORKORDER_01 section 4 lets a child switch models; section 38 forbids doing it
+        silently, which is the caller's job -- by the time this is called the switch has
+        been chosen and, for a cloud model, consented to.
+
+        Three things move with the provider. The context budget, because the new model
+        has its own (``MemoryManager.adopt``). The asset block, because what may honestly
+        be said about an imported picture depends on whether *this* model can see it --
+        which is the Phase 5 capability plumbing doing what it was built for. And the
+        project state, which carries both.
+        """
+        self.provider = provider
+        if self.memory is not None:
+            self.memory.adopt(provider)
+        self.refresh_state()
+
     def refresh_state(self) -> None:
         """Re-inject the file list and last run result after anything changes."""
         self.history[0] = Message(
@@ -247,8 +298,43 @@ class AgentController:
         challenged = False
         corrected = False
 
-        for _ in range(MAX_TOOL_CALLS_PER_TURN):
-            reply = self._generate(on_text)
+        # One budget for this whole turn: the tool loop, both honesty corrections, the
+        # repair cycle, a truncation retry and the rollover all spend from it. See
+        # agent/budget.py for why the subsystems no longer get separate allowances.
+        self._budget = CallBudget()
+        turn.usage = self._budget.usage
+        self._metered = MeteredProvider(self.provider, self._budget)
+
+        try:
+            return self._exchange(turn, text, on_text, challenged, corrected)
+        except BudgetExhausted:
+            return self._out_of_calls(turn)
+
+    def _out_of_calls(self, turn: Turn) -> Turn:
+        """Stop cleanly at the ceiling, with something a child can act on.
+
+        Deliberately not another call: the point of a ceiling is that reaching it costs
+        nothing more. The partial work already done is kept and checkpointed by
+        ``_finish_turn`` exactly as a successful turn's would be.
+        """
+        turn.hit_call_limit = True
+        turn.text = (
+            "That turned into more steps than I can do at once. "
+            "Here is where I got to -- tell me what to try next, or ask for something "
+            "smaller."
+        )
+        return self._finish_turn(turn, allow_rollover=False)
+
+    def _exchange(
+        self,
+        turn: Turn,
+        text: str,
+        on_text: Callable[[str], None] | None,
+        challenged: bool,
+        corrected: bool,
+    ) -> Turn:
+        while True:
+            reply = self._generate(on_text, turn=turn)
             self.history.append(
                 Message(role="assistant", content=reply.text, tool_calls=reply.tool_calls)
             )
@@ -258,9 +344,10 @@ class AgentController:
             if not reply.wants_tool:
                 if not challenged and self._claimed_a_change_it_did_not_make(turn, reply.text):
                     challenged = True
+                    self._metered.kind = CORRECTION
                     self.history.append(Message(role="user", content=(
-                        "You did not actually change any file. Call write_file with the "
-                        "complete new contents now, or say plainly that you have not "
+                        "You did not actually change any file. Call edit_file now with "
+                        "the exact text to replace, or say plainly that you have not "
                         "changed anything yet."
                     )))
                     continue
@@ -269,6 +356,7 @@ class AgentController:
                     if invented is not None:
                         corrected = True
                         turn.corrected_invention = True
+                        self._metered.kind = CORRECTION
                         self.history.append(Message(role="user", content=(
                             f"You have not seen {invented} and neither has anyone else. "
                             f"Do not say what is in it or what it looks like. Say what you "
@@ -278,14 +366,12 @@ class AgentController:
                         continue
                 return self._finish_turn(turn)
 
+            self._metered.kind = PRIMARY
             should_continue = self._run_tools(reply.tool_calls, turn)
             if not should_continue:
                 return self._finish_turn(turn)
 
-        turn.text = turn.text or "I tried several steps but could not finish that."
-        return self._finish_turn(turn)
-
-    def _finish_turn(self, turn: Turn) -> Turn:
+    def _finish_turn(self, turn: Turn, *, allow_rollover: bool = True) -> Turn:
         """Save a checkpoint if the assistant changed anything, then update memory."""
         # The attachment belonged to the message just answered. The file stays in the
         # project and keeps appearing in the listing; only "they just added this" goes.
@@ -301,8 +387,43 @@ class AgentController:
             )
         if changed:
             turn.checkpoint = self._checkpoint(LABEL_AFTER_CHANGE)
-        self._roll_over_if_needed(turn)
+        if not turn.text:
+            turn.text = self._describe_what_happened(turn)
+        if allow_rollover:
+            self._roll_over_if_needed(turn)
         return turn
+
+    @staticmethod
+    def _describe_what_happened(turn: Turn) -> str:
+        """Say what was done when the model did it without saying anything.
+
+        Found by the Anthropic parity run (SPIKES.md section 13). Sonnet 5 repaired a
+        broken game correctly -- read, edit, clean run -- and produced no prose at all,
+        so ``turn.text`` was empty and the Workbench showed the child **no reply**.
+        Their game was fixed and nothing said so.
+
+        Luna narrates and hid this; it is not provider-specific, and the local model can
+        do it too. The application knows exactly what happened from the tool results, so
+        it says so itself rather than spending a provider call asking the model to
+        repeat itself in words.
+        """
+        changed = sorted({
+            path
+            for _, result in turn.tool_results
+            for path in result.changed_files
+        })
+        ran = [result for _, result in turn.tool_results if result.run is not None]
+        last_run_ok = ran and ran[-1].ok
+
+        if changed and last_run_ok:
+            return f"I changed {', '.join(changed)} and ran it. It works."
+        if changed:
+            return f"I changed {', '.join(changed)}."
+        if last_run_ok:
+            return "I ran it."
+        if ran:
+            return "I ran it, and it did not work."
+        return ""
 
     def _roll_over_if_needed(self, turn: Turn) -> None:
         """Hand this thread over to the next one, silently (WORKORDER_01 section 15A).
@@ -311,10 +432,26 @@ class AgentController:
         reply; nothing here changes what they see. Section 15A step 1 requires exactly
         that ordering, and steps 7 and 8 are the ``_reset_history`` below -- the new
         thread's system prompt is rebuilt with the memory the old one just wrote.
+
+        **A rollover is one more billable call and spends from the same turn budget.**
+        If nothing is left it is skipped, not forced: the threshold will still be over
+        on the next turn, and closing the project rolls over regardless. Deferring
+        costs a slightly longer thread; forcing it would let a turn that already ran
+        away spend one more time. That is also what stops repair and rollover
+        compounding -- a turn that burned its budget repairing cannot then roll over.
         """
         if self.memory is None or not self.memory.should_roll_over(self.history):
             return
-        result = self.memory.roll_over(self.provider, self.history)
+        budget = getattr(self, "_budget", None)
+        if budget is not None and budget.exhausted:
+            return
+        metered = getattr(self, "_metered", None) or self.provider
+        if isinstance(metered, MeteredProvider):
+            metered.kind = ROLLOVER
+        try:
+            result = self.memory.roll_over(metered, self.history)
+        except BudgetExhausted:
+            return
         if result.happened:
             self._reset_history()
             turn.rolled_over = True
@@ -375,14 +512,43 @@ class AgentController:
         lowered = (text or "").lower()
         return any(phrase in lowered for phrase in _CLAIMED_CHANGE)
 
-    def _generate(self, on_text: Callable[[str], None] | None):
+    def _generate(self, on_text: Callable[[str], None] | None, *, turn: Turn | None = None):
+        """One provider call, metered, with one retry if the answer came back empty.
+
+        The retry exists because a reasoning model can spend its entire output
+        allowance thinking and return a mechanically successful response with nothing
+        in it (SPIKES.md section 11). That reaches a child as silence, so it is worth
+        one more attempt with more room -- and exactly one, from the shared budget,
+        because a model that cannot fit an answer in four times the space will not fit
+        it in eight either.
+        """
+        reply = self._call(on_text, Settings(temperature=0.0), turn=turn)
+        return reply
+
+    def _call(self, on_text, settings: Settings, *, turn: Turn | None,
+              retried: bool = False):
+        provider = getattr(self, "_metered", None) or self.provider
         tools = schemas_for(self.toolbox.allowed)
-        for chunk in self.provider.chat(
-            self.history, tools=tools, settings=Settings(temperature=0.0)
-        ):
-            if chunk.text and on_text:
-                on_text(chunk.text)
-        reply = self.provider.finish()
+        try:
+            for chunk in provider.chat(self.history, tools=tools, settings=settings):
+                if chunk.text and on_text:
+                    on_text(chunk.text)
+            reply = provider.finish()
+        except TruncatedReply:
+            if retried:
+                # Already given more room once. Stop rather than keep paying.
+                raise
+            if isinstance(provider, MeteredProvider):
+                provider.kind = RECOVERY
+            if turn is not None:
+                turn.recovered_truncation = True
+            roomier = Settings(
+                temperature=settings.temperature,
+                max_tokens=settings.max_tokens * 4,
+                seed=settings.seed,
+            )
+            return self._call(on_text, roomier, turn=turn, retried=True)
+
         # The provider already counted the prompt, so the context budget never needs to
         # re-tokenise anything (conversations.context_budget).
         if self.memory is not None:
@@ -418,9 +584,17 @@ class AgentController:
         After that, stop and explain. WORKORDER_01 section 28 is explicit that this must
         not loop indefinitely -- a child watching an AI fail the same way five times is a
         worse experience than being told plainly that it is stuck.
+
+        Two ceilings apply, and the tighter one wins. This one is section 28's three
+        attempts. The other is the turn's shared call budget, which repair spends from
+        like everything else -- so a turn that already used its calls getting here has
+        fewer repairs available, or none. That is deliberate: the alternative is each
+        subsystem holding its own reserve and the total being nobody's problem.
         """
         for attempt in range(1, MAX_REPAIR_ATTEMPTS + 1):
             turn.repair_attempts = attempt
+            if isinstance(getattr(self, "_metered", None), MeteredProvider):
+                self._metered.kind = REPAIR
             self.history.append(
                 Message(
                     role="user",
@@ -430,7 +604,7 @@ class AgentController:
                     ),
                 )
             )
-            reply = self._generate(None)
+            reply = self._generate(None, turn=turn)
             self.history.append(
                 Message(role="assistant", content=reply.text, tool_calls=reply.tool_calls)
             )
@@ -455,12 +629,43 @@ class AgentController:
             if succeeded:
                 return
 
+        if self._repair_actually_worked(turn):
+            return
+
         turn.gave_up = True
         turn.text = (
             "I tried three times and could not get this working. "
             "Tell me what you want to try next, or we can go back to the last version "
             "that worked."
         )
+
+    def _repair_actually_worked(self, turn: Turn) -> bool:
+        """Check the project before declaring failure, if repair changed anything.
+
+        Measured against the real model (SPIKES.md section 13): Luna spent its three
+        attempts reading, then being refused an overwrite, then finally making the
+        correct ``edit_file`` -- and because nothing ran afterwards, the loop reported
+        "I tried three times and could not get this working" about a game that was, by
+        then, fixed. Telling a child their working project is broken is worse than the
+        original bug.
+
+        This costs **no provider call**: running the project is a local tool. It only
+        happens when repair changed something and never got a clean run, so an
+        untouched project is not run again for nothing.
+        """
+        changed = any(result.changed_files for _, result in turn.tool_results)
+        if not changed:
+            return False
+        result = self.toolbox.dispatch("run_project", {})
+        turn.tool_results.append(("run_project", result))
+        if not result.ok:
+            return False
+        self.refresh_state()
+        turn.text = (
+            "That took a few tries, but it works now. "
+            "I fixed the problem and ran it to make sure."
+        )
+        return True
 
 
 def stream_reply(controller: AgentController, text: str) -> Iterator[str]:
