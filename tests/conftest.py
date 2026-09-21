@@ -14,6 +14,7 @@ credential takes an injected store, and this is what gets injected.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
@@ -22,6 +23,19 @@ import pytest
 from opennest.ai.provider import Chunk, Message, ModelInfo, ModelProvider, Reply
 from opennest.projects.manager import create_project
 from opennest.security import keychain
+
+# No test may open a window on the developer's screen.
+#
+# Phase 7 added tests that genuinely run each profile's starter template, because "the
+# file was copied in" and "the file works" are different claims. The Games template is
+# real Pygame, so those tests opened an actual game window, took focus, and closed it
+# four seconds later -- on every run of the suite. The window was never the thing under
+# test: that the template imports Pygame, creates a display and survives startup is.
+#
+# Set here rather than per-test so this cannot come back the next time something runs a
+# project. ``python_runner._child_environment`` forwards SDL_VIDEODRIVER, which is what
+# carries it into the sandboxed child process.
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
 
 class ScriptedProvider(ModelProvider):

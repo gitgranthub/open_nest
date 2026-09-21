@@ -187,3 +187,326 @@ def test_double_clicking_an_asset_shows_what_is_known_about_it(bench, picture) -
     shown = bench._output.toPlainText()
     assert "assets/spaceship.png" in shown
     assert "64x64 pixels" in shown
+
+
+# -- Phase 7: the main button, charts, boards and pictures --------------------
+
+
+def _bench_for(qt_app, project, **kwargs):
+    from opennest.ui.workbench import Workbench
+
+    provider = ScriptedProvider([Reply(text="ok")] * 4)
+    controller = AgentController(project, provider, Toolbox(project))
+    widget = Workbench(project, controller, **kwargs)
+    widget.resize(1180, 760)
+    return widget
+
+
+def test_compile_no_longer_shows_a_child_a_message_meant_for_the_model(
+    qt_app, tmp_path, monkeypatch
+) -> None:
+    """The bug this phase found by pressing the button.
+
+    ``_run`` always dispatched ``run_project``. Arduino has no run command and no such
+    tool, so the Toolbox refused it with text written for a model -- "'run_project' is
+    not available here. You can use: read_file, edit_file, write_file, compile_project."
+    -- and that went straight into the child's Build / Preview panel.
+    """
+    from opennest.execution import arduino
+    from opennest.projects.manager import create_project
+
+    monkeypatch.setattr(arduino, "available", lambda: False)
+    sketch = create_project("Traffic Light", "arduino", root=tmp_path)
+    bench = _bench_for(qt_app, sketch)
+    try:
+        bench._run()
+        shown = bench._output.toPlainText()
+        assert "run_project" not in shown
+        assert "is not available here" not in shown
+        assert "not installed" in shown
+    finally:
+        bench.close()
+
+
+def test_a_compiling_profile_gets_a_tick_and_no_stop_button(
+    qt_app, tmp_path, monkeypatch
+) -> None:
+    """WORKORDER_01 section 30 shows "✓ Compile", not "▶ Compile"."""
+    from opennest.execution import arduino
+    from opennest.projects.manager import create_project
+
+    monkeypatch.setattr(arduino, "available", lambda: False)
+    sketch = create_project("Traffic Light", "arduino", root=tmp_path)
+    bench = _bench_for(qt_app, sketch)
+    try:
+        assert bench._run_button.text().startswith("✓")
+        assert "Compile" in bench._run_button.text()
+        # Nothing is left running by a compile, so there is nothing to stop.
+        # isVisibleTo, not isVisible: this widget was never shown, so isVisible is
+        # False for everything and would pass whatever the code did.
+        assert not bench._stop_button.isVisibleTo(bench)
+    finally:
+        bench.close()
+
+
+def test_a_game_keeps_its_play_arrow(bench) -> None:
+    assert bench._run_button.text().startswith("▶")
+
+
+def test_the_board_picker_says_why_it_is_empty_without_the_tools(
+    qt_app, tmp_path, monkeypatch
+) -> None:
+    from opennest.execution import arduino
+    from opennest.projects.manager import create_project
+
+    monkeypatch.setattr(arduino, "available", lambda: False)
+    sketch = create_project("Traffic Light", "arduino", root=tmp_path)
+    bench = _bench_for(qt_app, sketch)
+    try:
+        assert "not installed" in bench._board.currentText()
+        assert not bench._board.isEnabled()
+        assert not bench._upload_button.isEnabled()
+    finally:
+        bench.close()
+
+
+def test_the_board_picker_offers_no_preselected_board(
+    qt_app, tmp_path, monkeypatch
+) -> None:
+    """Section 8: choosing a board for them chooses every pin on it."""
+    from opennest.execution import arduino
+    from opennest.projects.manager import create_project
+
+    monkeypatch.setattr(arduino, "available", lambda: True)
+    monkeypatch.setattr(
+        arduino, "boards",
+        lambda: [arduino.Board("Arduino UNO", "arduino:avr:uno")],
+    )
+    sketch = create_project("Traffic Light", "arduino", root=tmp_path)
+    bench = _bench_for(qt_app, sketch)
+    try:
+        assert bench._board.currentData() is None
+        assert "Choose" in bench._board.currentText()
+        # Upload cannot happen until a board is known.
+        assert not bench._upload_button.isEnabled()
+    finally:
+        bench.close()
+
+
+def test_picking_a_board_remembers_it_on_the_project(
+    qt_app, tmp_path, monkeypatch
+) -> None:
+    from opennest.execution import arduino
+    from opennest.projects.manager import create_project, open_project
+
+    monkeypatch.setattr(arduino, "available", lambda: True)
+    monkeypatch.setattr(
+        arduino, "boards",
+        lambda: [arduino.Board("Arduino UNO", "arduino:avr:uno")],
+    )
+    sketch = create_project("Traffic Light", "arduino", root=tmp_path)
+    bench = _bench_for(qt_app, sketch)
+    try:
+        bench._board.setCurrentIndex(bench._board.findData("arduino:avr:uno"))
+        assert sketch.manifest.arduino_board == "arduino:avr:uno"
+        assert open_project(sketch.directory).manifest.arduino_board == "arduino:avr:uno"
+        assert bench._upload_button.isEnabled()
+    finally:
+        bench.close()
+
+
+def test_upload_is_refused_when_a_parent_has_not_allowed_it(
+    qt_app, tmp_path, monkeypatch
+) -> None:
+    """Unanswered means no. The gate is consulted before anything is sent."""
+    from opennest.execution import arduino
+    from opennest.projects.manager import create_project
+
+    monkeypatch.setattr(arduino, "available", lambda: True)
+    monkeypatch.setattr(arduino, "boards", lambda: [])
+    monkeypatch.setattr(
+        arduino, "connected_ports",
+        lambda: [arduino.Port("/dev/cu.usbmodem1101",
+                              arduino.Board("Arduino UNO", "arduino:avr:uno"))],
+    )
+    sent = []
+    monkeypatch.setattr(arduino, "upload", lambda *a, **k: sent.append(a))
+
+    sketch = create_project("Traffic Light", "arduino", root=tmp_path)
+    sketch.manifest.arduino_board = "arduino:avr:uno"
+    bench = _bench_for(qt_app, sketch, upload_policy=lambda: False)
+    try:
+        bench._upload()
+        assert not sent, "sent a sketch to a board without permission"
+        assert "not allowed" in bench._output.toPlainText()
+    finally:
+        bench.close()
+
+
+def test_upload_proceeds_once_a_parent_allows_it(qt_app, tmp_path, monkeypatch) -> None:
+    from opennest.execution import arduino
+    from opennest.projects.manager import create_project
+
+    monkeypatch.setattr(arduino, "available", lambda: True)
+    monkeypatch.setattr(arduino, "boards", lambda: [])
+    monkeypatch.setattr(
+        arduino, "connected_ports",
+        lambda: [arduino.Port("/dev/cu.usbmodem1101",
+                              arduino.Board("Arduino UNO", "arduino:avr:uno"))],
+    )
+    calls = []
+
+    class FakeRun:
+        ok = True
+        stdout = "done"
+        failure_text = ""
+
+    def fake_upload(project, fqbn, port):
+        calls.append((fqbn, port))
+        return FakeRun()
+
+    monkeypatch.setattr(arduino, "upload", fake_upload)
+
+    sketch = create_project("Traffic Light", "arduino", root=tmp_path)
+    sketch.manifest.arduino_board = "arduino:avr:uno"
+    bench = _bench_for(qt_app, sketch, upload_policy=lambda: True)
+    try:
+        bench._upload()
+        assert calls == [("arduino:avr:uno", "/dev/cu.usbmodem1101")]
+    finally:
+        bench.close()
+
+
+def test_upload_with_nothing_plugged_in_says_so(qt_app, tmp_path, monkeypatch) -> None:
+    from opennest.execution import arduino
+    from opennest.projects.manager import create_project
+
+    monkeypatch.setattr(arduino, "available", lambda: True)
+    monkeypatch.setattr(arduino, "boards", lambda: [])
+    monkeypatch.setattr(arduino, "connected_ports", lambda: [])
+    sent = []
+    monkeypatch.setattr(arduino, "upload", lambda *a, **k: sent.append(a))
+
+    sketch = create_project("Traffic Light", "arduino", root=tmp_path)
+    sketch.manifest.arduino_board = "arduino:avr:uno"
+    bench = _bench_for(qt_app, sketch, upload_policy=lambda: True)
+    try:
+        bench._upload()
+        assert not sent
+        assert "USB" in bench._output.toPlainText()
+    finally:
+        bench.close()
+
+
+def test_a_chart_a_run_produced_is_put_on_screen(bench) -> None:
+    """DoD 34. A chart nobody can see is not a result."""
+    from tests.test_assets import SPACESHIP
+
+    assert not bench._chart.isVisible()
+    bench._note_images()
+    charts = bench.project.directory / "charts"
+    charts.mkdir(exist_ok=True)
+    (charts / "chart.png").write_bytes(SPACESHIP)
+
+    bench._show_any_chart()
+
+    assert bench._chart.isVisible()
+    assert bench._chart.pixmap() is not None
+    assert not bench._chart.pixmap().isNull()
+    assert "charts/chart.png" in bench._chart_caption.text()
+
+
+def test_no_chart_appears_when_a_run_produced_none(bench, picture) -> None:
+    """A picture the child imported is not this run's output."""
+    answer_with(bench, kinds.ASSET)
+    bench._add([picture], attach=False)
+    bench._note_images()
+
+    bench._show_any_chart()
+
+    assert not bench._chart.isVisible()
+
+
+def test_a_starter_idea_is_offered_not_sent(qt_app, project) -> None:
+    """Sections 5 and 27: an idea card seeds the first message.
+
+    Filled in rather than sent, because a child who picked "Maze" usually wants to add
+    something before anything is built.
+    """
+    bench = _bench_for(qt_app, project, starter_idea="Maze")
+    try:
+        assert "maze" in bench._input.text().lower()
+        # Nothing has been said to the model yet.
+        assert bench._transcript.toPlainText() == ""
+        assert bench._thread is None
+    finally:
+        bench.close()
+
+
+def test_making_a_picture_with_cloud_off_explains_rather_than_failing(
+    qt_app, tmp_path, credentials
+) -> None:
+    from opennest.projects.manager import create_project
+
+    pictures = create_project("My Pictures", "image_creation", root=tmp_path)
+    bench = _bench_for(qt_app, pictures, allow_cloud=False, credentials=credentials)
+    try:
+        bench._run()
+        shown = bench._output.toPlainText()
+        assert "turned off" in shown
+        assert bench._thread is None, "started generating with cloud off"
+    finally:
+        bench.close()
+
+
+def test_making_a_picture_with_no_key_points_at_the_key(
+    qt_app, tmp_path, credentials
+) -> None:
+    from opennest.projects.manager import create_project
+
+    pictures = create_project("My Pictures", "image_creation", root=tmp_path)
+    bench = _bench_for(qt_app, pictures, allow_cloud=True, credentials=credentials)
+    try:
+        bench._run()
+        assert "key" in bench._output.toPlainText().lower()
+        assert bench._thread is None
+    finally:
+        bench.close()
+
+
+def test_a_game_keeps_its_stop_button(bench) -> None:
+    """The companion to the compile case, so the assertion above means something."""
+    assert bench._stop_button.isVisibleTo(bench)
+
+
+def test_a_generated_picture_is_shown_without_guessing_which_file_it_was(
+    qt_app, tmp_path, configured_credentials
+) -> None:
+    """The application put the file there, so it does not need to search for it.
+
+    The run path compares the project before and after because the model cannot be
+    trusted to report a path. Generation is the opposite case: Open Nest saved the file
+    itself and knows exactly which one it is.
+    """
+    from opennest.projects.manager import create_project
+    from tests.test_images import PNG, ScriptedTransport, png_payload
+
+    pictures = create_project("My Pictures", "image_creation", root=tmp_path)
+    bench = _bench_for(qt_app, pictures, allow_cloud=True, credentials=configured_credentials)
+    bench.show()
+    try:
+        from opennest.ai import images
+
+        asset = images.generate_into(
+            pictures, "a rocket",
+            credentials=configured_credentials, transport=ScriptedTransport(png_payload(PNG)),
+        )
+        bench._image_ready(asset)
+
+        assert bench._chart.isVisible()
+        assert asset.path in bench._chart_caption.text()
+        # And the honesty line is said where the child will read it.
+        transcript = bench._transcript.toPlainText()
+        assert "Nothing has looked at the picture" in transcript
+    finally:
+        bench.close()

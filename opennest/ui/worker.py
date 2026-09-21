@@ -39,6 +39,42 @@ class AgentWorker(QObject):
             self.finished.emit(turn)
 
 
+class ImageWorker(QObject):
+    """Generates one picture off the UI thread.
+
+    Measured at 10-15 seconds against the real service (SPIKES.md section 12), which is
+    far too long to block on: a frozen window for a quarter of a minute reads as a
+    crash. The Image Creation profile is the only caller.
+    """
+
+    finished = Signal(object)  # assets.Asset
+    failed = Signal(str)
+
+    def __init__(self, project, description: str, *, credentials, transport=None) -> None:
+        super().__init__()
+        self.project = project
+        self.description = description
+        self.credentials = credentials
+        self.transport = transport
+
+    def run(self) -> None:
+        from opennest.ai import images
+
+        try:
+            asset = images.generate_into(
+                self.project,
+                self.description,
+                credentials=self.credentials,
+                transport=self.transport,
+            )
+        except ProviderError as exc:
+            self.failed.emit(str(exc))
+        except Exception as exc:  # noqa: BLE001 - a crash here must not kill the app
+            self.failed.emit(f"The picture could not be made: {exc}")
+        else:
+            self.finished.emit(asset)
+
+
 class ModelLoader(QObject):
     """Loads a model off the UI thread; first load is the slow one."""
 

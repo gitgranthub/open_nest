@@ -97,7 +97,8 @@
       "frameworks": [],
       "packages": [],
       "starter_template": "arduino_basic",
-      "entrypoint": "project.ino",
+      "_entrypoint_note": "arduino-cli requires a sketch folder whose name matches its .ino, so the sketch is src/project/project.ino and not src/project.ino. Measured in SPIKES.md section 14: the flat layout fails with 'main file missing from sketch: src/src.ino'.",
+      "entrypoint": "project/project.ino",
       "run_command": null,
       "compile_command": [
         "arduino-cli",
@@ -168,6 +169,41 @@
         "Compare Results"
       ],
       "run_mode": "batch"
+    },
+    {
+      "id": "image_creation",
+      "name": "Image Creation",
+      "symbol": "🎨",
+      "tagline": "Make a picture with AI",
+      "prompt_file": "image_creation.txt",
+      "default_language": "none",
+      "frameworks": [],
+      "packages": [],
+      "starter_template": "image_creation_basic",
+      "entrypoint": "prompts.md",
+      "run_command": null,
+      "compile_command": null,
+      "run_label": "Make a Picture",
+      "_run_mode_note": "The only 'generate' profile. Generation is an application action, not a project run: the process sandbox denies network, so a child's own code could never reach an image service. Nothing here is executed, which is why run_command and compile_command are both null.",
+      "run_mode": "generate",
+      "_image_model_note": "The image model lives here rather than in models.json on purpose: a models.json entry is something that answers a conversation, and this one does not. PLAN.md decision D6.",
+      "image_provider": "openai",
+      "image_model": "gpt-image-2.5-flare",
+      "requires_cloud_provider": "openai",
+      "tools": [
+        "read_file",
+        "edit_file",
+        "write_file"
+      ],
+      "asset_types": [
+        "image"
+      ],
+      "starter_ideas": [
+        "A Game Sprite",
+        "A Background",
+        "An Icon",
+        "A Character"
+      ]
     },
     {
       "id": "blank",

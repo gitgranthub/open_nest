@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -30,14 +31,16 @@ from PySide6.QtWidgets import (
 
 from opennest.agent.controller import AgentController
 from opennest.agent.tools import Toolbox
+from opennest.ai import images
 from opennest.ai.router import models_for_project, models_that_can_read, why_unavailable
 from opennest.assets import kinds
 from opennest.assets import manager as assets
+from opennest.execution import arduino, outputs
 from opennest.execution.python_runner import stop_project
 from opennest.projects.manager import Project
 from opennest.security.sandbox import visible_files
 from opennest.ui.common import horizontal_rule, section_label, status_row
-from opennest.ui.worker import AgentWorker, run_in_thread
+from opennest.ui.worker import AgentWorker, ImageWorker, run_in_thread
 from opennest.versioning.checkpoint import VersionHistory
 from opennest.versioning.git_manager import GitError, SecretsFound
 
@@ -77,6 +80,8 @@ class Workbench(QWidget):
         *,
         allow_cloud: bool = False,
         credentials=None,
+        upload_policy=None,
+        starter_idea: str | None = None,
     ) -> None:
         super().__init__()
         self.project = project
@@ -84,18 +89,44 @@ class Workbench(QWidget):
         self.toolbox: Toolbox = controller.toolbox
         self.versions = versions
         self.allow_cloud = allow_cloud
+        #: Whether sending a sketch to a board is allowed *now*. A callable for the same
+        #: reason ``Toolbox.network_policy`` is one: the answer can be a parent dialog,
+        #: so it cannot be known when the project opened. Default refuses -- an
+        #: application that could not ask has not been told yes.
+        self.upload_policy = upload_policy or (lambda: False)
         #: Only ever asked whether a key exists, never for its value. Injectable so the
         #: headless tests do not depend on what is in the developer's own Keychain.
         self.credentials = credentials
         self._thread = None
         #: Files dropped onto the chat, waiting to go with the next message.
         self._pending: list[assets.Asset] = []
+        #: Pictures present before the current run, so its own output can be told apart
+        #: from what the child imported earlier.
+        self._images_before: outputs.Snapshot = {}
         self._build()
         # WORKORDER_01 section 12: a file can be dragged onto the chat, the file panel
         # or the asset panel. One handler covers all three; where it landed decides
         # whether it is also attached to the next message.
         self.setAcceptDrops(True)
         self.refresh_files()
+        if starter_idea:
+            self.suggest(starter_idea)
+
+    def suggest(self, idea: str) -> None:
+        """Put a starter idea in the message box, ready to send or edit.
+
+        Filled in rather than sent: a child who picked "Maze" usually wants to say
+        something more before anything is built, and sending on their behalf takes that
+        away. WORKORDER_01 sections 5 and 27.
+        """
+        self._input.setText(self._starter_sentence(idea))
+        self._input.setFocus()
+
+    def _starter_sentence(self, idea: str) -> str:
+        """Turn a card's two words into something worth sending."""
+        if self.project.profile.generates:
+            return f"Make a picture of {idea.lower()}"
+        return f"Make a {idea.lower()}"
 
     # -- construction -------------------------------------------------------
 
@@ -232,6 +263,17 @@ class Workbench(QWidget):
         self._output.setProperty("role", "mono")
         self._output.setPlaceholderText("Nothing has run yet.")
         layout.addWidget(self._output, 1)
+
+        # DoD 34: a chart is only a result if somebody can see it. Hidden until a run
+        # actually produces a picture, so a Games project never grows an empty frame.
+        self._chart_caption = QLabel()
+        self._chart_caption.setProperty("role", "mono")
+        self._chart_caption.hide()
+        self._chart = QLabel()
+        self._chart.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._chart.hide()
+        layout.addWidget(self._chart_caption)
+        layout.addWidget(self._chart, 2)
         return frame
 
     def _assistant_panel(self) -> QFrame:
@@ -263,13 +305,20 @@ class Workbench(QWidget):
         row = QHBoxLayout()
         row.setSpacing(12)
 
-        self._run_button = QPushButton(f"▶  {self.project.profile.run_label}")
+        # WORKORDER_01 section 30 shows "✓ Compile" against "▶ Run Game": a tick for
+        # checking the code, a play arrow for making something happen.
+        profile = self.project.profile
+        mark = "✓" if profile.can_compile else "▶"
+        self._run_button = QPushButton(f"{mark}  {profile.run_label}")
         self._run_button.setProperty("role", "primary")
         self._run_button.clicked.connect(self._run)
 
         self._stop_button = QPushButton("Stop")
         self._stop_button.clicked.connect(self._stop)
         self._stop_button.setEnabled(False)
+        # Nothing to stop in a project that compiles or generates: both finish on their
+        # own, and neither leaves anything running.
+        self._stop_button.setVisible(profile.can_run)
 
         # "Undo", not "revert commit". The child never learns that Git is involved.
         self._undo_button = QPushButton("Undo")
@@ -287,6 +336,10 @@ class Workbench(QWidget):
 
         row.addWidget(self._run_button)
         row.addWidget(self._stop_button)
+        if profile.can_compile:
+            row.addSpacing(16)
+            for widget in self._hardware_controls():
+                row.addWidget(widget)
         row.addSpacing(16)
         row.addWidget(self._undo_button)
         row.addSpacing(16)
@@ -295,6 +348,72 @@ class Workbench(QWidget):
         row.addStretch(1)
         row.addWidget(self._saved)
         return row
+
+    def _hardware_controls(self) -> list[QWidget]:
+        """Board picker and Upload, for a project that compiles for a device.
+
+        The board list comes from arduino-cli, never from a list written down here:
+        WORKORDER_01 section 8 forbids inventing hardware details, and the name of a
+        board a child does not own is a hardware detail. Nothing is preselected for the
+        same reason -- choosing a board for them would choose every pin on it.
+        """
+        self._board = QComboBox()
+        self._board.setToolTip("Which Arduino do you have?")
+        self._board.currentIndexChanged.connect(self._board_picked)
+
+        self._upload_button = QPushButton("Send to Board")
+        self._upload_button.setToolTip("Put this sketch onto the Arduino")
+        self._upload_button.clicked.connect(self._upload)
+
+        self._refresh_boards()
+        return [section_label("Board"), self._board, self._upload_button]
+
+    def _refresh_boards(self) -> None:
+        """Fill the board picker, or say plainly why it is empty."""
+        self._board.blockSignals(True)
+        self._board.clear()
+        if not arduino.available():
+            self._board.addItem("Arduino tools not installed", None)
+            self._board.setEnabled(False)
+            self._upload_button.setEnabled(False)
+            self._board.setToolTip(arduino.missing_message())
+            self._board.blockSignals(False)
+            return
+
+        self._board.addItem("Choose your board…", None)
+        try:
+            available = arduino.boards()
+        except arduino.ArduinoUnavailable as exc:
+            self._board.addItem("Could not read the board list", None)
+            self._board.setToolTip(str(exc))
+            self._board.blockSignals(False)
+            return
+
+        chosen = self.project.manifest.arduino_board
+        for board in available:
+            self._board.addItem(board.name, board.fqbn)
+        if chosen:
+            index = self._board.findData(chosen)
+            if index >= 0:
+                self._board.setCurrentIndex(index)
+        self._board.blockSignals(False)
+        self._upload_button.setEnabled(bool(chosen))
+
+    def _board_picked(self) -> None:
+        """Remember the board on the project, so it is chosen once and not every time."""
+        fqbn = self._board.currentData()
+        if not fqbn or fqbn == self.project.manifest.arduino_board:
+            return
+        self.project.manifest.arduino_board = fqbn
+        try:
+            self.project.save()
+        except OSError as exc:
+            self._output.setPlainText(f"Could not save which board you picked: {exc}")
+            return
+        self._upload_button.setEnabled(True)
+        self._output.setPlainText(
+            f"Set to {self._board.currentText()}. Press Compile to check your sketch."
+        )
 
     # -- behaviour ----------------------------------------------------------
 
@@ -457,6 +576,9 @@ class Workbench(QWidget):
         self._say("You", text + "".join(f"\n  [ {a.name} ]" for a in attachments))
         self._busy(True)
         self.set_model_status("working", "Thinking")
+        # The model may run the project during the turn, so the chart it draws has to be
+        # measured against the project as it was before the turn started.
+        self._note_images()
 
         worker = AgentWorker(self.controller, text, attachments)
         worker.finished.connect(self._turn_finished)
@@ -509,14 +631,68 @@ class Workbench(QWidget):
     def _show_run(self, result) -> None:
         run = result.run
         if run.still_running:
-            self._output.setPlainText("The project is running. Close its window to stop.")
+            # Not "close its window": a Raspberry Pi test loop is a console program and
+            # has no window to close. Stop is true for both, and it is right there.
+            self._output.setPlainText("The project is running. Press Stop when you are done.")
             self._stop_button.setEnabled(True)
             return
         body = run.stdout if run.ok else run.failure_text
         self._output.setPlainText(body or "(no output)")
+        self._show_any_chart()
+
+    def _show_any_chart(self, relative: str | None = None) -> None:
+        """Put a picture on screen (DoD 34).
+
+        With no argument, works out what the run produced by comparing the project
+        before and after, rather than trusting the model to report where it saved
+        something. See :mod:`opennest.execution.outputs`.
+
+        ``relative`` is for the case where the application already knows, because it
+        put the file there itself -- a generated image.
+        """
+        if relative is None:
+            produced = outputs.images_written(self.project.directory, self._images_before)
+            if not produced:
+                return
+            newest, extra_count = produced[0], len(produced) - 1
+        else:
+            newest, extra_count = relative, 0
+
+        pixmap = QPixmap(str(self.project.directory / newest))
+        if pixmap.isNull():
+            return
+        self._chart.setPixmap(
+            pixmap.scaled(
+                self._chart.width() or 420,
+                320,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
+        extra = f"  (+{extra_count} more)" if extra_count else ""
+        self._chart_caption.setText(f"{newest}{extra}")
+        self._chart_caption.show()
+        self._chart.show()
+
+    def _note_images(self) -> None:
+        """Remember which pictures existed before something runs."""
+        self._images_before = outputs.snapshot(self.project.directory)
 
     def _run(self) -> None:
-        result = self.toolbox.dispatch("run_project", {})
+        """The main button: run, compile, or generate, depending on the profile.
+
+        This used to always dispatch ``run_project``. On an Arduino project, which has no
+        run command and no such tool, that showed the child a message written for the
+        model: "'run_project' is not available here. You can use: read_file, ...".
+        """
+        profile = self.project.profile
+        if profile.generates:
+            self._generate_image()
+            return
+
+        self._note_images()
+        tool = "run_project" if profile.can_run else "compile_project"
+        result = self.toolbox.dispatch(tool, {})
         if result.run is not None:
             self._show_run(result)
         elif not result.ok:
@@ -527,3 +703,112 @@ class Workbench(QWidget):
             stop_project(self.toolbox.last_run)
         self._stop_button.setEnabled(False)
         self._output.setPlainText("Stopped.")
+
+    # -- hardware -----------------------------------------------------------
+
+    def _upload(self) -> None:
+        """Send the compiled sketch to a connected board.
+
+        A privileged application action: it crosses the project boundary on purpose, so
+        it needs the parent gate first and gets the narrowest access that can work --
+        write access to one serial port, nothing else. The sandbox is not relaxed for
+        anything else, and the gate is the one that already exists (``arduino_upload``)
+        rather than a second mechanism.
+        """
+        board = self.project.manifest.arduino_board
+        if not board:
+            self._output.setPlainText("Choose which Arduino you have first.")
+            return
+
+        try:
+            ports = arduino.connected_ports()
+        except arduino.ArduinoUnavailable as exc:
+            self._output.setPlainText(str(exc))
+            return
+
+        recognised = [port for port in ports if port.board is not None] or ports
+        if not recognised:
+            self._output.setPlainText(
+                "I cannot see an Arduino plugged in. Connect it with the USB cable and "
+                "try again."
+            )
+            return
+
+        port = recognised[0]
+        if len(recognised) > 1:
+            choice, accepted = QInputDialog.getItem(
+                self, "Which one?", "Send it to:",
+                [candidate.label for candidate in recognised], 0, False,
+            )
+            if not accepted:
+                return
+            port = next(c for c in recognised if c.label == choice)
+
+        # Asked at the moment it matters, not when the project opened -- the answer can
+        # be a dialog. Unanswered means no.
+        if not self.upload_policy():
+            self._output.setPlainText("A parent has not allowed sending to a board.")
+            return
+
+        self._output.setPlainText(f"Sending to {port.label}…")
+        try:
+            result = arduino.upload(self.project, board, port.address)
+        except arduino.ArduinoUnavailable as exc:
+            self._output.setPlainText(str(exc))
+            return
+        if result.ok:
+            self._output.setPlainText(f"Sent to {port.label}.\n\n{result.stdout.strip()}")
+        else:
+            self._output.setPlainText(result.failure_text or "Sending to the board failed.")
+
+    # -- image generation ---------------------------------------------------
+
+    def _generate_image(self) -> None:
+        """Ask the image service for a picture (PLAN.md decision D6).
+
+        Not a project run: the process sandbox denies network, so a child's own code
+        could never reach an image service. This is the application making the request,
+        which is why the profile declares ``run_mode: generate`` and has no run command.
+        """
+        unmet = images.unmet_requirements(
+            self.project.profile, allow_cloud=self.allow_cloud, credentials=self.credentials
+        )
+        if unmet:
+            self._output.setPlainText(unmet)
+            return
+
+        description = self._input.text().strip()
+        if not description:
+            description, accepted = QInputDialog.getText(
+                self, "Make a Picture", "What should the picture be?"
+            )
+            if not accepted or not description.strip():
+                return
+            description = description.strip()
+        self._input.clear()
+
+        self._busy(True)
+        self._output.setPlainText("Making your picture. This takes about fifteen seconds…")
+        self._say("You", f"Make a picture: {description}")
+
+        worker = ImageWorker(self.project, description, credentials=self.credentials)
+        worker.finished.connect(self._image_ready)
+        worker.failed.connect(self._image_failed)
+        self._thread = run_in_thread(self, worker)
+        self._thread.finished.connect(self._thread_done)
+
+    def _image_ready(self, asset) -> None:
+        self._busy(False)
+        self._show_any_chart(asset.path)
+        self.refresh_files()
+        # Section 13's rule, kept at the point a picture appears: Open Nest asked for
+        # this image and saved it, and still has not looked at it.
+        self._say(
+            "Open Nest",
+            f"Saved as {asset.path}. {asset.summary}\n"
+            f"  Nothing has looked at the picture itself -- open it to see how it came out.",
+        )
+
+    def _image_failed(self, message: str) -> None:
+        self._busy(False)
+        self._output.setPlainText(message)

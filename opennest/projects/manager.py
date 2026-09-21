@@ -53,6 +53,10 @@ class Manifest:
     last_successful_run: str | None = None
     git_enabled: bool = False
     github_backup: bool = False
+    #: Which Arduino board this project is for, as an arduino-cli FQBN. Stays None until
+    #: the child picks one: WORKORDER_01 section 8 forbids inventing hardware details,
+    #: and guessing a board is guessing every pin on it.
+    arduino_board: str | None = None
 
     @classmethod
     def from_dict(cls, raw: dict) -> Manifest:
@@ -128,6 +132,21 @@ def create_project(
 ) -> Project:
     """Create a project directory, manifest and starter files."""
     profile = get_profile(profile_id)
+
+    # Checked before anything is created. A profile naming a template that is not
+    # installed is a packaging fault, and it used to pass silently: four of the five
+    # profiles made a project containing nothing but project.json, with the manifest
+    # pointing at an entrypoint that was never copied in. Nothing noticed for seven
+    # phases, which is the argument for failing loudly -- and for failing here, before
+    # a half-made directory exists to block the child retrying the same name.
+    source = template_dir(profile)
+    if not source.is_dir():
+        raise ProjectError(
+            f"Open Nest is missing the starter files for a {profile.name} project "
+            f"({profile.starter_template}). This is a problem with the installation, "
+            f"not with anything you did."
+        )
+
     projects_root = Path(root) if root else paths.projects_root()
     projects_root.mkdir(parents=True, exist_ok=True)
 
@@ -140,9 +159,7 @@ def create_project(
         (directory / sub).mkdir()
     paths.project_internal_dir(directory).mkdir()
 
-    source = template_dir(profile)
-    if source.is_dir():
-        shutil.copytree(source, directory / "src", dirs_exist_ok=True)
+    shutil.copytree(source, directory / "src", dirs_exist_ok=True)
 
     manifest = Manifest(
         name=name,

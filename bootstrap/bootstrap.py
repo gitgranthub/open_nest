@@ -60,8 +60,16 @@ def _setup_then_launch() -> int:
         _say("Creating the Open Nest environment...")
         env.create_venv(python_exe)
 
+    # base.txt is the application; projects.txt is the curated set a child's project may
+    # import (WORKORDER_01 section 20). Installing only the first is what made every
+    # profile's starter template unrunnable on a fresh Mac -- including Games, whose
+    # template imports pygame. Measured: projects.txt adds about 190 MB to an install
+    # that already fetches roughly 1.2 GB for PySide6 alone.
     _say("Installing what Open Nest needs. This can take a few minutes...")
     env.install_requirements([_requirements("base.txt")])
+
+    _say("Installing what your projects need...")
+    env.install_requirements([_requirements("projects.txt")])
 
     missing = env.verify_imports(REQUIRED_IMPORTS)
     if missing:

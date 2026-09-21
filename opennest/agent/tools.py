@@ -21,6 +21,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from opennest.execution import arduino
 from opennest.execution.python_runner import RunResult, run_project
 from opennest.projects.manager import Project
 from opennest.security.sandbox import PathNotAllowed, resolve_in_project
@@ -295,15 +296,42 @@ class Toolbox:
             self.project.save()
 
     def _compile_project(self, args: dict) -> ToolResult:
+        """Compile, for the one profile that compiles.
+
+        The profile's ``compile_command`` names the toolchain; it is not a complete
+        command line, because a real compile needs the board out of the manifest and a
+        sketch path derived from the entrypoint. :mod:`opennest.execution.arduino`
+        assembles it -- and had to, since a bare ``arduino-cli compile`` cannot work
+        (SPIKES.md section 14).
+        """
         command = self.project.profile.compile_command
         if not command:
             raise ToolError("This kind of project cannot be compiled.")
-        result = run_project(
-            self.project.directory, command, python_executable=self.python_executable
-        )
+        if command[0] != arduino.EXECUTABLE:
+            raise ToolError(f"Open Nest does not know how to compile with {command[0]!r}.")
+
+        if not arduino.available():
+            return ToolResult(False, arduino.missing_message())
+
+        board = self.project.manifest.arduino_board
+        if not board:
+            # Section 8: never invent hardware details. Guessing a board guesses every
+            # pin on it, so the honest move is to ask.
+            return ToolResult(
+                False,
+                "I do not know which Arduino board this is for yet. Ask the child which "
+                "board they have and tell them to choose it next to the Compile button.",
+            )
+
+        try:
+            result = arduino.compile_sketch(self.project, board)
+        except arduino.ArduinoUnavailable as exc:
+            return ToolResult(False, str(exc))
         self.last_run = result
         if result.ok:
-            return ToolResult(True, "It compiled successfully.", run=result)
+            self._record_success()
+            body = result.stdout.strip()
+            return ToolResult(True, f"It compiled successfully.\n\n{body}", run=result)
         return ToolResult(False, result.failure_text or "Compiling failed.", run=result)
 
     def _inspect_error(self, args: dict) -> ToolResult:

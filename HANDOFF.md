@@ -1,9 +1,29 @@
 # Handoff — start here
 
-You are picking up Open Nest after Phase 6. **Phase 7 (remaining profiles) is next.**
-This document is what you need before touching anything.
+You are picking up Open Nest after Phase 7. **Phase 8 (setup wizard and installation
+lifecycle) is next.** This document is what you need before touching anything.
 
 Three things before the rest.
+
+**Four of the five profiles had never worked, and nothing said so.** `profiles.json`
+named five starter templates and only `pygame_basic` existed; `create_project` skipped a
+missing one silently, so Raspberry Pi, Arduino, Research and Blank each produced a
+directory containing `project.json` and nothing else. No error. It dated from Phase 0 and
+survived six phases. All six templates now exist, `create_project` raises before creating
+anything, and a test checks each profile's entrypoint rather than just its template
+directory. If you add a profile, that test is the one that will catch you.
+
+**No profile's dependencies were installed on a fresh Mac — Games included.** The
+bootstrap installed `base.txt` only, and `requirements/projects.txt` (pygame, pandas,
+matplotlib, numpy, pillow) was installed by nothing. Games looked fine because developer
+machines already had pygame. Both the bootstrap and `scripts/fetch.sh deps` now install
+it: ~188 MB, against 1,179 MB of PySide6 the bootstrap already fetches.
+
+**Actions that leave the project boundary are privileged, and that is a rule now, not a
+one-off.** Ordinary project code stays confined exactly as it was. Upload, deploy, export
+and publish are application actions with an explicit minimal grant each. §5 has the rule;
+`process_sandbox.grant_devices` is the first instance. Read it before adding anything that
+writes outside a project.
 
 **All three cloud models are verified against the real services** — Sonnet 5, Haiku 4.5
 and `gpt-5.6-luna` each pass every check in SPIKES.md §11, and Luna's repair loop,
@@ -48,41 +68,74 @@ it belongs in section 4.
 | 4 — Memory and thread rollover | complete, not yet in a PR |
 | 5 — Assets | complete, not yet in a PR |
 | 6 — Cloud AI, credentials, parent controls | complete, committed on `phase-6-cloud`. All three cloud models verified against the real services |
-| **7 — Remaining profiles** | **not started — yours** |
+| 7 — Remaining profiles | complete, committed on `phase-7-profiles`. Arduino compile verified against the real toolchain; upload hardware-unverified |
+| **8 — Setup wizard and installation lifecycle** | **not started — yours** |
 
 Branches are **stacked**: each is based on the previous one, so each PR shows only its
-own phase. Nothing is merged to `main` yet. Branch from `phase-6-cloud`.
+own phase. Nothing is merged to `main` yet. Branch from `phase-7-profiles`.
 
-What works today: a child picks a project type, describes an idea, the local model edits
-the project, it runs, they can undo, the project remembers its decisions across
-conversations, and they can drag their own pictures, data and documents in and have the
-project use them. A parent can add an API key, turn cloud on, and the child can switch to
-Claude or OpenAI after a warning. Everything still works with cloud off, which is the
-default.
+The review chain is 1 → 2 → 3 → 4 → 6 → 7 → 5. The PR numbers do not match the review
+order, because #5 was opened before #6 and #7.
 
-456 tests pass, ruff is clean.
+What works today: a child picks one of six project types, describes an idea, the local
+model edits the project, it runs, they can undo, the project remembers its decisions
+across conversations, and they can drag their own pictures, data and documents in and have
+the project use them. A Research project turns a dropped CSV into analysis and a chart they
+can see. An Arduino project compiles for a board they choose. A parent can add an API key,
+turn cloud on, and the child can switch to Claude or OpenAI after a warning, or make
+pictures with an image model. Everything except Image Creation still works with cloud off,
+which is the default.
 
-**Phase 7 is mostly not about cloud.** It is Raspberry Pi, Arduino, Research and Blank
-profiles, plus DoD 32–34 (a Research project takes a dropped CSV and produces analysis
-and a chart), which Phase 5 moved onto it. Two things Phase 6 left you: the
-`arduino_upload` and `raspberry_pi_deployment` permission gates are built and enforceable
-but have no consumer yet — call `controls.gate(name, approver)` when you add one — and
-DoD 32–34 needs matplotlib working under Seatbelt, which means `MPLCONFIGDIR` inside the
-project.
+538 tests pass, ruff is clean.
+
+**Phase 8 is the setup wizard**, and Phase 7 handed it two concrete items:
+
+- **The Arduino toolchain needs a wizard step.** `scripts/fetch.sh arduino` installs it
+  for development — pinned v1.5.1, SHA256-verified, into `$OPENNEST_HOME/tools` — but a
+  parent has no way to get it. It is a ~17 MB binary plus **324 MB** of board cores, so it
+  belongs behind a choice rather than in the default install. `arduino.available()` and
+  `arduino.describe()` are what a health check should call.
+- **`projects.txt` is now in the bootstrap**, which makes the install bigger. Worth
+  showing in the wizard rather than letting it be a silent five-minute wait.
+
+And one item raised after Phase 7 closed: **the app has no concept of its own version.**
+`opennest.__version__` is `"0.1.0"` and only ever gets printed; `installation.json` is
+declared in `paths.py` and never written. The work order does ask for safe updates after a
+`git pull` (§"Repository update behavior", DoD 51–53), but only as migrations on the next
+launch — not noticing that a new version exists, not pulling from inside the app, and not
+restarting a running one. That is **D9**, and PLAN.md's Phase 8 section has the gap and the
+traps written out.
+
+Still with no consumer: `raspberry_pi_deployment`. §7 calls SSH deployment future, so
+Phase 7 had nothing to gate without inventing a feature. When you build it, it takes the
+privileged-action pattern in §5, not a new mechanism.
 
 ---
 
 ## 2. Get running in five minutes
 
 ```bash
-.venv/bin/python -m pytest -q      # 456 passing
+.venv/bin/python -m pytest -q      # 538 passing, about 40 seconds
 ```
+
+It is slower than it was (7 s at Phase 6). Phase 7 added tests that actually run each
+profile's starter template under the real sandbox, which is the only way to tell "the file
+was copied in" from "the file works" — and the distinction was the whole bug. The Arduino
+and image tests are hermetic and fast; the profile runs are not.
 
 **Run the test suite unwrapped.** It is hermetic — temporary directories, no network, no
 model — so it needs nothing from the sandbox. Wrapping it in `scripts/offline.sh` used to
 be the documented instruction and it was wrong: see "Seatbelt does not nest" in section 4.
-A wrapped run is green now (233 passed, 16 skipped), but the skips are real coverage you
-lose, so prefer the unwrapped run.
+
+**A wrapped run is not green, and this file used to claim it was.** Measured at Phase 7:
+`scripts/offline.sh .venv/bin/python -m pytest -q` gives **4 failed, 501 passed, 33
+skipped**. The four are in `tests/test_budget.py` and they fail the same way at the
+Phase 6 commit, so this is not a Phase 7 regression — it is the nested-Seatbelt problem
+again. Twelve tests were taught to *skip* when the sandbox cannot be applied; these four
+exercise the repair loop, which runs the project, and they assert on a successful run
+instead, so they fail rather than skip. Either teach them the same skip or give them a
+stubbed runner. Until then: **run unwrapped.** The suite needs nothing the wrapper
+provides.
 
 If `.venv` does not exist yet, run `./Setup\ Open\ Nest.command` first. It installs its
 own CPython 3.12.14 — do not expect a system Python to be usable.
@@ -91,7 +144,7 @@ own CPython 3.12.14 — do not expect a system Python to be usable.
 
 | Phase | Command | Network |
 |---|---|---|
-| Fetch | `scripts/fetch.sh model <id>` / `scripts/fetch.sh deps` | **on**, pinned artifacts only |
+| Fetch | `scripts/fetch.sh model <id>` / `deps` / `arduino` | **on**, pinned artifacts only |
 | Anything touching the model | `scripts/offline.sh <command>` | **off** |
 | The test suite | `.venv/bin/python -m pytest -q` | not used |
 
@@ -124,6 +177,8 @@ opennest/
 │   ├── cloud.py            HTTP + SSE for both cloud providers. Transport is injectable.
 │   ├── anthropic_provider.py  Messages API. Most of it is message translation.
 │   ├── openai_provider.py  Responses API. Same.
+│   ├── images.py           image generation. NOT a ModelProvider -- it answers no
+│   │                       conversation, so it is not in the catalogue either.
 │   └── router.py           curated catalogue; cloud needs the switch AND a key
 ├── agent/
 │   ├── controller.py       the loop: prompt, tools, repair, checkpoints, rollover
@@ -145,8 +200,11 @@ opennest/
 │   ├── context_budget.py   per-model policy, usage, when to hand over
 │   ├── archive.py          thread_vNN.jsonl, sequential, never overwritten
 │   └── rollover.py         the section 15A handover sequence
-├── projects/               manifest, profiles, starter templates
-├── execution/              out-of-process running, batch vs interactive
+├── projects/               manifest, profiles, starter templates (one per profile)
+├── execution/
+│   ├── python_runner.py    out-of-process running, batch vs interactive
+│   ├── arduino.py          arduino-cli: is it here, boards, ports, compile, upload
+│   └── outputs.py          which pictures a run produced. Deterministic, not a tool.
 ├── versioning/             git_manager, checkpoint, autosave, secret_scanner
 ├── security/
 │   ├── sandbox.py          path confinement for Open Nest's own tools
@@ -159,7 +217,8 @@ opennest/
 ```
 
 `ui/settings.py` is the six sections of §32; `ui/consent.py` is the three places Open
-Nest stops and asks (cloud warning, parent PIN, permission prompt).
+Nest stops and asks (cloud warning, parent PIN, permission prompt); `ui/new_project.py`
+is the name-it-and-pick-an-idea dialog (§27's idea cards).
 
 `bootstrap/` is separate and **must stay Python 3.9-compatible** — it runs before a modern
 interpreter exists. A test enforces this, and another enforces that it never imports
@@ -209,6 +268,31 @@ does.** Do not "clean up" these without re-measuring:
 - Starter templates under `projects/templates/` are excluded from ruff: a child reads
   that code, and the linter wanted to collapse a readable `if/elif` into one long line.
 
+**Phase 7 traps, all measured (SPIKES.md §14):**
+
+- **An Arduino sketch folder must be named after its sketch.** `arduino-cli compile src/`
+  fails with `main file missing from sketch: src/src.ino`. The template is
+  `src/project/project.ino` and the profile entrypoint carries the subdirectory. The
+  obvious flat layout is the one that cannot compile, so this looks wrong until you try it.
+- **Every `arduino-cli` call must name its data directory — including `version` and
+  `board listall`.** Without it the tool creates `~/Library/Arduino15`, and containment is
+  a promise this project makes. `arduino._environment()` exists for that; use it even for
+  a read-only probe. I tripped this twice while measuring.
+- **A confined Arduino compile needs three paths moved inside the project** (staging,
+  sketchbook, build path), and it fails on them one at a time as you find them. The 324 MB
+  toolchain stays *outside* and therefore read-only, which is the right way round: a
+  compile cannot modify its own compiler.
+- **`MPLCONFIGDIR` is a speed fix, not a correctness one.** matplotlib always worked under
+  Seatbelt. Without a persistent cache it rebuilds its fonts every run: 6.1 s and three
+  lines of stderr, against 0.2 s and silence. PLAN.md called it a blocker for two phases;
+  corrected in place.
+- **Opening a `/dev/cu.*` device blocks waiting for carrier.** An upload to an absent
+  board hangs rather than erroring — that is what the timeout is for, and why a probe that
+  writes to a real serial device appears to freeze.
+- **`isVisible()` is False on a widget you never showed**, so a Qt test asserting
+  `not thing.isVisible()` passes whatever the code does. Use `isVisibleTo(parent)`. One of
+  my own tests was vacuous until I checked it.
+
 ---
 
 ## 5. Security model — do not weaken this
@@ -228,6 +312,42 @@ what is permitted and where a secret may be. §6B has the detail.
 The process sandbox is the real outer boundary. A single `open("/etc/passwd")` inside
 generated code bypasses every path check. `run_project` **fails closed**: if the sandbox
 cannot be applied, the project does not run.
+
+### Privileged actions — the Phase 7 rule
+
+Some things a child wants have to leave the project, because leaving it is the point:
+putting a sketch on an Arduino, deploying to a Pi, exporting a game for a friend. Phase 7
+found that the ordinary profile denies `/dev/cu.*` — which is what an Arduino *is* — so
+upload could never have worked, whatever was plugged in.
+
+The rule the developer set, which **generalises and should be reused**:
+
+| | |
+|---|---|
+| Normal child code | sandboxed, unchanged |
+| Compile | sandboxed, offline |
+| Export / publish / deploy / upload | **privileged application actions** |
+
+A privileged action is still sandboxed. It is granted **one more thing**, explicitly,
+per action, and never let out. Specifically:
+
+- Arduino upload may write to **only the selected `/dev/cu.*` device**, and stays behind
+  the existing `arduino_upload` gate.
+- No arbitrary `/dev`, filesystem, network or shell access is granted to support it. An
+  upload is still offline.
+- The grant is **enforced, not intended**: `process_sandbox.grant_devices` refuses
+  anything that is not a serial port, because the port string comes from outside the
+  application. `/dev/disk0`, `/etc/passwd`, `/dev/ttys000` and
+  `/dev/cu.ok/../../etc/passwd` are all rejected, with tests.
+- An ordinary profile is **byte-identical** to before this existed —
+  `build_profile(p) == build_profile(p, devices=())` is a test, so the capability cannot
+  quietly leak into normal runs.
+- A privileged action that cannot be verified because hardware is absent is
+  **implemented, gated, and marked verification-pending** rather than blocking a phase.
+  That is the current state of upload.
+
+Do not reopen this architecture unless implementation reveals a concrete security
+limitation. When you build Pi deployment or file export, they take this pattern.
 
 A known, accepted limitation: TOCTOU between validating a path and opening it. Recorded
 in `security/sandbox.py` with what the fix would be. Do not "solve" it casually — it
@@ -544,6 +664,78 @@ one for this reason.
 
 ---
 
+## 6C. How the six profiles work, now that they all do
+
+Phase 7 is built. `WORKORDER_01.md` §§5, 7, 8, 9, 27 and 30 are the specification. Five
+things are not obvious from the code.
+
+**A profile is data, and now that includes how it *finishes*.** `run_mode` had two values
+and has three: `interactive` stays on screen until the child closes it (games, a Pi test
+loop), `batch` runs to completion and is captured (an analysis, a compile), and
+`generate` runs **nothing at all**. Image Creation is the only `generate` profile, and
+the reason is the security model rather than convenience: the process sandbox denies
+network, so a child's own code could never reach an image service. Generation has to be
+an application action. `test_every_profile_gives_the_child_a_button_that_does_something`
+pins that a profile has a run command, a compile command, or `generate` — and never both
+a command and `generate`.
+
+**The main button dispatches by profile, and used to not.** `Workbench._run` always sent
+`run_project`. An Arduino project has no run command and no such tool, so a child pressing
+**Compile** got the Toolbox's refusal written for a model: *"'run_project' is not
+available here. You can use: read_file, edit_file, write_file, compile_project."* If you
+add a profile, check what its button actually does — this was invisible to every test and
+to six phases of reading, and took one button press to find.
+
+**Nothing about the Arduino profile invents hardware.** §8 forbids inventing pin
+assignments, and Phase 7 extended that in two directions. The board list and port list
+come from `arduino-cli board listall` / `board list`, so a picker shows what is installed
+rather than what someone typed into a constant. And **no board is preselected** — picking
+a board for a child picks every pin on it, so an unset board makes both the tool and the
+UI ask. The starter sketch uses `LED_BUILTIN` rather than pin 13 for the same reason: it
+asserts nothing about how anything is wired. There is a test for each of those three.
+
+**Chart display is injected knowledge, not a tool — the same rule as everything else
+here.** `execution/outputs.py` compares the project's pictures before and after a run and
+shows the newest thing that changed. The alternative is asking the model where it saved
+the chart, and a model reporting a path can report the wrong one, forget to, or invent it
+— which is §6A's whole problem in a new costume. Comparing the directory cannot be wrong
+about what is on disk. It is deliberately not Research-specific: "a picture appeared" is
+a fact about a run.
+
+**Image Creation is a profile, and the honesty rule survives it.** This is the important
+one. Open Nest asks for the picture and saves it, and **still has not seen it**:
+`can_interpret` answers False, the file is listed as unread, and the prompt still carries
+`NOBODY HAS LOOKED`. That is exactly the configuration §6B describes Phase 6 breaking, so
+it has its own test (`test_generating_a_picture_is_not_seeing_it`) and the reply the child
+sees says so in as many words. The image model lives on the profile rather than in
+`models.json`, because a catalogue entry is something that answers a conversation.
+
+### What is not done
+
+- **Upload has never reached a board.** No Arduino has been attached to a machine running
+  this code, so the serial-port grant is known to be *necessary* (the ordinary profile
+  denies `/dev/cu.*`, measured) and not known to be *sufficient*. Everything up to opening
+  the port is exercised. Plug one in and run `spikes/spike_arduino.py`.
+- **Only the AVR core is installed**, so `board listall` returns 27 boards and no ESP32 or
+  SAMD. A child with a Nano 33 or a Pico gets a board list that does not contain their
+  board, which is honest but unhelpful. Installing another core is
+  `arduino-cli core install`, and it needs network — a Phase 8 wizard question.
+- **§30's "Show technical details" toggle is not built.** Raw stderr still goes to the
+  Build/Preview panel. Deliberately out of scope, left for the Phase 10 polish pass, and a
+  compiler diagnostic is the case that most needs it.
+- **`raspberry_pi_deployment` still has no consumer.** §7 calls SSH deployment future. It
+  takes the §5 privileged-action pattern when it arrives, not a new mechanism.
+- **The Pi profile is only tested on a Mac**, which is the point of its design but does
+  mean the real `RPi.GPIO` branch of the starter template has never run. The shim is
+  structured so that branch is the only untested part.
+- **Image generation cost is not shown anywhere.** ~800 KB and 10-15 s per image at
+  `quality=low`, billed per image. A parent can see neither a count nor a total. D6's
+  note about cost display is still open.
+- **One image was generated to verify the profile path**, and that is all the real
+  measurement there is. Nobody has used this for an hour.
+
+---
+
 ## 7. Working agreements
 
 From `CLAUDE.md` and from the developer directly:
@@ -563,12 +755,26 @@ From `CLAUDE.md` and from the developer directly:
 | # | Decision | Needed by |
 |---|---|---|
 | D1 | GitHub auth — OAuth device flow, `gh` CLI, or PAT. `gh` is authenticated on the dev machine but authenticates the *parent's* account | Phase 9 |
-| D6 | Image generation as an optional tab. OpenAI-only via `gpt-image-2` — Anthropic has no image model, so the picker must show the asymmetry honestly. **Now unblocked**: cloud access is built. It inherits two rules from Phase 5, recorded in PLAN.md — a generated image is an ordinary asset and goes through `assets.import_file`, and a model that generated a picture still has not *seen* it, so `can_interpret` governs what may be said about it | any time |
+| D9 | **How the app updates itself, and whether checking is a parent-controlled action.** The work order already asks for migration *after* someone runs `git pull` (§"Repository update behavior", DoD 51–53). Noticing that upstream moved, pulling from inside the app, and restarting safely are all past that — PLAN.md's Phase 8 section has the gap analysis and the five traps. An update check is the *application* reaching the network, which `external_requests` does not govern | Phase 8 |
+| D7 | **Which Arduino board cores to install.** Only `arduino:avr` is installed (324 MB, 27 boards). ESP32, SAMD and RP2040 are each another download, and a child whose board is missing sees an honest but useless list. Installing everything is gigabytes; installing on demand needs network mid-project | Phase 8 wizard |
+| D8 | **Whether image generation shows its cost.** ~800 KB and 10–15 s per image, billed per image, with no count or total anywhere. A parent who turned cloud on for chat has also turned this on | before real use |
 | — | Git author identity is currently `Open Nest <opennest@localhost>` until the setup wizard collects a real one | Phase 8 |
-| — | Only one model is verified and downloaded. The other three local ones are pinned and described but untested, and **all three cloud entries are unverified against the real service** (SPIKES.md §11) | cloud: as soon as a key exists |
+| — | Only one model is verified and downloaded. The other three local ones are pinned and described but untested | — |
 | — | All measurements are from a 48 GB Mac. The target is 8 GB | before V1 |
 
 Resolved in Phase 6: the `claude-sonnet` context budget, which PLAN.md flagged for
 revisiting. It came *down*, to 48000/36000, on cost rather than context — the reasoning
 and the arithmetic are in `models.json`, so the next person raising it does so knowing
-the per-turn price.
+the per-turn price. Also resolved in Phase 6: all three cloud entries are now verified
+against the real services (SPIKES.md §11).
+
+**Resolved in Phase 7 — D6.** Image generation is a **profile card, not an optional tab**:
+a child looks for "a thing I can make" on the Flight Deck, not in a tab. The image model
+stays out of `models.json` because a catalogue entry is something that answers a
+conversation. Both Phase 5 rules it inherits are implemented and tested — a generated PNG
+goes through `assets.import_file`, and generating is not seeing. What D6 also asked for and
+did **not** get is cost display, which is now D8.
+
+**Also resolved in Phase 7:** the sandbox-versus-privileged-action question, recorded as a
+design rule in §5 and in PLAN.md rather than as a decision, because it applies to Pi
+deployment and file export as much as to Arduino upload.

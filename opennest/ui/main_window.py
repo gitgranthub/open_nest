@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
-    QInputDialog,
     QMainWindow,
     QMessageBox,
     QStackedWidget,
@@ -12,13 +11,14 @@ from PySide6.QtWidgets import (
 from opennest import APP_NAME
 from opennest.agent.controller import AgentController
 from opennest.agent.tools import Toolbox
+from opennest.ai import images
 from opennest.ai.provider import ProviderError
 from opennest.ai.router import build_provider, default_model_id, get_entry, unmet_requirements
 from opennest.memory.manager import MemoryManager
 from opennest.projects.manager import Project, ProjectError, create_project
 from opennest.projects.profiles import Profile
 from opennest.security import keychain, permissions
-from opennest.ui import consent
+from opennest.ui import consent, new_project
 from opennest.ui import settings as settings_ui
 from opennest.ui.flight_deck import FlightDeck
 from opennest.ui.workbench import Workbench
@@ -45,7 +45,11 @@ class MainWindow(QMainWindow):
         self._controller: AgentController | None = None
 
         self._stack = QStackedWidget()
-        self._deck = FlightDeck(user_name)
+        self._deck = FlightDeck(
+            user_name,
+            allow_cloud=self.controls.cloud_allowed(),
+            credentials=self.credentials,
+        )
         self._deck.new_project_requested.connect(self._new_project)
         self._deck.project_opened.connect(self._open_project)
         self._deck.settings_requested.connect(self._open_settings)
@@ -154,6 +158,9 @@ class MainWindow(QMainWindow):
     def _settings_changed(self) -> None:
         self.controls = permissions.reload()
         self._show_cloud_status()
+        # A parent turning cloud on has to make Image Creation usable without a restart.
+        self._deck.allow_cloud = self.controls.cloud_allowed()
+        self._deck.refresh_profiles()
         if self._workbench is not None:
             self._workbench.allow_cloud = self.controls.cloud_allowed()
             self._workbench.refresh_models()
@@ -168,20 +175,21 @@ class MainWindow(QMainWindow):
     # -- projects -----------------------------------------------------------
 
     def _new_project(self, profile: Profile) -> None:
-        name, accepted = QInputDialog.getText(
-            self, "New Project", f"What should we call your {profile.name.lower()}?"
-        )
-        if not accepted or not name.strip():
+        chosen = new_project.ask(self, profile)
+        if chosen is None:
             return
         try:
-            project = create_project(name.strip(), profile.id, model=default_model_id())
+            project = create_project(chosen.name, profile.id, model=default_model_id())
         except ProjectError as exc:
             QMessageBox.warning(self, APP_NAME, str(exc))
             return
         self._deck.refresh()
-        self._open_project(project)
+        # WORKORDER_01 section 27's idea cards are section 5's "suggested starter
+        # prompts": the chosen one is filled into the message box, not sent, so they can
+        # add to it first.
+        self._open_project(project, starter_idea=chosen.starter_idea)
 
-    def _open_project(self, project: Project) -> None:
+    def _open_project(self, project: Project, *, starter_idea: str | None = None) -> None:
         if self._provider is None:
             QMessageBox.warning(
                 self, APP_NAME,
@@ -194,6 +202,18 @@ class MainWindow(QMainWindow):
         unmet = unmet_requirements(self._provider.info, project.profile)
         if unmet:
             QMessageBox.warning(self, APP_NAME, "\n\n".join(unmet))
+            return
+
+        # And when the profile itself needs something that is not configured. Checked
+        # here as well as on the card, because an existing project can be reopened from
+        # Recent Projects after a parent turns cloud back off.
+        blocked = images.unmet_requirements(
+            project.profile,
+            allow_cloud=self.controls.cloud_allowed(),
+            credentials=self.credentials,
+        )
+        if blocked:
+            QMessageBox.warning(self, APP_NAME, blocked)
             return
 
         versions = VersionHistory(project)
@@ -212,6 +232,8 @@ class MainWindow(QMainWindow):
             project, controller, versions,
             allow_cloud=self.controls.cloud_allowed(),
             credentials=self.credentials,
+            upload_policy=self._upload_allowed,
+            starter_idea=starter_idea,
         )
         workbench.back_requested.connect(self._back_to_deck)
         workbench.model_change_requested.connect(self._switch_model)
@@ -240,6 +262,17 @@ class MainWindow(QMainWindow):
         """
         return self.controls.network_for_runs(
             lambda gate: consent.approve(self, gate)
+        )
+
+    def _upload_allowed(self) -> bool:
+        """Whether a sketch may be sent to a board (WORKORDER_01 section 25).
+
+        The gate has existed since Phase 6 with nothing consuming it; this is its first
+        consumer. Same shape as ``_network_allowed`` deliberately -- one permission
+        mechanism, asked at the moment the action is taken.
+        """
+        return self.controls.gate(
+            "arduino_upload", lambda gate: consent.approve(self, gate)
         )
 
     def _back_to_deck(self) -> None:
