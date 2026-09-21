@@ -225,3 +225,45 @@ def test_the_status_line_says_which_kind_of_model_is_answering(qt_app, project):
 
     controller.use_provider(cloud_provider())
     assert workbench._status_name() == "Cloud AI"
+
+
+# --------------------------------------------------------- asking from a worker thread
+
+def test_a_parent_can_be_asked_from_the_thread_a_turn_runs_on(qt_app) -> None:
+    """``Toolbox.network_policy`` is consulted mid-turn, and a turn is on a QThread.
+
+    Qt widgets may only be created and used on the GUI thread, so ``consent.approve``
+    marshals there. This became reachable in Phase 8: until the wizard existed,
+    ``external_requests`` sat at its ``deny`` default and the approver was never
+    called, and the parent page now offers "Ask Parent" as a supported choice.
+    """
+    import threading
+
+    from PySide6.QtCore import QThread, QTimer
+
+    gui_thread = qt_app.thread()
+    seen: dict = {}
+
+    def ask():
+        seen["ran_on"] = QThread.currentThread()
+        return "answered"
+
+    def worker():
+        seen["called_on"] = QThread.currentThread()
+        seen["result"] = consent._on_gui_thread(ask)
+        qt_app.quit()
+
+    thread = threading.Thread(target=worker, daemon=True)
+    QTimer.singleShot(0, thread.start)
+    QTimer.singleShot(5000, qt_app.quit)
+    qt_app.exec()
+    thread.join(5)
+
+    assert seen.get("called_on") is not gui_thread, "the caller should be off the GUI thread"
+    assert seen.get("ran_on") is gui_thread, "the dialog must run on the GUI thread"
+    assert seen.get("result") == "answered"
+
+
+def test_asking_from_the_gui_thread_does_not_deadlock(qt_app) -> None:
+    """A queued call would wait for an event loop that cannot run until it returns."""
+    assert consent._on_gui_thread(lambda: "direct") == "direct"

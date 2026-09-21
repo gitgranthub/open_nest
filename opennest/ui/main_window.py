@@ -18,6 +18,7 @@ from opennest.memory.manager import MemoryManager
 from opennest.projects.manager import Project, ProjectError, create_project
 from opennest.projects.profiles import Profile
 from opennest.security import keychain, permissions
+from opennest.setup.state import InstallationState
 from opennest.ui import consent, new_project
 from opennest.ui import settings as settings_ui
 from opennest.ui.flight_deck import FlightDeck
@@ -27,10 +28,24 @@ from opennest.versioning.checkpoint import VersionHistory
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, user_name: str | None = None, *, credentials=None) -> None:
+    def __init__(
+        self,
+        user_name: str | None = None,
+        *,
+        credentials=None,
+        installation: InstallationState | None = None,
+    ) -> None:
         super().__init__()
         self.setWindowTitle(APP_NAME)
         self.resize(1180, 760)
+
+        #: What the setup wizard recorded: who this is for, and what name goes on a
+        #: saved version. Until Phase 8 nothing supplied either, so the greeting was
+        #: anonymous and every commit was "Open Nest <opennest@localhost>".
+        self.installation = (
+            installation if installation is not None else InstallationState.load()
+        )
+        user_name = user_name or self.installation.child_name or None
 
         #: The parent's switches, read once and re-read whenever Settings saves.
         self.controls = permissions.current()
@@ -217,7 +232,13 @@ class MainWindow(QMainWindow):
             return
 
         versions = VersionHistory(project)
-        versions.start()
+        # Section 35A step 2's Git identity, finally reaching the thing it names.
+        # Blank falls through to git_manager's defaults, which is the right behaviour
+        # when a parent skipped the field: a saved version is still made.
+        versions.start(
+            author_name=self.installation.git_author_name or None,
+            author_email=self.installation.git_author_email or None,
+        )
         recovery = versions.recover()
 
         controller = AgentController(

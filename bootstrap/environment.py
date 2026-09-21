@@ -8,6 +8,7 @@ safe here even though 3.9 cannot evaluate it.
 from __future__ import annotations
 
 import glob
+import json
 import os
 import platform
 import shutil
@@ -24,6 +25,9 @@ APP_NAME = "Open Nest"
 MIN_MEMORY_GB = 8
 #: Enough room for the environment plus one local model, with headroom.
 MIN_FREE_DISK_GB = 12
+
+#: Mirrors opennest.paths.INSTALLATION_STATE_FILENAME, for the same reason as APP_NAME.
+INSTALLATION_STATE_FILENAME = "installation.json"
 
 _PROBE = 'import platform,sys;print("%d.%d.%d" % sys.version_info[:3]);print(platform.machine())'
 
@@ -152,6 +156,32 @@ def runtime_dir() -> str:
     if home:
         return os.path.join(home, "runtime")
     return os.path.join(app_support_dir(), "python")
+
+
+def installation_state_file() -> str:
+    """Mirrors opennest.paths.installation_state_file()."""
+    return os.path.join(app_support_dir(), INSTALLATION_STATE_FILENAME)
+
+
+def setup_is_complete() -> bool:
+    """Whether the wizard has finished on this Mac (WORKORDER_01 section 35A).
+
+    This is the "Relaunch behavior" decision: setup complete launches Open Nest, and
+    anything else launches the wizard. Mirrors
+    ``opennest.setup.state.InstallationState.needs_setup()`` rather than calling it,
+    because the bootstrap runs before the application package is importable.
+
+    Everything uncertain answers False. A missing record is a first run; a record that
+    will not parse is a damaged installation, and both want setup rather than an app
+    that may not start. Neither case deletes anything -- the file is left exactly as it
+    is for repair to look at.
+    """
+    try:
+        with open(installation_state_file(), encoding="utf-8") as handle:
+            raw = json.load(handle)
+    except (OSError, ValueError):
+        return False
+    return isinstance(raw, dict) and raw.get("setup_complete") is True
 
 
 def managed_pythons() -> list[str]:

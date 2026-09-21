@@ -86,3 +86,41 @@ def test_does_not_import_the_application(source: Path) -> None:
 def test_running_interpreter_is_new_enough_for_the_app() -> None:
     """A sanity check on the test environment itself."""
     assert sys.version_info[:2] >= (3, 12)
+
+
+def test_every_requirements_manifest_is_installed_by_something() -> None:
+    """A manifest nothing installs is invisible, and has now bitten twice.
+
+    Phase 7 found ``projects.txt`` installed by nothing, so no profile's starter
+    template ran on a fresh Mac. The Phase 8 acceptance pass found the same thing for
+    ``macos-apple-silicon.txt`` -- mlx and mlx-lm -- which made the wizard's own model
+    download and inference test impossible on a clean install.
+
+    ``dev.txt`` is exempt and says so in its own first line: it is developer tooling
+    and the setup launcher must not install pytest onto a family Mac.
+    """
+    root = BOOTSTRAP_DIR.parent
+    manifests = {p.name for p in (root / "requirements").glob("*.txt")}
+    manifests.discard("dev.txt")
+
+    installed_by_bootstrap = (BOOTSTRAP_DIR / "bootstrap.py").read_text(encoding="utf-8")
+    missing = sorted(name for name in manifests if name not in installed_by_bootstrap)
+    assert not missing, (
+        f"requirements/{', '.join(missing)} is installed by nothing. "
+        f"Either the bootstrap installs it or it should not exist."
+    )
+
+
+def test_the_local_ai_manifest_is_not_required_to_import() -> None:
+    """MLX's absence must not stop setup reporting success.
+
+    ``macos-apple-silicon.txt`` is separate from ``base.txt`` precisely so the app and
+    the wizard can start and say something useful when MLX is unavailable. Adding it to
+    REQUIRED_IMPORTS would turn a recoverable state into a failed installation.
+    """
+    import sys
+
+    sys.path.insert(0, str(BOOTSTRAP_DIR.parent))
+    from bootstrap.bootstrap import REQUIRED_IMPORTS
+
+    assert not any("mlx" in module for module in REQUIRED_IMPORTS)

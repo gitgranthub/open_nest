@@ -8,6 +8,29 @@ The goal is simple:
 
 Open Nest is designed to hide the complicated parts of software development so kids can focus on creating.
 
+## Getting Started
+
+Open Nest installs itself. A parent needs no Terminal commands beyond cloning the
+repository.
+
+1. Clone or download this repository.
+2. Open **Setup Open Nest.command** from Finder.
+3. Follow the setup wizard.
+
+The wizard checks the Mac, builds Open Nest its own Python environment, downloads and
+tests a local AI model, and asks about the optional parts — Arduino tools, cloud AI
+keys, a parent PIN and what projects are allowed to do. Nothing optional is required,
+and nothing cloud-related is on until a parent turns it on.
+
+Afterwards, **Launch Open Nest.command** opens the app directly. Running the setup
+launcher again on a Mac that is already set up simply opens the app.
+
+Projects are kept in `~/Open Nest/Projects`, outside this repository, so updating Open
+Nest never touches them.
+
+> Open Nest installs its own Python 3.12 if the Mac does not have one. It does not
+> require administrator access and does not change any other Python on the machine.
+
 ## What You Can Build
 
 Open Nest supports different kinds of projects, including:
@@ -119,7 +142,15 @@ Open Nest keeps useful project checkpoints so changes can be undone or older wor
 
 Version control runs mostly in the background and does not require the child to understand Git.
 
-Optional private GitHub backup can be configured by a parent.
+Optional private GitHub backup is planned and is not available yet.
+
+## Keeping Open Nest Up To Date
+
+Settings → Advanced has **Check for Updates**. It asks GitHub whether a newer version
+exists and tells you; it does not change anything on this Mac. Updating is a `git pull`
+in the Open Nest folder, and the next launch finishes the job by itself — reinstalling
+whatever changed and leaving projects, their history, what they remember, settings and
+saved keys exactly as they were.
 
 ## Safe by Default
 
