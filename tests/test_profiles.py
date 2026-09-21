@@ -91,6 +91,11 @@ def test_every_runnable_template_actually_runs(tmp_path: Path, profile_id: str) 
 
     Interactive profiles (a game, a Pi loop) are allowed to still be running: that is
     success for them. Batch profiles have to exit 0.
+
+    The Games template is real Pygame, so this used to open an actual game window and
+    take focus for four seconds on every run of the suite. ``conftest.py`` sets
+    ``SDL_VIDEODRIVER=dummy`` for the whole suite; the window was never what was under
+    test.
     """
     project = create_project("Test Project", profile_id, root=tmp_path)
     result = run_project(
