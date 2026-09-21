@@ -84,6 +84,68 @@ def cloud_models() -> tuple[ModelEntry, ...]:
     return tuple(e for e in load_catalogue() if not e.info.is_local)
 
 
+#: Which capability flag governs which kind of attachment (WORKORDER_01 section 13:
+#: ``model.supports_images``, ``model.supports_documents``).
+_CAPABILITY_FOR_KIND = {"image": "supports_images", "document": "supports_documents"}
+
+
+def models_that_can_read(kind: str, *, allow_cloud: bool = False) -> tuple[ModelEntry, ...]:
+    """Models able to interpret an attachment of this kind.
+
+    Section 13 requires that when the selected model cannot interpret an attachment, the
+    application says so and offers one that can. This is a lookup against
+    ``models.json`` rather than a list written in code, which is section 3's rule and
+    also the point: a local vision model added to the catalogue starts being offered
+    without a line of Python changing, and the same is true of OpenAI and Anthropic once
+    a key is configured and ``allow_cloud`` is on.
+
+    Today, with cloud off, this returns nothing for an image -- all four local entries
+    are ``supports_images: false`` -- so the child is told the limitation and not sent
+    after a model they cannot use.
+    """
+    attribute = _CAPABILITY_FOR_KIND.get(kind)
+    if attribute is None:
+        return ()
+    return tuple(
+        entry for entry in load_catalogue()
+        if getattr(entry.info, attribute)
+        and (allow_cloud or not entry.info.requires_internet)
+    )
+
+
+def unmet_requirements(info: ModelInfo, profile) -> tuple[str, ...]:
+    """Why this model cannot build this kind of project. Empty when it can.
+
+    WORKORDER_01 section 13 makes the application responsible for knowing model
+    capabilities, and the same reasoning reaches further than attachments: a project
+    profile states what it needs, a model states what it does, and the application
+    should compare them rather than let a child discover the mismatch by watching
+    nothing happen.
+
+    This is currently one check because there is currently one hard blocker.
+    ``gemma2-2b`` is in the catalogue with ``supports_tools: false``, and every profile
+    in ``profiles.json`` works by calling tools -- so that model can discuss a game and
+    cannot build one. Not being able to see a picture is *not* a blocker: that is a
+    limitation the asset layer already states honestly and works around.
+    """
+    problems: list[str] = []
+    if profile.tools and not info.supports_tools:
+        problems.append(
+            f"{info.name} cannot use tools, so it can talk about a "
+            f"{profile.name.lower()} but cannot build or change one."
+        )
+    return tuple(problems)
+
+
+def models_for_project(profile, *, allow_cloud: bool = False) -> tuple[ModelEntry, ...]:
+    """Catalogue entries that could actually build this kind of project."""
+    return tuple(
+        entry for entry in load_catalogue()
+        if not unmet_requirements(entry.info, profile)
+        and (allow_cloud or not entry.info.requires_internet)
+    )
+
+
 def build_provider(model_id: str, *, allow_cloud: bool = False) -> ModelProvider:
     """Create the provider for a model.
 

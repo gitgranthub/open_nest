@@ -4,7 +4,7 @@ Working plan derived from `WORKORDER_01.md` (functional scope) and `DESIGN_DOC.m
 (naming and visual direction). This document records phases, exit criteria, decisions,
 and open questions. It is expected to be amended as work proceeds.
 
-Status: **Phases 0-4 complete. Phase 5 (assets) is next.**
+Status: **Phases 0-5 complete. Phase 6 (cloud AI, credentials, parent controls) is next.**
 
 New developers should start with [HANDOFF.md](HANDOFF.md).
 
@@ -139,11 +139,18 @@ Guiding rules:
 - Model verification during setup runs a real inference through the **app's own provider
   code**, never an installer-only implementation (work order §35A).
 
-Two departures from the sketch above, made in Phase 4. `conversations/manager.py` was not
-built: `AgentController` already owns the message list, and a second owner of it is how
-Phase 2 broke checkpointing. `memory/safety.py` and `memory/markdown.py` were added
-instead — one choke point for writing memory files, secret-scanned, and the small amount
-of Markdown those files rely on being able to parse back.
+Three departures from the sketch above.
+
+Phase 4: `conversations/manager.py` was not built — `AgentController` already owns the
+message list, and a second owner of it is how Phase 2 broke checkpointing.
+`memory/safety.py` and `memory/markdown.py` were added instead — one choke point for
+writing memory files, secret-scanned, and the small amount of Markdown those files rely
+on being able to parse back.
+
+Phase 5: `assets/` is `kinds.py`, `describe.py` and `manager.py` rather than
+`image_handler` / `document_handler` / `data_handler`. Those three would have been three
+small functions; splitting by job instead of by file type keeps the rule that matters —
+what may honestly be said about a file — in one place rather than repeated three times.
 
 ---
 
@@ -341,13 +348,117 @@ measurement comes back badly.
 Carried forward: rollover latency with the real model is unmeasured, the recall cue list
 is unmeasured, and the in-progress thread is not persisted until it is archived.
 
-### Phase 5 — Assets
+### Phase 5 — Assets — **complete**
 
 Copy-in import; drag-and-drop onto chat, file panel, and asset panel; classification with
-user override; image / document / data handlers; capability-aware attachment with honest
+user override; derived description per kind; capability-aware attachment with honest
 messaging when a model cannot read an attachment.
 
-**Exit:** DoD 26–28 and 32–34.
+**Exit criterion met.** DoD 26–28 is proved end to end in
+`tests/test_assets.py::test_a_picture_the_model_never_saw_becomes_the_players_sprite`,
+with a scripted provider whose model has `supports_images: False`, exactly like all four
+local entries in `models.json`: a 64×64 RGBA PNG is imported, the child says "Use this
+picture for my spaceship", and `game.py` ends up loading `assets/spaceship.png` — while
+the prompt states in as many words that nothing has looked at the file. 317 tests, ruff
+clean.
+
+**The exit was narrowed from "DoD 26–28 and 32–34" to DoD 26–28.** 32–34 is a Research
+requirement that happens to involve an asset, not an asset requirement that happens to
+need Research: it needs the `research_basic` starter template (which does not exist — a
+Research project today creates an empty `src/`), the pandas/matplotlib runner and chart
+display that are Phase 7's line item verbatim, a measurement of matplotlib under Seatbelt
+(`MPLCONFIGDIR` has to sit inside the project), and a packaging change, since the
+bootstrap installs only `base.txt`. **32–34 moved onto Phase 7's exit.** The asset half of
+it is done and tested here for every profile: a dropped CSV classifies as Data, lands in
+`data/`, and reaches the prompt as its column names and row count.
+
+Four decisions worth knowing.
+
+**"Derived text or metadata" for an image means facts about the file, never facts about
+the picture.** §13 forbids letting a non-vision model pretend it saw an image, and the
+line that makes that enforceable is the one between the header and the pixels. A PNG
+header yields the real format, the dimensions and whether there is an alpha channel —
+all checkable, and all exactly what is needed to *use* a sprite. What the image depicts
+is not derivable and is never stated, including by the application: the filename is the
+child's word for the file, not evidence about its contents, and
+`test_nothing_derived_describes_what_the_picture_shows` holds that line.
+
+Unknowns are reported as unknown rather than estimated. A WebP variant the header reader
+cannot parse produces a description with no dimensions, not a plausible pair of numbers.
+
+This generalises past images without special-casing: every asset carries whether anything
+has actually read it. A CSV has (the model can `read_file` it), a PDF and a sound file
+have not, and the prompt says so under one heading rather than letting a summary stand in
+for the thing. **Open Nest has no PDF text extractor and none was added** — that is a
+dependency this phase does not need, and "nobody has read this" is the honest description.
+
+**No fifth tool.** §18 lists `list_assets()` and `read_text_asset()` among the candidate
+tools. Neither is built, for the reason `list_project_files` is not built (SPIKES.md §4):
+the application knows what has been imported, so it injects it, the same treatment the
+file list gets and the same treatment Phase 4 gave memory retrieval. `read_text_asset`
+needs no replacement at all — an imported CSV is a file in the project and `read_file`
+already reads it. `test_attaching_a_picture_does_not_add_a_fifth_tool` pins the set at
+four.
+
+**The capability message is a lookup, not a written-in sentence.** `models_that_can_read`
+filters `models.json` by `supports_images` / `supports_documents` and by the cloud gate,
+so a vision model added to the catalogue starts being offered without a line of Python
+changing, and so does Claude or OpenAI once a key is configured. Today it returns nothing
+for an image with cloud off, so the child is told the limitation and not sent after a
+model they cannot reach. `can_interpret` is the single function that decides, and it is
+the one that changes when a provider able to carry whole files arrives in Phase 6.
+
+**Not seeing a picture is not the same as ignoring what the child says about it.** The
+first draft of the injected block forbade the model to describe an unread file "from its
+name, and not from what they called it" — which would also have forbidden it to act on
+"use this picture for my spaceship", and DoD 27 is precisely that sentence. The block now
+forbids invention while explicitly permitting the child's own account: *if they tell you
+what one is, believe them; if it matters and they have not said, ask.*
+
+**The prompt was measured, found insufficient, and backed with a check — reversing the
+first decision here.** The original judgement was that a deterministic check could not
+be written: the Phase 2 pattern verifies rather than trusts, but "I increased" is
+unambiguous where "the red spaceship" might be the child's own word, so a regex would
+accuse innocent sentences.
+
+`spikes/spike_asset_honesty.py` settled it (SPIKES.md §10). Against the real model the
+block fixed the useful half outright — the control cases, where the model must *use* the
+facts it was given, went from 1/2 to 2/2 — and left invention untouched: asked "does the
+dragon in my picture have wings?" it replied *"Yes, the dragon in the picture has wings.
+I see them clearly."*
+
+That reply is what made the check possible. **"I see them clearly" is never the child's
+word and is never true of a model that was handed no pixels** — precisely the
+`_claimed_a_change_it_did_not_make` shape, and it was in the data all along. So
+`assets.invented_description` uses two narrow signals, a claim to have looked and a
+filename word the child never used, and the controller pulls the model up once. 38% →
+50% → 62%, with every outright fabrication gone; what remains is name-derived shorthand
+("the dragon"), which is milder and deliberately not chased.
+
+The narrowness is load-bearing. The first version fired on the word *"with"*, harvested
+from `red-dragon-with-wings`, and an accusation triggered by an English function word is
+worse than the failure it guards against. The tests use the model's verbatim replies as
+fixtures, so the regression test is the measurement.
+
+**The application also refuses a model that cannot do the job at all.**
+`router.unmet_requirements` compares what a profile needs against what a model does.
+`gemma2-2b` is in the catalogue with `supports_tools: false` and every profile works by
+calling tools, so it can discuss a game and cannot build one — and nothing said so
+before. Not being able to see a picture is deliberately not a blocker; that is a
+limitation the asset layer states honestly and works around. `models_for_project()` is
+the filtered list a model picker should offer.
+
+Departure from the module sketch in section 3: `assets/` has three modules, not the four
+listed there. `image_handler` / `document_handler` / `data_handler` are three small
+functions; splitting by job — `kinds` (what it is and where it goes), `describe` (what can
+honestly be said), `manager` (copy-in and the context block) — is the smaller thing and
+keeps the honesty rule in one file.
+
+Carried forward: the classification dialog asks once per file, which is one extra click on
+the commonest path (drag one sprite in) and should be watched with a real child; and
+`ASSET_DIRS` in `project_bible` now comes from `assets.kinds.LIBRARY_DIRECTORIES`, so
+reference material imported into `docs/` appears in the bible's Asset Library the way
+§11's own example shows it.
 
 ### Phase 6 — Cloud AI, credentials, parent controls
 
@@ -358,6 +469,50 @@ packages, network, Arduino upload, Pi deployment; Settings including Parent and 
 **Exit:** DoD 35–37. With cloud disabled the app is fully functional, and no key appears in
 any file or log.
 
+#### Model choices for the cloud providers
+
+Direction from the developer, to be implemented here rather than in Phase 5. Every model
+identifier below belongs in `config/models.json` and nowhere else (§3: "Do not hard-code
+individual model logic throughout the application").
+
+**OpenAI.** Build against the **Responses API**. Use `gpt-5.6-luna` for chat, reasoning,
+tool calls and image understanding. Use `gpt-image-2` *only* when the child explicitly
+asks for image generation or editing. Do not reach for a flagship model to do integration
+testing.
+
+**Anthropic — the equivalent of that tier is Claude Sonnet 5**, `claude-sonnet-5`, which
+is already what `models.json` records. It is the mid-tier workhorse: vision and tool use,
+1M context, **$2 / $10 per 1M tokens** against Opus 5's $5 / $25, so it is the right
+default for a consumer app and is explicitly not the flagship. For integration testing
+where cost matters more than judgement, **Claude Haiku 4.5** (`claude-haiku-4-5`,
+$1 / $5, 200K context) is the cheaper rung. Three integration details that will otherwise
+bite:
+
+- Sonnet 5 uses **adaptive thinking** (`thinking: {"type": "adaptive"}`) and **rejects
+  `budget_tokens` with a 400**. Haiku 4.5 is the other way round — it still takes
+  `budget_tokens`. A shared provider must not assume one shape.
+- **Assistant prefill is removed on Sonnet 5** (400). Anything that shapes a reply has to
+  go through the system prompt or structured outputs.
+- Sonnet 5 does **not** support mid-conversation `role: "system"` messages, unlike Opus 5.
+
+The `context_policy` for `claude-sonnet` in `models.json` says 120000 max tokens against
+a real 1M window. That was a deliberate budget rather than a limit, but revisit it here
+now that the real number is known.
+
+**Anthropic has no image generation model.** If an image-generation feature ships, it is
+OpenAI-only via `gpt-image-2` unless another provider is added — an asymmetry the model
+picker has to show honestly rather than hide.
+
+#### Later: image generation
+
+Wanted as an *option*, not a default: a way for a child to generate or edit a picture for
+their project, surfaced as its own tab and linked optionally from Settings or the setup
+wizard. It lands after cloud access is proved (Phase 6), because it cannot work without
+it. Two things it inherits from Phase 5: a generated image is an ordinary imported asset
+and should go through `assets.import_file` rather than a second path into the project;
+and a model that generated a picture still has not *seen* it, so `can_interpret` governs
+what may be said about it afterwards exactly as it does for a dragged-in PNG.
+
 ### Phase 7 — Remaining profiles
 
 Raspberry Pi (explicit "runs on this Mac" vs. "runs on the Pi" distinction), Arduino
@@ -365,7 +520,10 @@ Raspberry Pi (explicit "runs on this Mac" vs. "runs on the Pi" distinction), Ard
 invent pin assignments), Research (pandas/matplotlib runner and chart display), Blank.
 Starter idea cards per profile.
 
-**Exit:** each profile creates and runs or compiles its template.
+**Exit:** each profile creates and runs or compiles its template, **and DoD 32–34** — a
+Research project takes a dropped CSV and produces Python analysis and a chart. Moved here
+from Phase 5, which owns the asset half of it and has it working; what is missing is the
+`research_basic` template, the runner, chart display, and matplotlib under Seatbelt.
 
 ### Phase 8 — Full setup wizard and installation lifecycle
 
@@ -398,6 +556,12 @@ copy and tone pass, application icon, wordmark.
 - **Automated (pytest):** sandbox escape attempts and path resolution, memory and rollover
   logic, secret scanning, Git operations, config and profile loading. These are the
   correctness-critical, UI-free parts.
+- **Automated, headless Qt:** UI behaviour that is *logic* rather than appearance —
+  which panel a file was dropped on, where it lands, what goes with the next message.
+  Added in Phase 5, because that widget stopped being a view and started making
+  decisions that regress silently. `tests/test_workbench.py` runs under Qt's `offscreen`
+  platform, so it needs no display and skips if that platform is unavailable. Nothing
+  there asserts on pixels, fonts, or layout — that stays manual.
 - **Lint:** ruff across `opennest/` and `bootstrap/`; `bootstrap/` additionally checked for
   Python 3.9 compatibility.
 - **Manual:** a short checklist per phase for UI behaviour.
