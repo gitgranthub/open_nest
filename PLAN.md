@@ -1003,9 +1003,18 @@ of §22's locations and found in none of them. Disconnect is a real revocation: 
 nothing, so a later push permitted to use the system credential helper cannot
 authenticate. 724 tests, ruff clean.
 
-What is **not** met: nobody has clicked it. The device flow was driven from a script, so
-the dialog's copy, the browser hand-off and GitHub's own authorization screen are
-unverified — the same release/integration gap Phase 8 carries for the wizard.
+**And it has been clicked.** A UI smoke test under the real cocoa platform drove the
+actual controls, with a person completing the authorization in the browser: 21 checks, 21
+passed (SPIKES.md §17F). It found **five cosmetic defects and no behavioural ones** — a
+clipped button label, the device code rendered twice, the code not visually prominent,
+GitHub Backup sitting 726 px down a 443 px viewport, and a horizontal scrollbar on Parent
+Settings. All are `DESIGN_DOC` matters and are left for Phase 10 by developer direction.
+
+The smoke test also produced a lesson about harnesses: it first reported "11/11 passed"
+and exit 0 while skipping every stage after the approval, because Qt's
+`quitOnLastWindowClosed` ended the event loop when the dialog accepted. A successful
+connection terminated the run exactly as a cancellation would, and the summary counted
+only the checks that had run.
 
 #### Decision D1 resolved — OAuth device flow
 

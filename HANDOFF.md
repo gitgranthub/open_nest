@@ -11,8 +11,10 @@ a real private repository was created in 3.4 s, pushed to over HTTPS in 1.6 s, a
 pull request opened — all through the shipped code, with the token in the Keychain and in
 **no file on disk**, verified by sweeping all eight of §22's locations for its actual
 bytes. Disconnect is a real revocation: git cached nothing, so a later push with the
-system credential helper active cannot authenticate at all. What nobody has done is
-*click* any of it — see §6C-bis.
+system credential helper active cannot authenticate at all. **It has also now been
+clicked** — 21 checks under the real cocoa platform, including an authorization a person
+completed through the actual dialog (§17F). That found five cosmetic defects and no
+behavioural ones; they are Phase 10's.
 
 **A parent can now install Open Nest without a Terminal, and the wizard is where every
 "you will need to do this by hand" ended up.** Nine steps (§6D). It collects the parent
@@ -92,7 +94,7 @@ it belongs in section 4.
 | 6 — Cloud AI, credentials, parent controls | complete, committed on `phase-6-cloud`. All three cloud models verified against the real services |
 | 7 — Remaining profiles | complete, committed on `phase-7-profiles`. Arduino compile verified against the real toolchain; upload hardware-unverified |
 | 8 — Setup wizard and installation lifecycle | complete, committed on `phase-8-setup`. Installer acceptance pass: 71 checks, 0 failures, four defects found and fixed. A pristine-account run is still open — see §6D |
-| 9 — GitHub backup | complete, committed on `phase-9-github`. D1 resolved as OAuth device flow, **verified against the real GitHub**: real device flow, real private repo, real push, real PR, and a real Disconnect (SPIKES.md §17C-E). Nobody has clicked the dialog — see §6C-bis |
+| 9 — GitHub backup | complete, committed on `phase-9-github`. D1 resolved as OAuth device flow, **verified against the real GitHub**: real device flow, real private repo, real push, real PR, and a real Disconnect (SPIKES.md §17C-E). UI smoke-tested under cocoa: 21 checks, 21 passed (§17F). Five cosmetic defects recorded for Phase 10 |
 | **10 — Design and polish pass** | **not started** |
 
 Branches are **stacked**: each is based on the previous one, so each PR shows only its
@@ -933,12 +935,17 @@ still the wrong fix, because the check must not require a connected account.
 
 ### What is not done
 
-- **Nobody has clicked any of it.** The device flow was driven from a script, so
-  `ui/github_connect.py` — its copy, its Copy-code button, the browser hand-off, and what
-  a parent actually sees on GitHub's authorization screen — is entirely unverified. Same
-  caveat as §6D, and the same reason: a modal dialog cannot be exercised offscreen.
+- **Five cosmetic defects are known and unfixed**, all found by looking at the rendered
+  window (SPIKES.md §17F) and all left for Phase 10 by developer direction: a clipped
+  "Open GitHub agai" button label; the device code shown twice; the standalone code not
+  visually prominent; **GitHub Backup sitting 726 px down a 443 px viewport** in Parent
+  Settings, when §29A treats it as a headline control; and a horizontal scrollbar on that
+  page. The first is a plain bug and a one-line fix.
 - **One account, one Mac, one run.** Nothing has been tried against an organisation
   repository, an account with SSO, or 2FA prompts landing mid-flow.
+- **What a parent sees on GitHub's own authorization screen is still unreviewed.** The
+  developer approved it, so it works; whether its wording about `repo` access reads
+  acceptably to a parent is the live evidence for D11 and nobody has assessed it.
 - **The classic OAuth `repo` scope is broader than this needs.** It reaches every
   repository the parent can see, including organisation repositories, because classic
   OAuth Apps have no per-repository scoping. Accepted as a documented V1 trade-off by

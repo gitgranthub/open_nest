@@ -1234,11 +1234,54 @@ The last two rows are the ones that matter. Every push Open Nest made passed
 to use the system helper has no credential to find. Nothing can authenticate after
 Disconnect, which is the claim.
 
-### What is still open
+### 17F. The UI smoke test — a real window, really clicked
 
-- **Nobody has clicked any of it.** The device flow was driven from a script, so the
-  dialog in `ui/github_connect.py` — its copy, its Copy-code button, the browser
-  hand-off, what a parent sees on GitHub's authorization screen — is unverified.
+Run under the **cocoa** platform, not `offscreen`, driving the actual controls of
+`ui/github_connect.py` and `ui/settings.py`, with each state rendered to a PNG via
+`QWidget.grab()`. The one step that genuinely needs a person — approving in the browser —
+was done by the developer. **21 checks, 21 passed.**
+
+| | |
+|---|---|
+| Dialog opens | visible; Connect offered; **no code shown before connecting** |
+| Code displayed | label showed the real `user_code`; the secret `device_code` half did **not** appear |
+| Browser hand-off | a real browser really opened at `github.com/login/device` |
+| Copy code | clipboard held exactly the code (clipboard pre-set to other text first) |
+| Authorization | completed by a person through the actual dialog; token reached the Keychain |
+| Settings, connected | *"Connected as gitgranthub. Automatic private backup: Enabled."* Disconnect offered, Connect hidden |
+| Disconnect | driven through the real button and its **two real modals**, answered by finding the live modal rather than stubbing it |
+| Settings, disconnected | *"Not connected…"* Connect offered again, Disconnect hidden, `installation.json` forgot the account |
+
+**Five cosmetic defects that only a look could find.** None affects behaviour, and all
+are `DESIGN_DOC` territory rather than §29A territory, so they are recorded for the
+Phase 10 polish pass rather than fixed here:
+
+1. **A button label is clipped: "Open GitHub agai".** "Open GitHub again" does not fit
+   its button. The plainest defect of the five and a one-line fix.
+2. **The device code is displayed twice** — inline in step 3 of
+   `DeviceCode.instructions` ("Enter this code: …") and again as the standalone label
+   below it. The standalone label was meant to be the focal element and instead reads as
+   a repetition.
+3. **The standalone code is not prominent.** It uses `mono_label`, which styles for
+   monospace and not for scale, so the "big code you read off the screen" intent is not
+   achieved.
+4. **GitHub Backup is buried in Parent Settings.** Measured: the block sits **726 px**
+   down a page whose viewport is **443 px** tall, in 1,230 px of content — so a parent
+   scrolls roughly 63% of the way down to find it. §29A presents it as a headline parent
+   control.
+5. **The Parent Settings page has a horizontal scrollbar**, so something in it is wider
+   than the viewport.
+
+**One defect in the smoke test itself, worth recording because it produced a false
+pass.** The script reported "11/11 checks passed" and exit 0 while silently skipping
+every stage after the approval. Qt's `quitOnLastWindowClosed` defaults to True, so
+`dialog.accept()` closed the last window and ended `app.exec()` before the staged driver
+advanced — meaning a **successful** connection terminated the run exactly as a cancelled
+one would, and the summary counted only the checks that had run. Fixed with
+`setQuitOnLastWindowClosed(False)`. A test harness that reports a pass for work it did
+not do is worse than one that fails.
+
+### What is still open
 - **A large first push is untimed.** 1.6 s for a starter template says nothing about a
   project with real assets in it, which is what `PUSH_TIMEOUT_SECONDS = 300` is for.
 - **The queue's retry has not been exercised against a real network drop**, only against
