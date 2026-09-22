@@ -989,18 +989,23 @@ Sequencing note: this overlaps Phase 9's D1 (GitHub authentication). An update c
 against a **public** repository needs no credentials at all, so the update protocol can
 land before D1 is settled and should not wait for it.
 
-### Phase 9 — GitHub backup — **built, integration unverified**
+### Phase 9 — GitHub backup — **complete**
 
 Authentication per D1; private repository creation; background push queue with offline
 retry; secret scanning before commit and push; PR policy modes; conversation-history
 backup setting.
 
-**Exit:** DoD 46–50. **Met in mechanism, not in integration**, and the distinction is
-the whole status of this phase: every part is implemented and tested, and **nothing has
-made a real GitHub call**. The OAuth App is unregistered, so `auth.CLIENT_ID` is empty,
-`configured()` answers False, and the wizard and Settings both report the feature as
-absent rather than offering a button that cannot work — Phase 8's precedent, kept. 719
-tests, ruff clean.
+**Exit criterion met, and verified against the real service.** SPIKES.md §17C-E: a real
+device flow authorised `gitgranthub` in 53 s; a real private repository was created in
+3.4 s, pushed to over HTTPS in 1.6 s through `GIT_ASKPASS`, and a real pull request
+opened — all through the shipped code. The live token was searched for across all eight
+of §22's locations and found in none of them. Disconnect is a real revocation: git cached
+nothing, so a later push permitted to use the system credential helper cannot
+authenticate. 724 tests, ruff clean.
+
+What is **not** met: nobody has clicked it. The device flow was driven from a script, so
+the dialog's copy, the browser hand-off and GitHub's own authorization screen are
+unverified — the same release/integration gap Phase 8 carries for the wizard.
 
 #### Decision D1 resolved — OAuth device flow
 
@@ -1057,10 +1062,30 @@ a credential that was committed and then deleted is invisible to it — the file
 the blob is not, and a push sends the blob. That is why §29A asks for both, and
 `scan_commits` reads blobs out of the commits being pushed.
 
-**Carried forward:** S1 and S3 in SPIKES.md §17 — the real device flow and a real private
-repository, push and PR. Both wait on the client ID. Also unverified: anything involving a
-person clicking, a large first push over a real connection, and whether a parent wants to
-see that a backup is pending (nothing surfaces it today, deliberately).
+#### What the real run found
+
+**A private repository answers "Repository not found" to an anonymous `ls-remote`**, and
+`_run(..., check=False)` turns that into an empty string — so a push that had plainly
+succeeded (GitHub had already created the PR from it) read as a push that never arrived.
+The defect was in the spike's verification rather than in the shipped code, but the shape
+is the same one as Phase 8's defect 3: a swallowed git failure read as a fact about the
+world.
+
+It also settled an assumption: **the update check needs no credentials only because
+`gitgranthub/open_nest` is public**, now verified directly. If that changes, the check
+breaks and the token is still the wrong fix.
+
+Separately, the full-suite run surfaced a **pre-existing flaky test** dating from Phase 6:
+`test_the_pin_is_stored_as_a_hash_not_as_the_pin` asserted that the PIN "2468" does not
+appear in the stored record, which carries 96 random hex characters — and every character
+of a numeric PIN is valid hex. Measured failure rate: **1 run in 800**. Fixed by fixing
+the salt, and strengthened to assert the property the substring check was gesturing at.
+
+**Carried forward:** nobody has clicked the device-flow dialog; a large first push is
+untimed; the queue's retry has never met a real network drop; and everything was tested
+on one account on one Mac, with no organisation repository, SSO or mid-flow 2FA. Whether
+a parent wants to *see* that a backup is pending is also still open — nothing surfaces
+it today, deliberately.
 
 ### Phase 10 — Design and polish pass
 

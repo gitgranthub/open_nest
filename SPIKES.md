@@ -1146,16 +1146,106 @@ real first push. **Neither number is what keeps the child working** — the queu
 the GUI thread, and that is what satisfies §34. What these bound is a wedged git process
 accumulating, which is a different problem and a real one.
 
+### 17C. S1 — the device flow against the real GitHub
+
+Client ID `Ov23li7JhMufrSxhqCDs`, a classic OAuth App with device flow enabled, run
+through the shipped `opennest.github.auth` and the real `RequestsTransport`. Nothing in
+the spike reimplements the flow.
+
+| | |
+|---|---|
+| `POST /login/device/code` | real code returned; **not** `device_flow_disabled` |
+| User code | `7078-EF70`, 14-minute expiry, 5 s poll interval |
+| Approval | **53 s, 11 polls**, 10 of them `authorization_pending` |
+| Account | `GET /user` → **`gitgranthub`** |
+| Scope requested | `repo`, and nothing else |
+| Token in Keychain | yes |
+| Token in the `Connected` result object | **no** — it carries the login only |
+
+**The containment sweep found nothing**, run against the live token across all eight of
+§22's locations: the containment root, projects, `installation.json`, logs, bundled
+config, bundled prompts, the source tree, and the repository's own `.git`. The token's
+value is never printed by the spike — only the verdict.
+
+### 17D. S3 — a real private repository, push, and pull request
+
+One temporary repository, `gitgranthub/OpenNest-Spike-Phase9`, approved by the developer
+and deleted by hand afterwards. `delete_repo` is deliberately **not** in Open Nest's
+scope, so the spike cannot clean up after itself — the right trade: the application
+should not be able to delete a child's backup.
+
+| Step | Result |
+|---|---|
+| `backup.ensure_repository` | repository created in **3.4 s**, `private: true` |
+| Remote URL written | `https://github.com/gitgranthub/OpenNest-Spike-Phase9.git` — **no userinfo** |
+| `git_manager.push` (main) | **1.6 s** over HTTPS via `GIT_ASKPASS` |
+| `backup.begin_change` | review branch `opennest/change-1` created before the change |
+| Change size | 4 files, 240 lines → reads as large |
+| `backup.finish_change` | **5.1 s**: pushed main, pushed the branch, opened the PR |
+| Pull request | **#1**, `opennest/change-1 → main` |
+| Token in `.git/config` | absent |
+| Token anywhere on disk | absent |
+
+Confirmed independently through the API afterwards: the repository is private, both
+`main` and `opennest/change-1` are on the remote, and PR #1 exists.
+
+**The one thing this run got wrong was the spike's own verification.** Two checks
+reported the pushed branches as missing, while the pull request GitHub had just created
+proved both were there — GitHub validates head and base. The cause: the checks used
+`git_manager._run(..., "ls-remote", ..., check=False)`, which is **unauthenticated**, and
+**a private repository answers "Repository not found" to an anonymous `ls-remote`** —
+GitHub does not disclose that private repositories exist. `check=False` turned that
+failure into empty output, so a good push looked like a failed one. Fixed with an
+authenticated helper.
+
+Two things worth keeping from that:
+
+- **`_run(..., check=False)` returns empty string on failure**, which is indistinguishable
+  from a successful empty result. It is used deliberately elsewhere (`history`), but it is
+  a sharp edge, and this is the second time in the project's life that a swallowed git
+  failure has been read as a fact about the world — Phase 8's defect 3 was the same shape.
+- **The update check's freedom from credentials depends on one repository being public.**
+  Verified directly during this run: `gitgranthub/open_nest` answers HTTP 200
+  unauthenticated and an anonymous `ls-remote` against it returns `refs/heads/main`. So
+  `setup/updates.py` is correct — but if that repository ever goes private the check
+  breaks, and **D1's token is still not the right fix**, because the check must not
+  require a parent to have connected an account.
+
+### 17E. Disconnect, live — does Open Nest really lose access?
+
+Asked for by the developer, on the reasoning that Open Nest clears macOS's global
+`credential.helper` specifically so it owns the whole credential lifecycle. If that is
+true, Disconnect must be a real revocation on this Mac and not a forgotten pointer to a
+credential that still works.
+
+| Check | Result |
+|---|---|
+| Before | connected as `gitgranthub` |
+| `auth.disconnect()` | removed a token: yes |
+| Token in Keychain | **no** |
+| `auth.connected()` | **False** |
+| `GET /user` | **none** |
+| `backup.readiness()` | **not ready** — "No GitHub account is connected yet." |
+| `git credential-osxkeychain get` for github.com | **nothing cached** |
+| `git push` with the system helper active and no token from us | **fails**: *"could not read Username"* |
+
+The last two rows are the ones that matter. Every push Open Nest made passed
+`-c credential.helper=`, so git cached nothing — and a subsequent push that is *allowed*
+to use the system helper has no credential to find. Nothing can authenticate after
+Disconnect, which is the claim.
+
 ### What is still open
 
-- **S1 — the device flow against the real service.** Needs the OAuth App client ID.
-  `auth.CLIENT_ID` is empty until then, `auth.configured()` answers False, and both the
-  wizard and Settings state plainly that GitHub backup is not part of this build rather
-  than offering a button that cannot work — the same stance Phase 8 took.
-- **S3 — a real private repository, a real first push, a real pull request**, under a
-  real account, then deleted. Approved by the developer; blocked on the same client ID.
-  Until it runs, "Open Nest can create a private repo and open a PR" is proven against
-  an injected transport and a local bare repository, and **not** against GitHub.
+- **Nobody has clicked any of it.** The device flow was driven from a script, so the
+  dialog in `ui/github_connect.py` — its copy, its Copy-code button, the browser
+  hand-off, what a parent sees on GitHub's authorization screen — is unverified.
+- **A large first push is untimed.** 1.6 s for a starter template says nothing about a
+  project with real assets in it, which is what `PUSH_TIMEOUT_SECONDS = 300` is for.
+- **The queue's retry has not been exercised against a real network drop**, only against
+  the four synthetic failures in §17B.
+- **One account, one run.** Everything here is `gitgranthub` on one Mac. Nothing has been
+  tested against an organisation-owned repository, a parent with SSO, or an account with
+  2FA prompts mid-flow.
 
 ---
 

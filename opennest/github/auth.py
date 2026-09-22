@@ -45,9 +45,10 @@ from opennest.github.transport import (
 #: flow suits a desktop app distributed to other people's Macs. There is no client
 #: secret, because device flow does not use one.
 #:
-#: Empty until the developer registers the app. When it is empty Open Nest says GitHub
-#: backup is unavailable and offers no connect button: nothing here fakes a connection.
-CLIENT_ID = ""
+#: When this is empty Open Nest says GitHub backup is unavailable and offers no connect
+#: button: nothing here fakes a connection. Registered and verified in Phase 9 --
+#: SPIKES.md section 17C is the real device-flow run against this client ID.
+CLIENT_ID = "Ov23li7JhMufrSxhqCDs"
 
 #: Section 29A needs to create private repositories, push to them, and open pull
 #: requests. ``repo`` is the one classic scope that covers those three. Nothing asks for

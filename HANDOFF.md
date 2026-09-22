@@ -5,13 +5,14 @@ This document is what you need before touching anything.
 
 Three things before the rest.
 
-**GitHub backup is built and has never spoken to GitHub.** D1 is resolved as OAuth
-device flow, the token demonstrably reaches no file on disk (SPIKES.md §17A measured the
-leak in the design it rejected first), and an offline push is queued and retried. But
-`auth.CLIENT_ID` is empty because the OAuth App is not registered, so `configured()` is
-False and both the wizard and Settings say the feature is not part of this build. Read
-§6C-bis before assuming any of it is verified: the mechanism is tested, the integration
-is not.
+**GitHub backup works against the real GitHub, and the proof is in SPIKES.md §17C-E.**
+D1 is resolved as OAuth device flow. A real device flow authorised `gitgranthub` in 53 s;
+a real private repository was created in 3.4 s, pushed to over HTTPS in 1.6 s, and a real
+pull request opened — all through the shipped code, with the token in the Keychain and in
+**no file on disk**, verified by sweeping all eight of §22's locations for its actual
+bytes. Disconnect is a real revocation: git cached nothing, so a later push with the
+system credential helper active cannot authenticate at all. What nobody has done is
+*click* any of it — see §6C-bis.
 
 **A parent can now install Open Nest without a Terminal, and the wizard is where every
 "you will need to do this by hand" ended up.** Nine steps (§6D). It collects the parent
@@ -91,7 +92,7 @@ it belongs in section 4.
 | 6 — Cloud AI, credentials, parent controls | complete, committed on `phase-6-cloud`. All three cloud models verified against the real services |
 | 7 — Remaining profiles | complete, committed on `phase-7-profiles`. Arduino compile verified against the real toolchain; upload hardware-unverified |
 | 8 — Setup wizard and installation lifecycle | complete, committed on `phase-8-setup`. Installer acceptance pass: 71 checks, 0 failures, four defects found and fixed. A pristine-account run is still open — see §6D |
-| 9 — GitHub backup | built, committed on `phase-9-github`. D1 resolved as OAuth device flow. **No real GitHub call has been made** — the OAuth App is unregistered, so the feature is off and says so. See §6C-bis |
+| 9 — GitHub backup | complete, committed on `phase-9-github`. D1 resolved as OAuth device flow, **verified against the real GitHub**: real device flow, real private repo, real push, real PR, and a real Disconnect (SPIKES.md §17C-E). Nobody has clicked the dialog — see §6C-bis |
 | **10 — Design and polish pass** | **not started** |
 
 Branches are **stacked**: each is based on the previous one, so each PR shows only its
@@ -112,15 +113,14 @@ turn cloud on, and the child can switch to Claude or OpenAI after a warning, or 
 pictures with an image model. Everything except Image Creation still works with cloud off,
 which is the default.
 
-719 tests pass, ruff is clean.
+724 tests pass, ruff is clean.
 
 **Phase 10 is the design and polish pass**, and Phase 9 hands it three things:
 
-- **One registration turns GitHub backup on.** Set `github/auth.py`'s `CLIENT_ID` to a
-  registered OAuth App with device flow enabled, and the wizard step, the Settings
-  block, the queue and the PR policy all become live. Until then they correctly report
-  the feature as absent. SPIKES.md §17's open half (S1, S3) is the real-service run that
-  should happen in the same sitting.
+- **GitHub backup is on, and `CLIENT_ID` is what holds it on.** `github/auth.py` carries
+  the registered OAuth App's client ID — public by design, it ships in every copy. Empty
+  it and the whole feature correctly reports itself absent, which is the switch to reach
+  for if it ever needs turning off.
 - **The update check still needs no credentials and must not start using the token.**
   `git ls-remote` against a public repository is unauthenticated, and
   `test_the_check_only_ever_runs_read_only_git_commands` guards the read-only half.
@@ -137,7 +137,7 @@ privileged-action pattern in §5, not a new mechanism.
 ## 2. Get running in five minutes
 
 ```bash
-.venv/bin/python -m pytest -q      # 719 passing, about 44 seconds
+.venv/bin/python -m pytest -q      # 724 passing, about 44 seconds
 ```
 
 It is slower than it was (7 s at Phase 6). Phase 7 added tests that actually run each
@@ -353,6 +353,15 @@ does.** Do not "clean up" these without re-measuring:
 
 **Phase 9 traps:**
 
+- **A private repo answers "Repository not found" to an anonymous `ls-remote`, and
+  `_run(..., check=False)` swallows it into an empty string.** So a good push reads as a
+  failed one. Authenticate before believing anything about remote state. Second instance
+  of a swallowed git failure being read as a fact (Phase 8's defect 3 was the first).
+- **A numeric PIN is valid hex, which made a credential test flaky.**
+  `test_the_pin_is_stored_as_a_hash_not_as_the_pin` asserted `"2468" not in stored`
+  against 96 random hex characters of salt and digest — measured failing **1 run in 800**.
+  Fixed by fixing the salt. If you assert a secret's absence from random hex, check the
+  alphabet first.
 - **`isVisibleTo(parent)` is *also* vacuous inside a `QStackedWidget`.** §4 already
   records that `isVisible()` is False on a widget nobody showed, and says to use
   `isVisibleTo(parent)`. That fix does not hold here: a stack **explicitly hides** every
@@ -831,10 +840,10 @@ sees says so in as many words. The image model lives on the profile rather than 
 
 ## 6C-bis. How GitHub backup works
 
-Phase 9 is built, with one gap that is stated rather than glossed: **nothing has touched
-the real GitHub API yet**, because the OAuth App client ID does not exist. Read the code
-as "the mechanism is implemented and tested hermetically", not as "the integration is
-verified". SPIKES.md §17 says exactly which halves are which.
+Phase 9 is built and **verified against the real GitHub** — SPIKES.md §17C-E has the
+numbers. A real device flow, a real private repository, a real authenticated push, a real
+pull request, and a real Disconnect, all driven through the shipped code rather than a
+reimplementation. What remains unverified is anything involving a person clicking.
 
 **D1 is resolved as OAuth device flow, and the other two candidates were rejected for
 measured reasons.** Not preference:
@@ -908,15 +917,28 @@ already excluded `.opennest/conversations/` from Phase 3 onward. An archive that
 committed cannot be pushed, so the setting rewrites that one line. Turning it on applies
 to every project, not just the open one.
 
+### What the real run added to the above
+
+**A private repository answers "Repository not found" to an anonymous `ls-remote`.**
+GitHub does not disclose that private repositories exist, and `_run(..., check=False)`
+turns that failure into an empty string — indistinguishable from a successful empty
+result. This made a perfectly good push look like it had never arrived, and it is the
+second time a swallowed git failure has been read as a fact about the world (Phase 8's
+defect 3 was the same shape). If you check remote state, authenticate.
+
+**The update check's freedom from credentials rests on one repository being public**, and
+that is now verified rather than assumed: `gitgranthub/open_nest` answers HTTP 200
+unauthenticated. If it ever goes private, `setup/updates.py` breaks — and the token is
+still the wrong fix, because the check must not require a connected account.
+
 ### What is not done
 
-- **No real GitHub call has been made.** S1 and S3 in SPIKES.md §17 are open. Repo
-  creation, push over HTTPS with a real token, and PR creation are proven against an
-  injected transport and a **real local bare repository** — which does exercise real
-  `git push`, real branches and a real fast-forward merge, but not github.com.
-- **`auth.CLIENT_ID` is empty**, so `configured()` is False and the feature is
-  unavailable and says so. That is Phase 8's precedent, deliberately: nothing fakes a
-  connection. Setting the client ID is what turns the feature on.
+- **Nobody has clicked any of it.** The device flow was driven from a script, so
+  `ui/github_connect.py` — its copy, its Copy-code button, the browser hand-off, and what
+  a parent actually sees on GitHub's authorization screen — is entirely unverified. Same
+  caveat as §6D, and the same reason: a modal dialog cannot be exercised offscreen.
+- **One account, one Mac, one run.** Nothing has been tried against an organisation
+  repository, an account with SSO, or 2FA prompts landing mid-flow.
 - **The classic OAuth `repo` scope is broader than this needs.** It reaches every
   repository the parent can see, including organisation repositories, because classic
   OAuth Apps have no per-repository scoping. Accepted as a documented V1 trade-off by

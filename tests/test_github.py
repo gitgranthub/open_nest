@@ -535,12 +535,34 @@ def test_backup_says_which_thing_is_missing(credentials, client_id):
     assert "turned off" in backup.readiness(controls, credentials).reason
 
 
-def test_a_build_with_no_oauth_app_says_so_rather_than_offering_a_button(credentials):
-    """Phase 8's precedent: nothing fakes a connection."""
-    assert auth.CLIENT_ID == "", "an unset client id is the shipped state until D1 lands"
+def test_a_build_with_no_oauth_app_says_so_rather_than_offering_a_button(
+    credentials, monkeypatch
+):
+    """Phase 8's precedent: nothing fakes a connection.
+
+    The client ID is patched rather than read. An earlier version of this test asserted
+    ``auth.CLIENT_ID == ""``, which pinned the *shipped constant* instead of the
+    behaviour and therefore broke the moment the OAuth App was registered. The rule
+    being tested is "a build without an app says so", and that rule outlives the
+    registration.
+    """
+    monkeypatch.setattr(auth, "CLIENT_ID", "")
     assert not auth.configured()
     controls = permissions.ParentControls()
     assert "not built with GitHub backup" in backup.readiness(controls, credentials).reason
+    with pytest.raises(GitHubError):
+        auth.begin(FakeTransport())
+
+
+def test_the_shipped_build_has_a_client_id(credentials):
+    """The other half, now that D1 has landed and the app is registered.
+
+    Verified live in SPIKES.md §17C: this client ID completed a real device flow and
+    authorised ``gitgranthub`` with the ``repo`` scope.
+    """
+    assert auth.CLIENT_ID, "Phase 9 registered an OAuth App; an empty id turns it off"
+    assert auth.configured()
+    assert auth.SCOPE == "repo", "the minimal grant; delete_repo is deliberately absent"
 
 
 def test_backup_is_ready_when_everything_is_configured(github_credentials, client_id):
@@ -684,6 +706,100 @@ def test_a_permission_problem_is_not_reported_as_a_bad_credential(github_credent
     with pytest.raises(GitHubError) as caught:
         auth.account(github_credentials, transport)
     assert "reconnect" not in str(caught.value).lower()
+
+
+# --------------------------------------------------------------- the auth lifecycle
+#
+# Open Nest deliberately clears macOS's global ``credential.helper`` so that it owns the
+# whole credential lifecycle: git never caches the parent's token, so Disconnect is a
+# real revocation on this Mac rather than a forgotten pointer to a credential that still
+# works. That claim has two halves, and both are checked here -- nothing is cached, and
+# nothing can authenticate afterwards.
+
+def test_every_authenticated_git_call_disables_the_credential_helper(
+    backed_up_project, monkeypatch
+):
+    """The other half of Disconnect being real.
+
+    macOS ships ``credential.helper=osxkeychain`` configured globally. Without clearing
+    it, git caches the parent's token in a store Open Nest does not own, cannot inspect
+    and cannot clear -- so Disconnect would remove Open Nest's copy and leave a working
+    credential behind. Measured in SPIKES.md section 17A; pinned here.
+    """
+    captured: list = []
+    real = subprocess.run
+
+    def capture(argv, *args, **kwargs):
+        if isinstance(argv, list) and "push" in argv:
+            captured.append(list(argv))
+        return real(argv, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", capture)
+    git_manager.push(backed_up_project.directory, TOKEN, branch="main")
+
+    assert captured, "no push command was observed"
+    argv = captured[0]
+    index = argv.index("credential.helper=")
+    assert argv[index - 1] == "-c"
+    assert TOKEN not in argv
+
+
+def test_disconnect_leaves_open_nest_unable_to_authenticate(
+    github_credentials, client_id, tmp_path, monkeypatch
+):
+    """After Disconnect, no background sync may authenticate.
+
+    The queue keeps its entries -- the work is still safe on this Mac, and a parent who
+    reconnects should get their backup -- but nothing may be attempted, and there is no
+    token left to attempt it with.
+    """
+    controls = permissions.ParentControls()
+    queue = PushQueue(path=tmp_path / "queue.json", clock=lambda: 1000.0)
+    project = tmp_path / "Asteroid Game"
+    project.mkdir()
+    queue.enqueue(project, "main")
+
+    # Connected: backup is ready and a drain would push.
+    assert backup.readiness(controls, github_credentials).ready
+
+    auth.disconnect(github_credentials)
+
+    assert not auth.connected(github_credentials)
+    assert github_credentials.get_github_token() is None
+    assert not backup.readiness(controls, github_credentials).ready
+    assert "No GitHub account" in backup.readiness(controls, github_credentials).reason
+
+    def explode(*args, **kwargs):
+        raise AssertionError("a disconnected Open Nest must not push")
+
+    monkeypatch.setattr(git_manager, "push", explode)
+    outcome = backup.drain(github_credentials, queue)
+
+    assert outcome.quiet
+    assert len(queue) == 1, "queued work survives a disconnect; it is just not attempted"
+
+
+def test_a_disconnected_account_cannot_be_reported_as_connected(
+    github_credentials, client_id
+):
+    """``account()`` must not answer from memory after the token is gone."""
+    transport = FakeTransport({("GET", "/user"): Response(200, {"login": "parent"})})
+    assert auth.account(github_credentials, transport) == "parent"
+
+    auth.disconnect(github_credentials)
+    assert auth.account(github_credentials, transport) is None
+
+
+def test_ensure_repository_refuses_once_disconnected(
+    github_credentials, client_id, backed_up_project
+):
+    """Nothing that needs the token may fall back to trying without one."""
+    auth.disconnect(github_credentials)
+    with pytest.raises(GitHubError) as caught:
+        backup.ensure_repository(
+            backed_up_project, github_credentials, transport=FakeTransport()
+        )
+    assert "No GitHub account" in str(caught.value)
 
 
 def test_every_api_call_sends_the_token_as_a_bearer_header_only(github_credentials):

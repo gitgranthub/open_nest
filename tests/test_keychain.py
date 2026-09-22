@@ -90,7 +90,20 @@ def test_a_backend_failure_message_cannot_contain_what_it_was_storing() -> None:
 
 # --------------------------------------------------------------- the parent PIN
 
-def test_the_pin_is_stored_as_a_hash_not_as_the_pin() -> None:
+def test_the_pin_is_stored_as_a_hash_not_as_the_pin(monkeypatch) -> None:
+    """The salt is fixed here, and that is a fix rather than a convenience.
+
+    With a random salt this test failed about **one run in 800**, and it failed for a
+    reason that had nothing to do with the code: every character of a numeric PIN is
+    valid hex, and the stored record carries 96 hex characters of salt and digest, so
+    "2468" appears in it by chance roughly 0.13% of the time (93 four-character windows
+    at (1/16)^4 each; measured at 0.125% over 400,000 records). Caught in Phase 9 when
+    the full suite happened to draw one.
+
+    A flaky assertion in a credential test is worse than no assertion, because the
+    lesson it teaches is to re-run the suite.
+    """
+    monkeypatch.setattr(keychain.os, "urandom", lambda size: bytes(range(1, size + 1)))
     backend = FakeKeyring()
     store = keychain.Credentials(backend=backend)
     store.set_parent_pin("2468")
@@ -98,6 +111,13 @@ def test_the_pin_is_stored_as_a_hash_not_as_the_pin() -> None:
     stored = backend.items[(keychain.SERVICE, keychain.PARENT_PIN_ACCOUNT)]
     assert "2468" not in stored
     assert stored.startswith("pbkdf2_sha256$")
+
+    # And the property the substring check was only gesturing at: the record is the
+    # PBKDF2 of *this* PIN, and a different PIN with the same salt does not match.
+    algorithm, _rounds, salt_hex, digest_hex = stored.split("$")
+    salt = bytes.fromhex(salt_hex)
+    assert keychain._hash_pin("2468", salt).endswith(digest_hex)
+    assert not keychain._hash_pin("1357", salt).endswith(digest_hex)
 
 
 def test_the_right_pin_is_accepted_and_a_wrong_one_is_not(credentials) -> None:
