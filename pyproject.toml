@@ -13,7 +13,16 @@ build-backend = "setuptools.build_meta"
 include = ["opennest*"]
 
 [tool.setuptools.package-data]
-opennest = ["config/*.json", "prompts/*.txt", "projects/templates/**/*"]
+# github/askpass.sh is what git executes to obtain the parent's GitHub token
+# (opennest/versioning/git_manager.py). A data file that nothing installs has bitten
+# this project three times -- projects.txt, macos-apple-silicon.txt -- so it is listed
+# here even though the product ships as a git clone, where the file is simply present.
+opennest = [
+    "config/*.json",
+    "prompts/*.txt",
+    "projects/templates/**/*",
+    "github/askpass.sh",
+]
 
 [tool.ruff]
 line-length = 100

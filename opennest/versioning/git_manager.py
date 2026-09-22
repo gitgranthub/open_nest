@@ -15,12 +15,20 @@ Two rules this module exists to enforce:
 
 from __future__ import annotations
 
+import contextlib
+import os
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from opennest.versioning.secret_scanner import Finding, explain, scan_paths
+from opennest.versioning.secret_scanner import (
+    MAX_SCAN_BYTES,
+    Finding,
+    explain,
+    scan_paths,
+    scan_text,
+)
 
 #: Commit messages are prefixed so Open Nest's own checkpoints are identifiable in a
 #: history a parent might later look at.
@@ -244,3 +252,329 @@ def file_at(project_dir: Path, ref: str, relative_path: str) -> str | None:
         return _run(project_dir, "show", f"{ref}:{relative_path}")
     except GitError:
         return None
+
+
+# --------------------------------------------------------------- remotes (Phase 9)
+#
+# WORKORDER_01 section 29A's GitHub half. Everything below needs the parent's token,
+# and the rules it follows are measured rather than assumed (SPIKES.md section 17):
+#
+# - The remote URL carries **no userinfo**. The token goes to git through GIT_ASKPASS
+#   and an environment set for one subprocess.
+# - ``credential.helper`` is cleared on every authenticated call. macOS ships
+#   ``osxkeychain`` globally, and letting it cache the token would leave a copy in a
+#   store Open Nest does not own and cannot clear when a parent presses Disconnect.
+# - ``http.lowSpeedLimit``/``lowSpeedTime`` are set because a connection that
+#   establishes and then goes silent hangs git **forever** -- measured, not guessed.
+
+#: The username half of the Basic credential. GitHub ignores it for a token, but
+#: something has to be sent, and this is the conventional value.
+GIT_USERNAME = "x-access-token"
+
+#: Bytes per second, sustained over this many seconds, below which git gives up. Set
+#: because there is no timeout otherwise: a server that accepts the connection and never
+#: answers held a push open past 180 s in SPIKES.md section 17. Tolerant of a slow link,
+#: intolerant of a dead one -- and a false abort costs one retry, not any data.
+LOW_SPEED_BYTES = 1000
+LOW_SPEED_SECONDS = 30
+
+#: Backstop for the connect phase, which low-speed does not cover: an unanswered SYN
+#: takes 75 s to fail on macOS. Generous enough for a first push of a project with
+#: assets in it.
+PUSH_TIMEOUT_SECONDS = 300
+
+#: Branch prefix for section 29A's review branches (its example is
+#: ``buildlab/feature-powerups``).
+BRANCH_PREFIX = "opennest"
+
+
+class PushRejected(GitError):
+    """The remote refused the push. Distinct from being offline."""
+
+
+class Offline(GitError):
+    """GitHub could not be reached. An ordinary state, not a fault (section 34)."""
+
+
+def askpass_helper() -> Path:
+    """The script git calls to obtain the credential. Holds no secret itself."""
+    return Path(__file__).resolve().parent.parent / "github" / "askpass.sh"
+
+
+def has_remote(project_dir: Path, name: str = "origin") -> bool:
+    output = _run(project_dir, "remote", check=False)
+    return name in output.split()
+
+
+def remote_url(project_dir: Path, name: str = "origin") -> str:
+    return _run(project_dir, "remote", "get-url", name, check=False).strip()
+
+
+def set_remote(project_dir: Path, url: str, name: str = "origin") -> None:
+    """Point ``origin`` at a repository.
+
+    Refuses a URL with credentials in it. Nothing in Open Nest builds one, which is
+    exactly why the check is here: the leak this guards against is a future change that
+    embeds the token "just to get the push working", and SPIKES.md section 17 measured
+    that writing the token into ``.git/config``.
+    """
+    if "@" in url.split("//", 1)[-1].split("/", 1)[0]:
+        raise GitError(
+            "Open Nest refused to save that backup address because it contains a "
+            "sign-in detail. The token belongs in the Keychain."
+        )
+    if has_remote(project_dir, name):
+        _run(project_dir, "remote", "set-url", name, url)
+    else:
+        _run(project_dir, "remote", "add", name, url)
+
+
+def current_branch(project_dir: Path) -> str:
+    name = _run(project_dir, "rev-parse", "--abbrev-ref", "HEAD", check=False).strip()
+    return "" if name in ("", "HEAD") else name
+
+
+def create_branch(project_dir: Path, name: str) -> str:
+    """Start a branch from the current position and switch to it."""
+    _run(project_dir, "checkout", "-b", name)
+    return name
+
+
+def switch_branch(project_dir: Path, name: str) -> None:
+    _run(project_dir, "checkout", name)
+
+
+def branches(project_dir: Path) -> list[str]:
+    """Every local branch name."""
+    output = _run(project_dir, "branch", "--format=%(refname:short)", check=False)
+    return [line.strip() for line in output.splitlines() if line.strip()]
+
+
+def merge_fast_forward(project_dir: Path, branch: str) -> None:
+    """Fold ``branch`` into the current one, refusing anything but a fast-forward.
+
+    ``--ff-only`` on purpose: a merge commit or a conflict here would mean the two
+    branches had genuinely diverged, and resolving that is not something this should
+    attempt on a child's project behind their back.
+    """
+    _run(project_dir, "merge", "--ff-only", branch)
+
+
+def delete_branch(project_dir: Path, name: str, *, force: bool = False) -> None:
+    """Remove a local branch. ``-d`` unless forced, so unmerged work survives."""
+    _run(project_dir, "branch", "-D" if force else "-d", name, check=False)
+
+
+def diff_numstat(project_dir: Path, base: str, head: str) -> tuple[int, int]:
+    """``(files, lines)`` changed between two refs.
+
+    Deterministic, and deliberately not a question for the model -- the same reasoning
+    ``execution/outputs.py`` follows for "which picture did this run make?". Comparing
+    two trees cannot be wrong about what changed.
+    """
+    output = _run(project_dir, "diff", "--numstat", f"{base}..{head}", check=False)
+    files = 0
+    lines = 0
+    for row in output.splitlines():
+        parts = row.split("\t")
+        if len(parts) < 3:
+            continue
+        files += 1
+        for count in parts[:2]:
+            if count.isdigit():
+                lines += int(count)
+    return files, lines
+
+
+def branch_exists(project_dir: Path, name: str) -> bool:
+    result = subprocess.run(
+        ["git", "-C", str(project_dir), "rev-parse", "--verify", f"refs/heads/{name}"],
+        capture_output=True,
+        timeout=30,
+    )
+    return result.returncode == 0
+
+
+def unpushed_commits(project_dir: Path, branch: str, remote: str = "origin") -> list[str]:
+    """Commits on ``branch`` that the remote does not have yet.
+
+    With no remote-tracking refs -- a first push -- this is every commit, which is
+    correct: all of them are about to be sent.
+    """
+    output = _run(
+        project_dir,
+        "rev-list",
+        branch,
+        "--not",
+        f"--remotes={remote}",
+        check=False,
+    )
+    return [line.strip() for line in output.splitlines() if line.strip()]
+
+
+def scan_commits(project_dir: Path, commits: list[str]) -> list[Finding]:
+    """Secret-scan the file contents introduced by these commits.
+
+    Section 29A asks for scanning before commits **and** before pushes, and they are
+    genuinely different questions. ``commit()`` scans the working tree, so it cannot see
+    a credential that was committed and then deleted -- the file is gone, the blob is
+    not, and a push sends the blob. So this reads the blobs out of the commits
+    themselves rather than looking at the checkout.
+    """
+    findings: list[Finding] = []
+    for commit_ref in commits:
+        listing = _run(
+            project_dir,
+            "diff-tree",
+            "-r",
+            "--no-commit-id",
+            "--name-only",
+            "--diff-filter=AM",
+            commit_ref,
+            check=False,
+        )
+        for relative in (line.strip() for line in listing.splitlines()):
+            if not relative:
+                continue
+            try:
+                size = _run(
+                    project_dir, "cat-file", "-s", f"{commit_ref}:{relative}",
+                    check=False,
+                ).strip()
+                if size and int(size) > MAX_SCAN_BYTES:
+                    continue
+            except (ValueError, GitError):
+                pass
+            try:
+                blob = _run(project_dir, "show", f"{commit_ref}:{relative}", check=False)
+            except GitError:
+                continue
+            findings.extend(scan_text(blob, relative))
+    return findings
+
+
+def push(
+    project_dir: Path,
+    token: str,
+    *,
+    branch: str = "",
+    remote: str = "origin",
+    set_upstream: bool = True,
+    timeout: float = PUSH_TIMEOUT_SECONDS,
+) -> str:
+    """Send a branch to the remote, scanning what is about to leave first.
+
+    The token is passed through the environment of this one subprocess and appears in no
+    file and no argument. Raises :class:`Offline` when the remote could not be reached
+    -- the push queue retries that and nothing else.
+    """
+    project_dir = Path(project_dir)
+    target = branch or current_branch(project_dir)
+    if not target:
+        raise GitError("This project has no branch to back up yet.")
+
+    findings = scan_commits(project_dir, unpushed_commits(project_dir, target, remote))
+    if findings:
+        raise SecretsFound(findings)
+
+    argv = [
+        "git",
+        "-C", str(project_dir),
+        # Nothing may cache this credential. See the note above.
+        "-c", "credential.helper=",
+        "-c", f"http.lowSpeedLimit={LOW_SPEED_BYTES}",
+        "-c", f"http.lowSpeedTime={LOW_SPEED_SECONDS}",
+        "push",
+    ]
+    if set_upstream:
+        argv.append("--set-upstream")
+    argv += [remote, target]
+
+    helper = askpass_helper()
+    if not os.access(helper, os.X_OK):
+        # Git executes this, so the bit matters. It is set in the repository and git
+        # preserves it on clone, which is how the product ships -- but a wheel build
+        # does not, so this repairs it rather than failing on a file that is present.
+        with contextlib.suppress(OSError):
+            helper.chmod(0o700)
+    if not os.access(helper, os.X_OK):
+        raise GitError(
+            "Open Nest cannot back up to GitHub because part of the application is "
+            f"missing or cannot be run ({helper.name}). Repair Installation in "
+            "Settings will restore it."
+        )
+
+    environment = {
+        **os.environ,
+        "GIT_ASKPASS": str(helper),
+        "OPEN_NEST_GIT_USER": GIT_USERNAME,
+        "OPEN_NEST_GIT_TOKEN": token,
+        # A queued push runs with nobody watching. A git that stopped to ask for a
+        # username on a terminal would hang the retry loop for as long as the app runs.
+        "GIT_TERMINAL_PROMPT": "0",
+    }
+
+    try:
+        result = subprocess.run(
+            argv, capture_output=True, text=True, timeout=timeout, env=environment
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise Offline(
+            "The backup to GitHub took too long and was stopped. Open Nest will try "
+            "again later."
+        ) from exc
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise GitError(f"Open Nest could not back this project up: {exc}") from exc
+
+    if result.returncode == 0:
+        return target
+
+    detail = _scrub((result.stderr or result.stdout).strip(), token)
+    if _looks_offline(detail):
+        raise Offline(
+            "Open Nest could not reach GitHub, so this project is still only saved on "
+            "this Mac. It will be backed up when the internet comes back."
+        )
+    if "authentication failed" in detail.lower() or "403" in detail:
+        raise PushRejected(
+            "GitHub would not accept the backup. A parent may need to reconnect "
+            "GitHub in Settings."
+        )
+    raise PushRejected(
+        "Open Nest could not back this project up to GitHub.\n\n"
+        + "\n".join(detail.splitlines()[-5:])
+    )
+
+
+def _scrub(text: str, token: str) -> str:
+    """Remove the token from git's output before anyone sees it.
+
+    git does not normally echo a credential, and ``osxkeychain`` being disabled means
+    there is no helper to quote one back. This exists for the case where a future git,
+    or a proxy in between, does.
+    """
+    cleaned = text or ""
+    if token:
+        cleaned = cleaned.replace(token, "[token removed]")
+        if len(token) > 12:
+            cleaned = cleaned.replace(token[:12], "[token removed]")
+    return cleaned
+
+
+def _looks_offline(detail: str) -> bool:
+    lowered = detail.lower()
+    return any(
+        phrase in lowered
+        for phrase in (
+            "could not resolve host",
+            "failed to connect",
+            "could not resolve proxy",
+            "operation too slow",
+            "connection timed out",
+            "network is unreachable",
+            "network is down",
+            "temporary failure in name resolution",
+            "ssl_connect",
+            "timed out",
+        )
+    )

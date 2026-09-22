@@ -226,6 +226,12 @@ class InstallationState:
     git_author_name: str = ""
     git_author_email: str = ""
 
+    #: The connected GitHub account's login, so Settings can say "Connected / Account:
+    #: X" without a network round-trip. A public username, not a secret -- the token it
+    #: belongs to is in the Keychain and never here. Section 29A shows this field in its
+    #: Parent Settings example.
+    github_account: str = ""
+
     #: Model ids setup downloaded and verified, so a health check knows what to look for.
     installed_models: list = field(default_factory=list)
     #: Whether the parent chose the Arduino toolchain (D7: arduino-cli plus the AVR core).

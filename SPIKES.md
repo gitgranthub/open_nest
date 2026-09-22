@@ -1075,6 +1075,90 @@ tell you the work failed when only the reporting did.**
 
 ---
 
+## 17. Phase 9 — pushing to GitHub without leaking the token, and what offline costs
+
+Two spikes, run before any of Phase 9 was built, because both decide a design rather
+than confirm one. A third and fourth (the real device flow, and a real private
+repository) are **still open** and wait on the OAuth App client ID — see the end of this
+section.
+
+### 17A. S2 — an authenticated push with the token reaching no file
+
+§29A requires GitHub credentials in "secure macOS credential storage and never inside
+projects", and §22 lists Git repositories among the places a key must never appear.
+Those are promises about a mechanism, so the mechanism was measured against a real
+`git push` over real HTTP Basic auth — a local `git http-backend` behind a real 401
+challenge, so git's own credential path runs. Nothing touches the network; it binds
+127.0.0.1.
+
+**The negative control first, because the rejected design had to be shown to fail.**
+
+| Design | Result |
+|---|---|
+| `https://x-access-token:TOKEN@host/repo.git` as the remote URL | **token written to `.git/config`** |
+| Clean remote URL + `GIT_ASKPASS` + per-subprocess environment | push succeeded; token in **no file, no argv** |
+
+For the second row, specifically: the push exited 0, the server confirmed it received
+Basic auth as `x-access-token`, the commit arrived on the remote, and a byte-level
+search for the token found nothing under `.git/`, nothing in `.git/config`, nothing in
+`argv`, and nothing anywhere in the workspace — including the askpass helper itself,
+which reads the value from its environment and contains no credential.
+
+**One thing this measurement produced that was not in the plan.** `credential.helper`
+has to be explicitly *cleared* (`-c credential.helper=`) on every authenticated call.
+macOS ships `osxkeychain` configured globally, so without that flag git caches the
+parent's token in a store **Open Nest does not own and cannot clear when a parent
+presses Disconnect**. A Disconnect that leaves a working credential behind is worse than
+no Disconnect.
+
+`test_a_real_push_leaves_no_token_in_the_repository` pins the containment half in the
+suite. It uses a bare local remote, which needs no authentication, so `GIT_ASKPASS` is
+not consulted there — what it guards is that nothing on the push path *writes the token
+down*, which is the part that can regress.
+
+### 17B. S4 — how long an offline push takes to fail
+
+§34 requires GitHub sync to be non-blocking and DoD 48–50 says the same as a scenario.
+The queue needs a number: how long one attempt can take before it is known to have
+failed. "Offline" turned out to be four different things.
+
+| Case | Elapsed | What happens |
+|---|---|---|
+| Seatbelt denies the socket (`scripts/offline.sh`) | **0.0 s** | fails instantly |
+| Hostname does not resolve | **0.1 s** | fails instantly |
+| Black-hole address, no timeout | **75.0 s** | macOS TCP SYN timeout |
+| Connects, then never answers | **never** | still running at 180 s; killed by our own timeout |
+| Same, `http.lowSpeedLimit=1000` / `lowSpeedTime=10` | **10.1 s** | *"Operation too slow"* |
+| Same, shipping config (`1000` / `30`) | **30.1 s** | aborts cleanly |
+| Black hole, shipping config | **75.0 s** | low-speed does not cover the connect phase |
+
+**The fourth row is the finding.** Git has no default timeout for a connection that
+establishes and then goes quiet — a captive portal, or a server under load — and the
+push hangs **indefinitely**. So `http.lowSpeedLimit` / `lowSpeedTime` are load-bearing
+rather than belt-and-braces, and `git_manager.push` sets both. They are deliberately
+tolerant (1 KB/s sustained over 30 s) because a false abort costs one retry and never
+any data, while an intolerant threshold would kill a genuinely slow push of a project
+with assets in it.
+
+The 75 s connect hang is untouched by low-speed and needs the outer
+`subprocess.run(timeout=...)`; `PUSH_TIMEOUT_SECONDS` is 300 s, generous enough for a
+real first push. **Neither number is what keeps the child working** — the queue runs off
+the GUI thread, and that is what satisfies §34. What these bound is a wedged git process
+accumulating, which is a different problem and a real one.
+
+### What is still open
+
+- **S1 — the device flow against the real service.** Needs the OAuth App client ID.
+  `auth.CLIENT_ID` is empty until then, `auth.configured()` answers False, and both the
+  wizard and Settings state plainly that GitHub backup is not part of this build rather
+  than offering a button that cannot work — the same stance Phase 8 took.
+- **S3 — a real private repository, a real first push, a real pull request**, under a
+  real account, then deleted. Approved by the developer; blocked on the same client ID.
+  Until it runs, "Open Nest can create a private repo and open a PR" is proven against
+  an injected transport and a local bare repository, and **not** against GitHub.
+
+---
+
 ## Follow-ups for later phases
 
 - **Phase 2:** resolve models to a local path before loading; add an `HF_HUB_OFFLINE=1`

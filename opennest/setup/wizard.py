@@ -567,7 +567,16 @@ class CloudStep(Step):
 
 
 class GitStep(Step):
-    """Section 35A step 5. GitHub itself is Phase 9 (decision D1), and says so."""
+    """Section 35A step 5: version history, the GitHub connection, and PR behaviour.
+
+    GitHub is optional and says so -- section 35A: "GitHub must not be mandatory."
+    Local version history is presented first and separately, because it is the part
+    that always works: no account, no internet, nothing to decide.
+
+    The four defaults offered here are section 35A's "Recommended defaults" exactly --
+    private repositories on, backup on if connected, automatic PRs off, conversation
+    history off.
+    """
 
     title = "Version history"
 
@@ -582,22 +591,32 @@ class GitStep(Step):
         self.body.addWidget(horizontal_rule())
 
         self.body.addWidget(section_label("GitHub backup"))
-        self.body.addWidget(_body(
-            "Backing projects up to a private GitHub repository is not available in "
-            "this version yet. Nothing is sent anywhere, and local version history "
-            "works without it."
-        ))
-        self.body.addWidget(horizontal_rule())
+        self._github_body = _body("")
+        self.body.addWidget(self._github_body)
+        self._github_status = _mono("")
+        self.body.addWidget(self._github_status)
 
+        github_row = QHBoxLayout()
+        self._connect = QPushButton("Connect GitHub")
+        self._connect.clicked.connect(self._connect_github)
+        self._disconnect = QPushButton("Disconnect")
+        self._disconnect.clicked.connect(self._disconnect_github)
+        github_row.addWidget(self._connect)
+        github_row.addWidget(self._disconnect)
+        github_row.addStretch(1)
+        self.body.addLayout(github_row)
+
+        self.body.addWidget(horizontal_rule())
         self.body.addWidget(section_label("AI change review"))
         self.body.addWidget(_body("How should Open Nest handle large changes?"))
         self._pr_policy = QComboBox()
-        self._pr_policy.addItem("Save them normally", "normal")
-        self._pr_policy.addItem("Create a review branch", "branch")
+        for value in permissions.PR_POLICIES:
+            self._pr_policy.addItem(permissions.PR_POLICY_LABELS[value], value)
         self.body.addWidget(self._pr_policy)
         self.body.addStretch(1)
 
     def enter(self) -> None:
+        from opennest.github import auth as github_auth
         from opennest.versioning import git_manager
 
         if git_manager.git_available():
@@ -608,9 +627,79 @@ class GitStep(Step):
                 "Installing Apple's command line tools adds it:  xcode-select --install"
             )
 
+        if not github_auth.configured():
+            # Phase 8's stance, kept: state the absence rather than showing a button
+            # that cannot work. Nothing here fakes a connection.
+            self._github_body.setText(
+                "Backing projects up to a private GitHub repository is not part of "
+                "this version of Open Nest. Nothing is sent anywhere, and version "
+                "history on this Mac works without it."
+            )
+            self._github_status.setText("")
+            self._connect.setVisible(False)
+            self._disconnect.setVisible(False)
+            return
+
+        self._github_body.setText(
+            "Open Nest can privately back up every project to a GitHub account, so "
+            "the work survives this Mac. Repositories are always private, and this is "
+            "the parent's account -- the child never signs in to anything.\n\n"
+            "This is optional. Everything works without it."
+        )
+        self._refresh_github()
+
     def leave(self) -> bool:
-        self.state.github_enabled = False
+        from opennest.github import auth as github_auth
+
+        connected = github_auth.configured() and github_auth.connected(
+            self.wizard.credentials
+        )
+        self.state.github_enabled = connected
+        if not connected:
+            self.state.github_account = ""
+        # Section 35A: "Automatic backup: ON if GitHub is connected." The switch itself
+        # defaults on, so this is only ever turning it off when there is no account.
+        self.wizard.controls.github_private_backup = connected
+        self.wizard.controls.github_pr_policy = self._pr_policy.currentData()
         return True
+
+    # -- the connection -----------------------------------------------------
+
+    def _connect_github(self) -> None:
+        from opennest.ui.github_connect import connect_github
+
+        login = connect_github(self, credentials=self.wizard.credentials)
+        if not login:
+            return
+        # Recorded on the wizard's own state object, not written here: the wizard saves
+        # installation.json once, at the end, so a parent who quits half way through
+        # has not had a partial record written for them.
+        self.state.github_enabled = True
+        self.state.github_account = login
+        self._refresh_github()
+
+    def _disconnect_github(self) -> None:
+        from opennest.github import auth as github_auth
+
+        github_auth.disconnect(self.wizard.credentials)
+        self.state.github_enabled = False
+        self.state.github_account = ""
+        self._refresh_github()
+
+    def _refresh_github(self) -> None:
+        from opennest.github import auth as github_auth
+
+        connected = github_auth.connected(self.wizard.credentials)
+        self._connect.setVisible(not connected)
+        self._disconnect.setVisible(connected)
+        if connected:
+            account = self.state.github_account
+            self._github_status.setText(
+                f"Connected{f' as {account}' if account else ''}.\n"
+                "New projects will be backed up to a private repository."
+            )
+        else:
+            self._github_status.setText("Not connected.")
 
 
 class ParentStep(Step):

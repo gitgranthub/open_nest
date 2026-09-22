@@ -36,6 +36,12 @@ SERVICE = APP_NAME
 #: so adding a provider to the catalogue needs no change here.
 PARENT_PIN_ACCOUNT = "parent-pin"
 
+#: The parent's GitHub OAuth token (WORKORDER_01 section 29A, Phase 9). Deliberately
+#: *not* a member of :data:`CLOUD_PROVIDERS`: GitHub is not a cloud AI provider, it must
+#: never appear on the Cloud AI page, and ``statuses()`` iterates that tuple. Section 29A
+#: puts it in Parent Settings under GitHub Backup instead.
+GITHUB_TOKEN_ACCOUNT = "github-token"
+
 #: Providers Open Nest knows how to hold a key for.
 CLOUD_PROVIDERS: tuple[str, ...] = ("openai", "anthropic")
 
@@ -148,6 +154,49 @@ class Credentials:
                            self.has_key(provider))
             for provider in CLOUD_PROVIDERS
         )
+
+    # -- GitHub -------------------------------------------------------------
+
+    def save_github_token(self, token: str) -> None:
+        """Store the parent's GitHub token. The Keychain is the only place it goes.
+
+        Section 29A: "Credentials should be stored using secure macOS credential storage
+        and never inside projects." Phase 9's spike S2 (SPIKES.md section 17) is what
+        makes that true of the push itself -- the token is handed to git through
+        ``GIT_ASKPASS`` and never written into ``.git/config``.
+        """
+        token = (token or "").strip()
+        if not token:
+            raise CredentialError("That GitHub token was empty, so nothing was saved.")
+        try:
+            self.backend.set_password(self.service, GITHUB_TOKEN_ACCOUNT, token)
+        except Exception as exc:
+            raise CredentialError(_backend_problem(exc)) from None
+
+    def get_github_token(self) -> str | None:
+        """The stored token, or None. Callers must not log or persist the result."""
+        try:
+            value = self.backend.get_password(self.service, GITHUB_TOKEN_ACCOUNT)
+        except Exception as exc:
+            raise CredentialError(_backend_problem(exc)) from None
+        return value or None
+
+    def has_github_token(self) -> bool:
+        """Whether GitHub is connected, without the caller ever holding the token."""
+        try:
+            return self.get_github_token() is not None
+        except CredentialError:
+            return False
+
+    def delete_github_token(self) -> bool:
+        """Disconnect. Returns whether there was a token to remove."""
+        try:
+            self.backend.delete_password(self.service, GITHUB_TOKEN_ACCOUNT)
+        except Exception as exc:
+            if _is_missing_entry(exc):
+                return False
+            raise CredentialError(_backend_problem(exc)) from None
+        return True
 
     # -- parent PIN ---------------------------------------------------------
 

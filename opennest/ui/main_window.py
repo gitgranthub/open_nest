@@ -22,6 +22,7 @@ from opennest.setup.state import InstallationState
 from opennest.ui import consent, new_project
 from opennest.ui import settings as settings_ui
 from opennest.ui.flight_deck import FlightDeck
+from opennest.ui.github_sync import GitHubSync
 from opennest.ui.workbench import Workbench
 from opennest.ui.worker import ModelLoader, run_in_thread
 from opennest.versioning.checkpoint import VersionHistory
@@ -58,6 +59,18 @@ class MainWindow(QMainWindow):
         self._workbench: Workbench | None = None
         self._versions: VersionHistory | None = None
         self._controller: AgentController | None = None
+
+        #: GitHub backup (WORKORDER_01 section 29A). Owns the push queue and sweeps it
+        #: on a timer. Constructed whether or not GitHub is connected: it checks
+        #: readiness on every sweep, so a parent connecting mid-session just works, and
+        #: a queue left over from a previous run is picked up on launch.
+        self._sync = GitHubSync(
+            self,
+            credentials=self.credentials,
+            controls=self.controls,
+            on_problem=self._backup_problem,
+        )
+        self._sync.start()
 
         self._stack = QStackedWidget()
         self._deck = FlightDeck(
@@ -172,6 +185,11 @@ class MainWindow(QMainWindow):
 
     def _settings_changed(self) -> None:
         self.controls = permissions.reload()
+        # ``reload()`` returns a new object, so anything holding the old one is now
+        # reading stale switches. The sync is the case that matters: a parent turning
+        # backup off would otherwise keep pushing until the next launch.
+        self._sync.controls = self.controls
+        self._sync.start()
         self._show_cloud_status()
         # A parent turning cloud on has to make Image Creation usable without a restart.
         self._deck.allow_cloud = self.controls.cloud_allowed()
@@ -255,6 +273,7 @@ class MainWindow(QMainWindow):
             credentials=self.credentials,
             upload_policy=self._upload_allowed,
             starter_idea=starter_idea,
+            sync=self._sync,
         )
         workbench.back_requested.connect(self._back_to_deck)
         workbench.model_change_requested.connect(self._switch_model)
@@ -301,6 +320,15 @@ class MainWindow(QMainWindow):
         self._deck.refresh()
         self._stack.setCurrentWidget(self._deck)
 
+    def _backup_problem(self, project_name: str, message: str) -> None:
+        """A backup failure a parent has to see -- in practice, a blocked credential.
+
+        Section 29A requires notifying the parent when secret scanning blocks a push.
+        Everything else the queue handles silently: a child must not be interrupted by
+        GitHub, and an ordinary offline retry is not news.
+        """
+        QMessageBox.warning(self, APP_NAME, f"{project_name}\n\n{message}")
+
     def _close_project(self) -> None:
         """End the conversation thread, save outstanding work, clear the crash marker.
 
@@ -309,10 +337,16 @@ class MainWindow(QMainWindow):
         if self._controller is not None:
             self._controller.close()
             self._controller = None
+        project = self._versions.project if self._versions is not None else None
         if self._versions is not None:
             self._versions.finish()
             self._versions = None
+        # After the final checkpoint, so the backup includes it. Section 29A's chain
+        # ends in a push, and closing a project is the last chance to start one.
+        if project is not None:
+            self._sync.flush(project)
 
     def closeEvent(self, event) -> None:
         self._close_project()
+        self._sync.stop()
         super().closeEvent(event)
