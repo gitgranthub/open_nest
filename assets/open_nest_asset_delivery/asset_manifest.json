@@ -1,0 +1,52 @@
+{
+  "brand": "Open Nest",
+  "pixel_rendering": "nearest-neighbor",
+  "compact_logo": "ON over nest",
+  "eagle_frames": 12,
+  "eagle_playback_recommendation_ms": 125,
+  "eagle_grid_source": {
+    "columns": 6,
+    "rows": 2
+  },
+  "runtime_eagle_sizes": [
+    64,
+    96,
+    128,
+    256
+  ],
+  "wordmark_widths": [
+    192,
+    256,
+    384,
+    512,
+    768,
+    1024
+  ],
+  "nest_widths": [
+    96,
+    128,
+    192,
+    256,
+    384,
+    512
+  ],
+  "glasses_widths": [
+    64,
+    96,
+    128,
+    192,
+    256,
+    384,
+    512
+  ],
+  "compact_logo_sizes": [
+    64,
+    96,
+    128,
+    192,
+    256,
+    384,
+    512,
+    1024
+  ]
+}
