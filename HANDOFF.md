@@ -1,9 +1,20 @@
 # Handoff — start here
 
-You are picking up Open Nest after Phase 8. **Phase 9 (GitHub backup) is next.** This
-document is what you need before touching anything.
+You are picking up Open Nest after Phase 9. **Phase 10 (design and polish) is next.**
+This document is what you need before touching anything.
 
 Three things before the rest.
+
+**GitHub backup works against the real GitHub, and the proof is in SPIKES.md §17C-E.**
+D1 is resolved as OAuth device flow. A real device flow authorised `gitgranthub` in 53 s;
+a real private repository was created in 3.4 s, pushed to over HTTPS in 1.6 s, and a real
+pull request opened — all through the shipped code, with the token in the Keychain and in
+**no file on disk**, verified by sweeping all eight of §22's locations for its actual
+bytes. Disconnect is a real revocation: git cached nothing, so a later push with the
+system credential helper active cannot authenticate at all. **It has also now been
+clicked** — 21 checks under the real cocoa platform, including an authorization a person
+completed through the actual dialog (§17F). That found five cosmetic defects and no
+behavioural ones; they are Phase 10's.
 
 **A parent can now install Open Nest without a Terminal, and the wizard is where every
 "you will need to do this by hand" ended up.** Nine steps (§6D). It collects the parent
@@ -83,12 +94,13 @@ it belongs in section 4.
 | 6 — Cloud AI, credentials, parent controls | complete, committed on `phase-6-cloud`. All three cloud models verified against the real services |
 | 7 — Remaining profiles | complete, committed on `phase-7-profiles`. Arduino compile verified against the real toolchain; upload hardware-unverified |
 | 8 — Setup wizard and installation lifecycle | complete, committed on `phase-8-setup`. Installer acceptance pass: 71 checks, 0 failures, four defects found and fixed. A pristine-account run is still open — see §6D |
-| **9 — GitHub backup** | **not started — yours** |
+| 9 — GitHub backup | complete, committed on `phase-9-github`. D1 resolved as OAuth device flow, **verified against the real GitHub**: real device flow, real private repo, real push, real PR, and a real Disconnect (SPIKES.md §17C-E). UI smoke-tested under cocoa: 21 checks, 21 passed (§17F). Five cosmetic defects recorded for Phase 10 |
+| **10 — Design and polish pass** | **not started** |
 
 Branches are **stacked**: each is based on the previous one, so each PR shows only its
-own phase. Nothing is merged to `main` yet. Branch Phase 9 from `phase-8-setup`.
+own phase. Nothing is merged to `main` yet. Branch Phase 10 from `phase-9-github`.
 
-The review chain is 1 → 2 → 3 → 4 → 6 → 7 → 5 → 8. The PR numbers do not match the
+The review chain is 1 → 2 → 3 → 4 → 6 → 7 → 5 → 8 → 9. The PR numbers do not match the
 review order, because #5 was opened before #6, #7 and #8.
 
 What works today: a parent clones the repository, double-clicks one file, and answers a
@@ -103,16 +115,20 @@ turn cloud on, and the child can switch to Claude or OpenAI after a warning, or 
 pictures with an image model. Everything except Image Creation still works with cloud off,
 which is the default.
 
-660 tests pass, ruff is clean.
+724 tests pass, ruff is clean.
 
-**Phase 9 is GitHub backup**, and Phase 8 hands it two things:
+**Phase 10 is the design and polish pass**, and Phase 9 hands it three things:
 
-- **D1 is still open and is now the only thing blocking it.** The wizard's Git step
-  configures the commit identity and says plainly that GitHub backup is not available
-  yet; `state.github_enabled` exists and is always False. Nothing fakes a connection.
-- **The update check already reaches GitHub without credentials**, because
-  `git ls-remote` against a public repository needs none. If D1 lands on a token, the
-  check does not need it and should not start using it.
+- **GitHub backup is on, and `CLIENT_ID` is what holds it on.** `github/auth.py` carries
+  the registered OAuth App's client ID — public by design, it ships in every copy. Empty
+  it and the whole feature correctly reports itself absent, which is the switch to reach
+  for if it ever needs turning off.
+- **The update check still needs no credentials and must not start using the token.**
+  `git ls-remote` against a public repository is unauthenticated, and
+  `test_the_check_only_ever_runs_read_only_git_commands` guards the read-only half.
+- **Nothing surfaces a pending backup.** Deliberate (§29A: no visible complexity), but
+  whether a parent wants to see "3 projects waiting" is a §6C-bis open question and a
+  natural Phase 10 one.
 
 Still with no consumer: `raspberry_pi_deployment`. §7 calls SSH deployment future, so
 Phase 7 had nothing to gate without inventing a feature. When you build it, it takes the
@@ -123,7 +139,7 @@ privileged-action pattern in §5, not a new mechanism.
 ## 2. Get running in five minutes
 
 ```bash
-.venv/bin/python -m pytest -q      # 660 passing, about 40 seconds
+.venv/bin/python -m pytest -q      # 724 passing, about 44 seconds
 ```
 
 It is slower than it was (7 s at Phase 6). Phase 7 added tests that actually run each
@@ -222,6 +238,13 @@ opennest/
 │   ├── checks.py           the health check, reused by Repair Installation
 │   ├── updates.py          "is there a new version?" -- reads, never pulls
 │   └── migration.py        what the launch after a `git pull` does
+├── github/                 GitHub backup -- WORKORDER_01 section 29A
+│   ├── auth.py             device flow (D1); the token, and the Keychain it lives in
+│   ├── api.py              create a PRIVATE repo, open a PR. `private` is a constant.
+│   ├── transport.py        injectable HTTP, so no test opens a socket
+│   ├── push_queue.py       pushes waiting for the internet. No Qt in it.
+│   ├── backup.py           orchestration and the PR policy
+│   └── askpass.sh          what git execs to get the token. Holds no secret.
 ├── versioning/             git_manager, checkpoint, autosave, secret_scanner
 ├── security/
 │   ├── sandbox.py          path confinement for Open Nest's own tools
@@ -233,7 +256,8 @@ opennest/
 └── prompts/                base + per-profile + build-style   (data, not code)
 ```
 
-`ui/settings.py` is the six sections of §32; `ui/consent.py` is the three places Open
+`ui/github_sync.py` drives the push queue on a timer and a worker thread;
+`ui/github_connect.py` is the device-flow window. `ui/settings.py` is the six sections of §32; `ui/consent.py` is the three places Open
 Nest stops and asks (cloud warning, parent PIN, permission prompt); `ui/new_project.py`
 is the name-it-and-pick-an-idea dialog (§27's idea cards).
 
@@ -328,6 +352,50 @@ does.** Do not "clean up" these without re-measuring:
 - **`opennest/` may import `bootstrap/`; the reverse is a test failure.** The wizard uses
   `bootstrap.environment` for machine detection and `migration` uses it to reinstall,
   both lazily and tolerantly. Keep the arrow pointing that way.
+
+**Phase 9 traps:**
+
+- **A private repo answers "Repository not found" to an anonymous `ls-remote`, and
+  `_run(..., check=False)` swallows it into an empty string.** So a good push reads as a
+  failed one. Authenticate before believing anything about remote state. Second instance
+  of a swallowed git failure being read as a fact (Phase 8's defect 3 was the first).
+- **A numeric PIN is valid hex, which made a credential test flaky.**
+  `test_the_pin_is_stored_as_a_hash_not_as_the_pin` asserted `"2468" not in stored`
+  against 96 random hex characters of salt and digest — measured failing **1 run in 800**.
+  Fixed by fixing the salt. If you assert a secret's absence from random hex, check the
+  alphabet first.
+- **`isVisibleTo(parent)` is *also* vacuous inside a `QStackedWidget`.** §4 already
+  records that `isVisible()` is False on a widget nobody showed, and says to use
+  `isVisibleTo(parent)`. That fix does not hold here: a stack **explicitly hides** every
+  page but the current one, so `isVisibleTo(window)` is False for every control on the
+  Parent Settings page whatever the code does. Two assertions in `test_github_ui.py`
+  were vacuous until this was measured both ways. **`isHidden()` is the predicate that
+  discriminates** — it reflects the `setVisible()` the code actually called.
+- **`git push` can hang forever, and it is not the case you would guess.** A black-hole
+  address fails in 75 s (the macOS SYN timeout), but a connection that *establishes and
+  then goes silent* has no timeout at all — it ran past 180 s in SPIKES.md §17B. So
+  `http.lowSpeedLimit`/`lowSpeedTime` are load-bearing, not tidiness. Removing them
+  reintroduces an unbounded hang.
+- **macOS configures `credential.helper=osxkeychain` globally, and it will cache your
+  token.** Every authenticated git call passes `-c credential.helper=` for that reason. A
+  copy in git's own credential store is one Open Nest does not own and cannot remove when
+  a parent presses Disconnect.
+- **GitHub's device-flow token endpoint answers HTTP 200 with the error in the body.** So
+  a status-based error check sees success and falls straight through. Without an explicit
+  branch a real failure reports as "GitHub approved the sign-in but sent no token", which
+  is both wrong and unactionable. `test_an_unknown_device_flow_error_is_not_reported_as_a_missing_token`
+  pins it.
+- **A commit-time secret scan cannot see a committed-then-deleted credential.**
+  `commit()` scans the working tree; the file is gone and the blob is not. That is why
+  §29A asks for a scan before pushes *as well*, and why `scan_commits` reads blobs out of
+  the commits rather than looking at the checkout.
+- **`permissions.ParentControls.load` only accepted strings that were gate states.** Every
+  string field was a three-state permission until `github_pr_policy`, so a saved PR policy
+  was silently discarded in favour of the default. `_STRING_VALUES` is the fix; if you add
+  another string setting with its own value set, it goes there.
+- **`permissions.reload()` returns a new object**, so anything holding the old one reads
+  stale switches. `MainWindow._settings_changed` now hands the new one to `GitHubSync`;
+  without that, a parent turning backup off kept pushing until the next launch.
 
 ---
 
@@ -772,6 +840,130 @@ sees says so in as many words. The image model lives on the profile rather than 
 
 ---
 
+## 6C-bis. How GitHub backup works
+
+Phase 9 is built and **verified against the real GitHub** — SPIKES.md §17C-E has the
+numbers. A real device flow, a real private repository, a real authenticated push, a real
+pull request, and a real Disconnect, all driven through the shipped code rather than a
+reimplementation. What remains unverified is anything involving a person clicking.
+
+**D1 is resolved as OAuth device flow, and the other two candidates were rejected for
+measured reasons.** Not preference:
+
+- **`gh` was the trap the work order warned about, and it is worse than it reads.**
+  Measured on this machine: `gh auth status` reports whichever account happens to be
+  logged in — here `gitgranthub`, with `repo` scope, in a keyring `gh` owns. Open Nest
+  would be displaying "Connected as X" for a fact it does not control, could not revoke
+  a token it never held, and on a parent's Mac `gh` is a Homebrew developer tool that is
+  probably absent. **Open Nest never shells to `gh`.**
+- **A PAT works** and §29A says to avoid it unless nothing better is supported.
+
+**The account is the parent's; the commit identity is separate and may be the child's.**
+This distinction is the whole shape of the feature and it is easy to collapse. §35A says
+"Sign in to the parent's GitHub account" in as many words, the connection lives behind
+the parent PIN, and GitHub's own terms put an age floor under a child having an account.
+Meanwhile §29A explicitly permits the child's GitHub noreply address as the commit
+author — and Phase 8 already plumbed that half. One account owns the private repository;
+the child's name is on the commits.
+
+**The token never touches disk, and that is measured rather than intended.** The obvious
+remote URL (`https://x-access-token:TOKEN@github.com/...`) writes the token straight into
+`.git/config`; SPIKES.md §17A shows it doing so, as a negative control, before showing
+the design that does not. The token goes to git through `GIT_ASKPASS` and an environment
+set for one subprocess. Two things fall out of that which are easy to undo by accident:
+
+- **`credential.helper` must be cleared on every authenticated git call.** macOS ships
+  `osxkeychain` configured globally, so without `-c credential.helper=` git caches the
+  parent's token in a store Open Nest does not own and cannot clear on Disconnect.
+- **`opennest/github/askpass.sh` is executed by git**, so it ships in the package with
+  its executable bit rather than being written to a cache directory at run time. A file
+  anything on the Mac could overwrite is a worse thing to hand to `exec`. It holds no
+  secret; it reads from its environment.
+
+**A push scan and a commit scan are different questions, and both are required.** §29A
+asks for scanning before commits *and* before pushes, which reads like belt and braces
+until you notice that `commit()` scans the **working tree** — so a credential that was
+committed and then deleted is invisible to it. The file is gone; the blob is not, and a
+push sends the blob. `git_manager.scan_commits` therefore reads blobs out of the commits
+being pushed. `test_a_secret_committed_and_then_deleted_still_blocks_the_push` is the
+case that justifies the extra work.
+
+**Offline is the only failure worth retrying, and `git push` can hang forever.** The
+second half is the surprising one: git has no timeout for a connection that establishes
+and then goes silent, so a captive portal hangs a push **indefinitely** (SPIKES.md §17B).
+`http.lowSpeedLimit`/`lowSpeedTime` are load-bearing because of that, not decorative. A
+rejected or secret-blocked push leaves the queue instead of retrying — a timer cannot fix
+either, and for a credential it would repeat the same warning forever.
+
+**One queue entry per project and branch, not per commit.** A push sends whatever the
+branch points at, so two queued pushes for one branch are the same push. Re-queueing
+resets the backoff rather than adding an entry, because new work is evidence the child is
+working now and should not wait out an hour earned while the Wi-Fi was off.
+
+**A review branch is created before the change, never after.** §29A's diagram branches
+first, and the alternative is worse than it looks: committing to `main` and then moving
+the branch means rewinding `main`, and nothing in this codebase resets anything
+(`git_manager.restore` is append-only for the same reason). Branching first also makes
+§29A's "small successful modifications can remain ordinary local commits" fall out for
+free — a small change is fast-forwarded back into `main` and the branch disappears. The
+hook is in `Workbench`, so `AgentController` needed no change at all.
+
+**What counts as a "large" change is an unmeasured heuristic and is labelled as one.**
+`backup.LARGE_FILES` (3) and `LARGE_LINES` (120) are deterministic — computed from the
+diff, never asked of the model — but the thresholds are a guess, exactly like
+`history_search.CUES`. Nobody has watched a child's session and counted.
+
+**Conversation archives are excluded by the `.gitignore`, not by a push-time filter.**
+§38 requires no chat archives unless a parent opts in, and `git_manager.GITIGNORE`
+already excluded `.opennest/conversations/` from Phase 3 onward. An archive that is never
+committed cannot be pushed, so the setting rewrites that one line. Turning it on applies
+to every project, not just the open one.
+
+### What the real run added to the above
+
+**A private repository answers "Repository not found" to an anonymous `ls-remote`.**
+GitHub does not disclose that private repositories exist, and `_run(..., check=False)`
+turns that failure into an empty string — indistinguishable from a successful empty
+result. This made a perfectly good push look like it had never arrived, and it is the
+second time a swallowed git failure has been read as a fact about the world (Phase 8's
+defect 3 was the same shape). If you check remote state, authenticate.
+
+**The update check's freedom from credentials rests on one repository being public**, and
+that is now verified rather than assumed: `gitgranthub/open_nest` answers HTTP 200
+unauthenticated. If it ever goes private, `setup/updates.py` breaks — and the token is
+still the wrong fix, because the check must not require a connected account.
+
+### What is not done
+
+- **Five cosmetic defects are known and unfixed**, all found by looking at the rendered
+  window (SPIKES.md §17F) and all left for Phase 10 by developer direction: a clipped
+  "Open GitHub agai" button label; the device code shown twice; the standalone code not
+  visually prominent; **GitHub Backup sitting 726 px down a 443 px viewport** in Parent
+  Settings, when §29A treats it as a headline control; and a horizontal scrollbar on that
+  page. The first is a plain bug and a one-line fix.
+- **One account, one Mac, one run.** Nothing has been tried against an organisation
+  repository, an account with SSO, or 2FA prompts landing mid-flow.
+- **What a parent sees on GitHub's own authorization screen is still unreviewed.** The
+  developer approved it, so it works; whether its wording about `repo` access reads
+  acceptably to a parent is the live evidence for D11 and nobody has assessed it.
+- **The classic OAuth `repo` scope is broader than this needs.** It reaches every
+  repository the parent can see, including organisation repositories, because classic
+  OAuth Apps have no per-repository scoping. Accepted as a documented V1 trade-off by
+  developer direction. The tightening option — a **GitHub App** with an installation
+  scoped to only the repositories Open Nest creates — is recorded as future
+  security-hardening work and is explicitly not Phase 9.
+- **Nobody has clicked any of this either.** Same caveat as §6D: the tests drive the
+  objects under offscreen Qt, so the device-flow dialog's copy, focus and layout are
+  unverified, and the browser hand-off has never been watched by a person.
+- **A large first push is untimed.** `PUSH_TIMEOUT_SECONDS` is 300 s on the reasoning in
+  SPIKES.md §17B, but no project with real assets in it has been pushed over a real
+  connection.
+- **Nothing shows a child or a parent that a backup is pending.** The queue is silent by
+  design (§29A: no visible complexity), and only a blocked credential surfaces. Whether
+  a parent wants a "3 projects waiting to back up" line is a Phase 10 question.
+
+---
+
 ## 6D. How setup and the installation lifecycle work
 
 Phase 8 is built. `WORKORDER_01.md` §35A is the specification, and DoD 51–53 is the
@@ -926,11 +1118,27 @@ From `CLAUDE.md` and from the developer directly:
 
 | # | Decision | Needed by |
 |---|---|---|
-| D1 | GitHub auth — OAuth device flow, `gh` CLI, or PAT. `gh` is authenticated on the dev machine but authenticates the *parent's* account. Now the only thing blocking Phase 9; the update check does **not** need it | Phase 9 |
+| ~~D1~~ | ~~GitHub auth~~ | ~~Phase 9~~ |
 | D8 | **Whether image generation shows its cost.** ~800 KB and 10–15 s per image, billed per image, with no count or total anywhere. A parent who turned cloud on for chat has also turned this on | before real use |
 | D10 | **Whether a one-click in-app updater is wanted at all**, and if so what it does about local modifications, a moved model pin, and restarting a running app. Phase 8 deliberately stopped at "notice and report" — see §6D | after V1 |
 | — | Only one model is verified and downloaded. The other three local ones are pinned and described but untested | — |
 | — | All measurements are from a 48 GB Mac. The target is 8 GB | before V1 |
+
+**Resolved in Phase 9 — D1: OAuth device flow.** A classic OAuth App with device flow
+and the `repo` scope, the token in the Keychain and nowhere else. `gh` was rejected on a
+measurement rather than a preference — it authenticates whichever account it happens to
+be logged into, which makes "Connected as X" a claim Open Nest does not own and makes
+Disconnect unable to revoke anything. A PAT works and §29A says to avoid one when
+something better is supported. **Two things this leaves open**: the OAuth App is not
+registered, so `CLIENT_ID` is empty and the feature reports itself absent; and the
+classic `repo` scope is broader than needed, accepted as a documented V1 trade-off with a
+GitHub App recorded as the tightening option. §6C-bis has both.
+
+**New in Phase 9 — D11.** *Whether GitHub authorization should move to a GitHub App.* A
+classic OAuth App's `repo` scope reaches every repository the parent can see, including
+organisation ones; a GitHub App installation can be scoped to only the repositories Open
+Nest creates. Security hardening, explicitly not Phase 9 work, and it changes the token
+lifecycle (installation tokens expire) rather than just the registration.
 
 **Resolved in Phase 8 — D9.** Checking for updates is a **parent action, not a new
 permission**: it happens only when a parent presses a button in Settings behind the PIN,

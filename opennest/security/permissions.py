@@ -83,6 +83,32 @@ GATES: tuple[Gate, ...] = (
 
 GATES_BY_NAME = {gate.name: gate for gate in GATES}
 
+#: WORKORDER_01 section 35A's "AI CHANGE REVIEW" and section 29A's "PR policy" are the
+#: same three choices, so there is one list of them and it lives here with the field it
+#: validates -- the same reason :data:`GATES` is data rather than a hand-written set of
+#: checkboxes. ``github.backup`` imports these; nothing redefines them.
+PR_POLICY_NORMAL = "normal"
+PR_POLICY_BRANCH = "branch"
+PR_POLICY_PULL_REQUEST = "pr"
+PR_POLICIES: tuple[str, ...] = (
+    PR_POLICY_NORMAL,
+    PR_POLICY_BRANCH,
+    PR_POLICY_PULL_REQUEST,
+)
+
+#: Section 35A's wording, which is what a parent reads in the wizard and in Settings.
+PR_POLICY_LABELS = {
+    PR_POLICY_NORMAL: "Save them normally",
+    PR_POLICY_BRANCH: "Create a review branch",
+    PR_POLICY_PULL_REQUEST: "Create a GitHub pull request",
+}
+
+#: String fields whose permitted values are *not* the three gate states. Without this,
+#: :meth:`ParentControls.load` silently discards a saved PR policy, because its only
+#: rule for a string was "must be one of allow/ask/deny" -- true of every string field
+#: until this one existed.
+_STRING_VALUES: dict[str, tuple[str, ...]] = {"github_pr_policy": PR_POLICIES}
+
 
 @dataclass
 class ParentControls:
@@ -104,8 +130,20 @@ class ParentControls:
     arduino_upload: str = ASK
     raspberry_pi_deployment: str = ASK
 
-    #: Section 35A step 6 shows this ON. Phase 9 owns what it does.
+    #: Section 35A step 6 shows this ON, and Phase 9 is what made it mean something:
+    #: with a GitHub account connected, this is the switch that backs projects up.
     github_private_backup: bool = True
+
+    #: Section 29A's PR policy / section 35A's "AI CHANGE REVIEW". Default is section
+    #: 35A's stated default -- "Save them normally" -- because a pull request per
+    #: change is section 29A's advanced case, not a child's normal experience.
+    github_pr_policy: str = PR_POLICY_NORMAL
+
+    #: Section 29A's "Include AI conversation history in GitHub backup", whose own
+    #: example marks No as recommended, and section 38's "no full AI conversation
+    #: archives unless explicitly enabled by the parent". Off is the requirement, not a
+    #: preference: a child's transcript is the most personal thing in the project.
+    github_include_conversations: bool = False
 
     #: Where this was loaded from, so save() round-trips without the caller tracking it.
     path: Path | None = field(default=None, compare=False, repr=False)
@@ -138,7 +176,7 @@ class ParentControls:
             if isinstance(getattr(controls, entry.name), bool):
                 if isinstance(value, bool):
                     setattr(controls, entry.name, value)
-            elif isinstance(value, str) and value in STATES:
+            elif isinstance(value, str) and value in _STRING_VALUES.get(entry.name, STATES):
                 setattr(controls, entry.name, value)
         return controls
 

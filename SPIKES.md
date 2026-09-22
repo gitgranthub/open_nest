@@ -1075,6 +1075,223 @@ tell you the work failed when only the reporting did.**
 
 ---
 
+## 17. Phase 9 — pushing to GitHub without leaking the token, and what offline costs
+
+Two spikes, run before any of Phase 9 was built, because both decide a design rather
+than confirm one. A third and fourth (the real device flow, and a real private
+repository) are **still open** and wait on the OAuth App client ID — see the end of this
+section.
+
+### 17A. S2 — an authenticated push with the token reaching no file
+
+§29A requires GitHub credentials in "secure macOS credential storage and never inside
+projects", and §22 lists Git repositories among the places a key must never appear.
+Those are promises about a mechanism, so the mechanism was measured against a real
+`git push` over real HTTP Basic auth — a local `git http-backend` behind a real 401
+challenge, so git's own credential path runs. Nothing touches the network; it binds
+127.0.0.1.
+
+**The negative control first, because the rejected design had to be shown to fail.**
+
+| Design | Result |
+|---|---|
+| `https://x-access-token:TOKEN@host/repo.git` as the remote URL | **token written to `.git/config`** |
+| Clean remote URL + `GIT_ASKPASS` + per-subprocess environment | push succeeded; token in **no file, no argv** |
+
+For the second row, specifically: the push exited 0, the server confirmed it received
+Basic auth as `x-access-token`, the commit arrived on the remote, and a byte-level
+search for the token found nothing under `.git/`, nothing in `.git/config`, nothing in
+`argv`, and nothing anywhere in the workspace — including the askpass helper itself,
+which reads the value from its environment and contains no credential.
+
+**One thing this measurement produced that was not in the plan.** `credential.helper`
+has to be explicitly *cleared* (`-c credential.helper=`) on every authenticated call.
+macOS ships `osxkeychain` configured globally, so without that flag git caches the
+parent's token in a store **Open Nest does not own and cannot clear when a parent
+presses Disconnect**. A Disconnect that leaves a working credential behind is worse than
+no Disconnect.
+
+`test_a_real_push_leaves_no_token_in_the_repository` pins the containment half in the
+suite. It uses a bare local remote, which needs no authentication, so `GIT_ASKPASS` is
+not consulted there — what it guards is that nothing on the push path *writes the token
+down*, which is the part that can regress.
+
+### 17B. S4 — how long an offline push takes to fail
+
+§34 requires GitHub sync to be non-blocking and DoD 48–50 says the same as a scenario.
+The queue needs a number: how long one attempt can take before it is known to have
+failed. "Offline" turned out to be four different things.
+
+| Case | Elapsed | What happens |
+|---|---|---|
+| Seatbelt denies the socket (`scripts/offline.sh`) | **0.0 s** | fails instantly |
+| Hostname does not resolve | **0.1 s** | fails instantly |
+| Black-hole address, no timeout | **75.0 s** | macOS TCP SYN timeout |
+| Connects, then never answers | **never** | still running at 180 s; killed by our own timeout |
+| Same, `http.lowSpeedLimit=1000` / `lowSpeedTime=10` | **10.1 s** | *"Operation too slow"* |
+| Same, shipping config (`1000` / `30`) | **30.1 s** | aborts cleanly |
+| Black hole, shipping config | **75.0 s** | low-speed does not cover the connect phase |
+
+**The fourth row is the finding.** Git has no default timeout for a connection that
+establishes and then goes quiet — a captive portal, or a server under load — and the
+push hangs **indefinitely**. So `http.lowSpeedLimit` / `lowSpeedTime` are load-bearing
+rather than belt-and-braces, and `git_manager.push` sets both. They are deliberately
+tolerant (1 KB/s sustained over 30 s) because a false abort costs one retry and never
+any data, while an intolerant threshold would kill a genuinely slow push of a project
+with assets in it.
+
+The 75 s connect hang is untouched by low-speed and needs the outer
+`subprocess.run(timeout=...)`; `PUSH_TIMEOUT_SECONDS` is 300 s, generous enough for a
+real first push. **Neither number is what keeps the child working** — the queue runs off
+the GUI thread, and that is what satisfies §34. What these bound is a wedged git process
+accumulating, which is a different problem and a real one.
+
+### 17C. S1 — the device flow against the real GitHub
+
+Client ID `Ov23li7JhMufrSxhqCDs`, a classic OAuth App with device flow enabled, run
+through the shipped `opennest.github.auth` and the real `RequestsTransport`. Nothing in
+the spike reimplements the flow.
+
+| | |
+|---|---|
+| `POST /login/device/code` | real code returned; **not** `device_flow_disabled` |
+| User code | `7078-EF70`, 14-minute expiry, 5 s poll interval |
+| Approval | **53 s, 11 polls**, 10 of them `authorization_pending` |
+| Account | `GET /user` → **`gitgranthub`** |
+| Scope requested | `repo`, and nothing else |
+| Token in Keychain | yes |
+| Token in the `Connected` result object | **no** — it carries the login only |
+
+**The containment sweep found nothing**, run against the live token across all eight of
+§22's locations: the containment root, projects, `installation.json`, logs, bundled
+config, bundled prompts, the source tree, and the repository's own `.git`. The token's
+value is never printed by the spike — only the verdict.
+
+### 17D. S3 — a real private repository, push, and pull request
+
+One temporary repository, `gitgranthub/OpenNest-Spike-Phase9`, approved by the developer
+and deleted by hand afterwards. `delete_repo` is deliberately **not** in Open Nest's
+scope, so the spike cannot clean up after itself — the right trade: the application
+should not be able to delete a child's backup.
+
+| Step | Result |
+|---|---|
+| `backup.ensure_repository` | repository created in **3.4 s**, `private: true` |
+| Remote URL written | `https://github.com/gitgranthub/OpenNest-Spike-Phase9.git` — **no userinfo** |
+| `git_manager.push` (main) | **1.6 s** over HTTPS via `GIT_ASKPASS` |
+| `backup.begin_change` | review branch `opennest/change-1` created before the change |
+| Change size | 4 files, 240 lines → reads as large |
+| `backup.finish_change` | **5.1 s**: pushed main, pushed the branch, opened the PR |
+| Pull request | **#1**, `opennest/change-1 → main` |
+| Token in `.git/config` | absent |
+| Token anywhere on disk | absent |
+
+Confirmed independently through the API afterwards: the repository is private, both
+`main` and `opennest/change-1` are on the remote, and PR #1 exists.
+
+**The one thing this run got wrong was the spike's own verification.** Two checks
+reported the pushed branches as missing, while the pull request GitHub had just created
+proved both were there — GitHub validates head and base. The cause: the checks used
+`git_manager._run(..., "ls-remote", ..., check=False)`, which is **unauthenticated**, and
+**a private repository answers "Repository not found" to an anonymous `ls-remote`** —
+GitHub does not disclose that private repositories exist. `check=False` turned that
+failure into empty output, so a good push looked like a failed one. Fixed with an
+authenticated helper.
+
+Two things worth keeping from that:
+
+- **`_run(..., check=False)` returns empty string on failure**, which is indistinguishable
+  from a successful empty result. It is used deliberately elsewhere (`history`), but it is
+  a sharp edge, and this is the second time in the project's life that a swallowed git
+  failure has been read as a fact about the world — Phase 8's defect 3 was the same shape.
+- **The update check's freedom from credentials depends on one repository being public.**
+  Verified directly during this run: `gitgranthub/open_nest` answers HTTP 200
+  unauthenticated and an anonymous `ls-remote` against it returns `refs/heads/main`. So
+  `setup/updates.py` is correct — but if that repository ever goes private the check
+  breaks, and **D1's token is still not the right fix**, because the check must not
+  require a parent to have connected an account.
+
+### 17E. Disconnect, live — does Open Nest really lose access?
+
+Asked for by the developer, on the reasoning that Open Nest clears macOS's global
+`credential.helper` specifically so it owns the whole credential lifecycle. If that is
+true, Disconnect must be a real revocation on this Mac and not a forgotten pointer to a
+credential that still works.
+
+| Check | Result |
+|---|---|
+| Before | connected as `gitgranthub` |
+| `auth.disconnect()` | removed a token: yes |
+| Token in Keychain | **no** |
+| `auth.connected()` | **False** |
+| `GET /user` | **none** |
+| `backup.readiness()` | **not ready** — "No GitHub account is connected yet." |
+| `git credential-osxkeychain get` for github.com | **nothing cached** |
+| `git push` with the system helper active and no token from us | **fails**: *"could not read Username"* |
+
+The last two rows are the ones that matter. Every push Open Nest made passed
+`-c credential.helper=`, so git cached nothing — and a subsequent push that is *allowed*
+to use the system helper has no credential to find. Nothing can authenticate after
+Disconnect, which is the claim.
+
+### 17F. The UI smoke test — a real window, really clicked
+
+Run under the **cocoa** platform, not `offscreen`, driving the actual controls of
+`ui/github_connect.py` and `ui/settings.py`, with each state rendered to a PNG via
+`QWidget.grab()`. The one step that genuinely needs a person — approving in the browser —
+was done by the developer. **21 checks, 21 passed.**
+
+| | |
+|---|---|
+| Dialog opens | visible; Connect offered; **no code shown before connecting** |
+| Code displayed | label showed the real `user_code`; the secret `device_code` half did **not** appear |
+| Browser hand-off | a real browser really opened at `github.com/login/device` |
+| Copy code | clipboard held exactly the code (clipboard pre-set to other text first) |
+| Authorization | completed by a person through the actual dialog; token reached the Keychain |
+| Settings, connected | *"Connected as gitgranthub. Automatic private backup: Enabled."* Disconnect offered, Connect hidden |
+| Disconnect | driven through the real button and its **two real modals**, answered by finding the live modal rather than stubbing it |
+| Settings, disconnected | *"Not connected…"* Connect offered again, Disconnect hidden, `installation.json` forgot the account |
+
+**Five cosmetic defects that only a look could find.** None affects behaviour, and all
+are `DESIGN_DOC` territory rather than §29A territory, so they are recorded for the
+Phase 10 polish pass rather than fixed here:
+
+1. **A button label is clipped: "Open GitHub agai".** "Open GitHub again" does not fit
+   its button. The plainest defect of the five and a one-line fix.
+2. **The device code is displayed twice** — inline in step 3 of
+   `DeviceCode.instructions` ("Enter this code: …") and again as the standalone label
+   below it. The standalone label was meant to be the focal element and instead reads as
+   a repetition.
+3. **The standalone code is not prominent.** It uses `mono_label`, which styles for
+   monospace and not for scale, so the "big code you read off the screen" intent is not
+   achieved.
+4. **GitHub Backup is buried in Parent Settings.** Measured: the block sits **726 px**
+   down a page whose viewport is **443 px** tall, in 1,230 px of content — so a parent
+   scrolls roughly 63% of the way down to find it. §29A presents it as a headline parent
+   control.
+5. **The Parent Settings page has a horizontal scrollbar**, so something in it is wider
+   than the viewport.
+
+**One defect in the smoke test itself, worth recording because it produced a false
+pass.** The script reported "11/11 checks passed" and exit 0 while silently skipping
+every stage after the approval. Qt's `quitOnLastWindowClosed` defaults to True, so
+`dialog.accept()` closed the last window and ended `app.exec()` before the staged driver
+advanced — meaning a **successful** connection terminated the run exactly as a cancelled
+one would, and the summary counted only the checks that had run. Fixed with
+`setQuitOnLastWindowClosed(False)`. A test harness that reports a pass for work it did
+not do is worse than one that fails.
+
+### What is still open
+- **A large first push is untimed.** 1.6 s for a starter template says nothing about a
+  project with real assets in it, which is what `PUSH_TIMEOUT_SECONDS = 300` is for.
+- **The queue's retry has not been exercised against a real network drop**, only against
+  the four synthetic failures in §17B.
+- **One account, one run.** Everything here is `gitgranthub` on one Mac. Nothing has been
+  tested against an organisation-owned repository, a parent with SSO, or an account with
+  2FA prompts mid-flow.
+
+---
+
 ## Follow-ups for later phases
 
 - **Phase 2:** resolve models to a local path before loading; add an `HF_HUB_OFFLINE=1`

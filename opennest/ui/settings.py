@@ -22,6 +22,8 @@ does not have is worse than one that admits it.
 
 from __future__ import annotations
 
+import contextlib
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
@@ -262,6 +264,10 @@ class SettingsWindow(QDialog):
             layout.addWidget(self._gate_row(gate))
 
         layout.addWidget(horizontal_rule())
+        layout.addWidget(section_label("GitHub Backup"))
+        layout.addWidget(self._github_block())
+
+        layout.addWidget(horizontal_rule())
         layout.addWidget(section_label("Parent PIN"))
         self._pin_note = _body("")
         layout.addWidget(self._pin_note)
@@ -292,6 +298,74 @@ class SettingsWindow(QDialog):
         self._refresh_parent_notes()
         return widget
 
+    def _github_block(self) -> QWidget:
+        """WORKORDER_01 section 29A's "Git account settings" example, made real.
+
+            GitHub
+            ✓ Connected
+
+            Account
+            grant-example
+
+            Automatic private backup
+            ✓ Enabled
+
+            [ Disconnect ]
+
+        The account line is deliberately read from ``installation.json`` rather than
+        asked of GitHub: drawing a settings page must not depend on the internet.
+        ``github.auth.account()`` is the authoritative answer and is what Connect uses.
+        """
+        from opennest.github import auth as github_auth
+
+        widget, layout = _page()
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        self._github_status = _body("")
+        layout.addWidget(self._github_status)
+
+        row = QHBoxLayout()
+        self._github_connect = QPushButton("Connect GitHub")
+        self._github_connect.clicked.connect(self._connect_github)
+        self._github_disconnect = QPushButton("Disconnect")
+        self._github_disconnect.clicked.connect(self._disconnect_github)
+        row.addWidget(self._github_connect)
+        row.addWidget(self._github_disconnect)
+        row.addStretch(1)
+        layout.addLayout(row)
+
+        if github_auth.configured():
+            self._backup_switch = self._switch_row(
+                layout, "Automatic private backup",
+                self.controls.github_private_backup, self._backup_toggled,
+            )
+
+            layout.addWidget(_body(
+                "How should Open Nest handle large changes? Small ones are always just "
+                "saved."
+            ))
+            self._pr_policy = QComboBox()
+            for value in permissions.PR_POLICIES:
+                self._pr_policy.addItem(permissions.PR_POLICY_LABELS[value], value)
+            index = self._pr_policy.findData(self.controls.github_pr_policy)
+            self._pr_policy.setCurrentIndex(max(index, 0))
+            self._pr_policy.currentIndexChanged.connect(self._pr_policy_changed)
+            layout.addWidget(self._pr_policy)
+
+            # Section 29A offers this, section 38 sets its default, and the wording
+            # marks the recommendation the way the work order does.
+            self._chat_switch = self._switch_row(
+                layout, "Include AI conversation history in backups",
+                self.controls.github_include_conversations, self._chat_backup_toggled,
+            )
+            layout.addWidget(_body(
+                "Off is recommended. A project's own memory is always backed up; this "
+                "is the full transcript of what the child and the AI said."
+            ))
+
+        self._refresh_github()
+        return widget
+
     def _projects_page(self) -> QWidget:
         widget, layout = _page()
         layout.addWidget(section_label("Projects"))
@@ -316,8 +390,8 @@ class SettingsWindow(QDialog):
         layout.addWidget(section_label("Updates"))
         layout.addWidget(_body(
             "Checking asks GitHub whether a newer version of Open Nest exists. It only "
-            "looks — it does not change anything on this Mac, and it is the only time "
-            "Open Nest itself uses the internet."
+            "looks — it does not change anything on this Mac, and it does not use the "
+            "GitHub account from Parent Settings."
         ))
         check_row = QHBoxLayout()
         check = QPushButton("Check for Updates")
@@ -473,6 +547,127 @@ class SettingsWindow(QDialog):
     def _gate_changed(self, name: str, state: str) -> None:
         self.controls.set_state(name, state)
         self._save()
+
+    # -- GitHub backup (WORKORDER_01 section 29A) ---------------------------
+
+    def _backup_toggled(self, value: bool) -> None:
+        self.controls.github_private_backup = bool(value)
+        self._save()
+        self._refresh_github()
+
+    def _pr_policy_changed(self, _index: int) -> None:
+        self.controls.github_pr_policy = self._pr_policy.currentData()
+        self._save()
+
+    def _chat_backup_toggled(self, value: bool) -> None:
+        """Section 38's conversation-archive setting.
+
+        The switch is only half of it: the other half is each project's ``.gitignore``,
+        which is what actually stops an archive being committed. Applied to every
+        project here rather than when one opens, so turning it off takes effect on
+        projects the child is not currently in.
+        """
+        self.controls.github_include_conversations = bool(value)
+        self._save()
+
+        from opennest.github import backup as github_backup
+
+        try:
+            projects = list_projects()
+        except OSError:
+            return
+        for entry in projects:
+            try:
+                github_backup.apply_conversation_policy(entry.directory, bool(value))
+            except OSError:
+                continue
+
+    def _connect_github(self) -> None:
+        from opennest.github import auth as github_auth
+        from opennest.setup.state import InstallationState
+        from opennest.ui.github_connect import connect_github
+
+        if not github_auth.configured():
+            QMessageBox.information(
+                self, APP_NAME,
+                "This version of Open Nest was not built with GitHub backup.",
+            )
+            return
+
+        login = connect_github(self, credentials=self.credentials)
+        if not login:
+            return
+
+        # The account is not a secret, so it is recorded for the settings page to read
+        # without a network call. The token is not recorded anywhere but the Keychain.
+        state = InstallationState.load()
+        state.github_enabled = True
+        state.github_account = login
+        with contextlib.suppress(OSError, ValueError):
+            state.save()
+        self._refresh_github()
+        self.changed.emit()
+
+    def _disconnect_github(self) -> None:
+        from opennest.github import auth as github_auth
+        from opennest.setup.state import InstallationState
+
+        if not github_auth.connected(self.credentials):
+            return
+        confirmed = QMessageBox.question(
+            self, APP_NAME,
+            "Disconnect GitHub?\n\n"
+            "Projects already backed up stay on GitHub, and everything stays on this "
+            "Mac. New work will not be backed up until GitHub is connected again.",
+        )
+        if confirmed != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            github_auth.disconnect(self.credentials)
+        except keychain.CredentialError as exc:
+            QMessageBox.warning(self, APP_NAME, str(exc))
+            return
+
+        state = InstallationState.load()
+        state.github_enabled = False
+        state.github_account = ""
+        with contextlib.suppress(OSError, ValueError):
+            state.save()
+        self._refresh_github()
+        self.changed.emit()
+        QMessageBox.information(self, APP_NAME, github_auth.REVOKE_HINT)
+
+    def _refresh_github(self) -> None:
+        from opennest.github import auth as github_auth
+        from opennest.setup.state import InstallationState
+
+        if not github_auth.configured():
+            self._github_status.setText(
+                "GitHub backup is not part of this version of Open Nest. Projects are "
+                "still saved, with full version history, on this Mac."
+            )
+            self._github_connect.setVisible(False)
+            self._github_disconnect.setVisible(False)
+            return
+
+        connected = github_auth.connected(self.credentials)
+        self._github_connect.setVisible(not connected)
+        self._github_disconnect.setVisible(connected)
+        if not connected:
+            self._github_status.setText(
+                "Not connected. Open Nest can privately back up every project to the "
+                "parent's GitHub account. Repositories are always private."
+            )
+            return
+
+        account = InstallationState.load().github_account
+        enabled = "Enabled" if self.controls.github_private_backup else "Off"
+        self._github_status.setText(
+            "Connected"
+            + (f" as {account}" if account else "")
+            + f".\nAutomatic private backup: {enabled}."
+        )
 
     def _add_key(self, provider: str) -> None:
         label = keychain.PROVIDER_LABELS.get(provider, provider)

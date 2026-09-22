@@ -82,6 +82,7 @@ class Workbench(QWidget):
         credentials=None,
         upload_policy=None,
         starter_idea: str | None = None,
+        sync=None,
     ) -> None:
         super().__init__()
         self.project = project
@@ -89,6 +90,13 @@ class Workbench(QWidget):
         self.toolbox: Toolbox = controller.toolbox
         self.versions = versions
         self.allow_cloud = allow_cloud
+        #: GitHub backup, or None when there is none. Optional for the same reason
+        #: ``versions`` is: the Workbench has to work without it, and every headless
+        #: test that predates Phase 9 constructs one without it.
+        self.sync = sync
+        #: The review branch this turn is happening on, when the PR policy asked for
+        #: one. Empty for the default policy, which is every ordinary session.
+        self._review_branch = ""
         #: Whether sending a sketch to a board is allowed *now*. A callable for the same
         #: reason ``Toolbox.network_policy`` is one: the answer can be a parent dialog,
         #: so it cannot be known when the project opened. Default refuses -- an
@@ -580,6 +588,10 @@ class Workbench(QWidget):
         # measured against the project as it was before the turn started.
         self._note_images()
 
+        # WORKORDER_01 section 29A's PR policy branches *before* the change, the way its
+        # own diagram does. Off by default, so this is "" for a normal child session.
+        self._review_branch = self._begin_review_branch()
+
         worker = AgentWorker(self.controller, text, attachments)
         worker.finished.connect(self._turn_finished)
         worker.failed.connect(self._turn_failed)
@@ -599,6 +611,48 @@ class Workbench(QWidget):
             self._say("Assistant", turn.text)
         self.refresh_files()
         self._refresh_undo()
+        self._back_up(made_changes=turn.checkpoint is not None)
+
+    # -- GitHub backup (WORKORDER_01 section 29A) ---------------------------
+
+    def _begin_review_branch(self) -> str:
+        """Start a review branch if the parent's PR policy asks for one."""
+        if self.sync is None or self.versions is None:
+            return ""
+        from opennest.github import backup
+
+        return backup.begin_change(self.project.directory, self.sync.controls)
+
+    def _back_up(self, *, made_changes: bool) -> None:
+        """Apply the PR policy and queue a push. Never interrupts the child.
+
+        Section 29A is explicit that this "should not add visible complexity to the
+        child's normal experience", so nothing here says anything to them -- a failure
+        is recorded for a parent and the work is already saved locally either way.
+        """
+        if self.sync is None:
+            return
+        from opennest.github import backup
+        from opennest.github.transport import GitHubError
+        from opennest.versioning.git_manager import GitError
+
+        branch = getattr(self, "_review_branch", "")
+        self._review_branch = ""
+        try:
+            if branch and made_changes:
+                backup.finish_change(
+                    self.project,
+                    branch,
+                    self.sync.controls,
+                    self.sync.credentials,
+                    queue=self.sync.queue,
+                )
+            self.sync.queue_project(self.project)
+            self.sync.sweep()
+        except (GitError, GitHubError, OSError):
+            # The checkpoint is saved. A backup that could not be arranged is not
+            # something to stop a child over.
+            return
 
     def _refresh_undo(self) -> None:
         self._undo_button.setEnabled(bool(self.versions and self.versions.can_undo))

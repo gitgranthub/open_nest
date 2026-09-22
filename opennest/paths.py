@@ -36,6 +36,10 @@ INSTALLATION_STATE_FILENAME = "installation.json"
 #: names plaintext preferences explicitly. ``security.permissions`` enforces it.
 SETTINGS_FILENAME = "settings.json"
 
+#: Pushes waiting for the internet to come back (WORKORDER_01 section 34, DoD 48-50).
+#: Holds project paths and branch names -- never a token, which lives in the Keychain.
+PUSH_QUEUE_FILENAME = "push_queue.json"
+
 #: Set this to contain every Open Nest file under one directory.
 HOME_ENV_VAR = "OPENNEST_HOME"
 
@@ -149,6 +153,12 @@ def installation_state_file() -> Path:
 
 def settings_file() -> Path:
     return app_support_dir() / SETTINGS_FILENAME
+
+
+def push_queue_file() -> Path:
+    """Queued GitHub pushes. Survives a quit, because the internet might not be back
+    until tomorrow (WORKORDER_01 section 34)."""
+    return app_support_dir() / PUSH_QUEUE_FILENAME
 
 
 def project_internal_dir(project_dir: Path) -> Path:
