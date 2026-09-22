@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import webbrowser
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QDialog,
@@ -43,7 +43,7 @@ from opennest import APP_NAME
 from opennest.github import auth
 from opennest.github.transport import GitHubError
 from opennest.github.transport import default as default_transport
-from opennest.ui.common import mono_label, section_label
+from opennest.ui.common import section_label
 
 
 class ConnectGitHubDialog(QDialog):
@@ -70,7 +70,15 @@ class ConnectGitHubDialog(QDialog):
         self._steps.setWordWrap(True)
         layout.addWidget(self._steps)
 
-        self._code_label = mono_label("")
+        # The code a parent reads off the screen and types into GitHub. Phase 9's smoke
+        # test found this styled with ``mono_label`` -- 11 px in the muted text colour,
+        # so the focal element of the screen rendered *smaller and greyer* than the body
+        # text around it. It gets its own role instead (SPIKES.md 17F, defect 3).
+        self._code_label = QLabel("")
+        self._code_label.setProperty("role", "deviceCode")
+        self._code_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
         self._code_label.setVisible(False)
         layout.addWidget(self._code_label)
 
@@ -116,11 +124,25 @@ class ConnectGitHubDialog(QDialog):
             self._fail(str(exc))
             return
 
-        self._code_label.setText(f"  {self._code.user_code}  ")
+        self._code_label.setText(self._code.user_code)
         self._code_label.setVisible(True)
         self._copy.setVisible(True)
         self._open.setVisible(True)
-        self._steps.setText(self._code.instructions)
+        # Connect has done its job. Leaving it on screen disabled cost the button row
+        # more width than the dialog had, which is what clipped "Open GitHub again" into
+        # "Open GitHub agai" (SPIKES.md 17F, defect 1).
+        self._connect.setVisible(False)
+        # The steps deliberately do *not* use ``DeviceCode.instructions``: that property
+        # carries the code inline in step 3, so the standalone label above read as a
+        # repetition of it rather than as the thing to read (defect 2). The wording lives
+        # here rather than in ``github/auth.py`` because it is presentation, and the
+        # protocol layer has no other reason to change. ``instructions`` is left as it is.
+        self._steps.setText(
+            f"1. Open {self._code.verification_uri} in a browser.\n"
+            "2. Sign in to the parent's GitHub account.\n"
+            "3. Enter the code above.\n"
+            "4. Approve Open Nest, then come back here."
+        )
         self._status.setText("Waiting for the sign-in to be approved...")
         self._open_browser()
         self._timer.start(max(self._code.interval, auth.MINIMUM_INTERVAL) * 1000)
@@ -165,6 +187,9 @@ class ConnectGitHubDialog(QDialog):
             self._status.setText("Code copied. Paste it into GitHub, then come back.")
 
     def _fail(self, message: str) -> None:
+        # Offer Connect again, which means putting it back on screen as well as
+        # re-enabling it -- ``_begin`` hides it once the flow is under way.
+        self._connect.setVisible(True)
         self._connect.setEnabled(True)
         self._status.setText("")
         QMessageBox.warning(self, APP_NAME, message)

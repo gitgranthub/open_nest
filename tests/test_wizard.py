@@ -296,7 +296,59 @@ def test_removing_a_key_takes_it_out_of_the_keychain(wizard) -> None:
 
 # --------------------------------------------------------------------- parent controls
 
-def test_the_pin_is_stored_as_a_fingerprint_not_as_the_pin(wizard) -> None:
+#: A fixed salt, so "is the PIN in the stored record?" has one answer instead of a new
+#: one every run. Deliberately all hex letters: a salt full of decimal digits would make
+#: the assertion below depend on the salt as much as on the implementation, which is the
+#: whole fault being fixed.
+FIXED_PIN_SALT = bytes.fromhex("deadbeefdeadbeefdeadbeefdeadbeef")
+
+
+@pytest.fixture
+def fixed_pin_salt(monkeypatch):
+    """Pin the PBKDF2 salt so a PIN-absence assertion is deterministic.
+
+    ``keychain._hash_pin`` already takes an optional salt and only falls back to
+    ``os.urandom(16)``, so this supplies one and leaves the real PBKDF2, the real record
+    format and ``_verify_pin`` completely untouched. The behaviour under test is the
+    shipped behaviour; only the randomness is removed.
+    """
+    real = keychain._hash_pin
+    monkeypatch.setattr(
+        keychain, "_hash_pin", lambda pin, salt=None: real(pin, salt or FIXED_PIN_SALT)
+    )
+    return FIXED_PIN_SALT
+
+
+def _secret_material(stored: str) -> str:
+    """The salt and digest from a stored record -- everything derived from the PIN.
+
+    The record is ``pbkdf2_sha256$<rounds>$<salt>$<digest>``. The first two fields are
+    constants that have nothing to do with the PIN, and including them in the haystack is
+    unsound: ``$200000$`` contains ``0000``, so a parent PIN of ``0000`` "appears" in
+    every record ever written, under every salt. Narrowing to the salt and digest is the
+    question the assertion is actually asking -- whether the PIN is recoverable from the
+    secret material.
+    """
+    algorithm, _rounds, salt_hex, digest_hex = stored.split("$")
+    assert algorithm == "pbkdf2_sha256", stored
+    return salt_hex + digest_hex
+
+
+def test_the_pin_is_stored_as_a_fingerprint_not_as_the_pin(wizard, fixed_pin_salt) -> None:
+    """Reading the Keychain item must not hand anyone the PIN.
+
+    **This test was flaky, at about 1 run in 800, and the fix had been lost.** It asserted
+    ``"2468" not in stored`` against ~96 characters of random hex; a four-digit decimal
+    PIN is valid hex, so the digits turned up in the salt by chance and a correct
+    implementation failed. ``HANDOFF.md`` section 4 recorded the defect and claimed it was
+    "fixed by fixing the salt", but the fix was not present -- the test had been renamed
+    from ``test_the_pin_is_stored_as_a_hash_not_as_the_pin``, which is the likeliest way
+    it got dropped.
+
+    Two things make it sound now: the salt is pinned, so there is no chance left in it,
+    and the haystack is the salt and digest rather than the whole record. See
+    :func:`_secret_material` for why the whole record was the wrong thing to search.
+    """
     step = _step(wizard, "ParentStep")
     step.enter()
     step._pin.setText("2468")
@@ -307,7 +359,47 @@ def test_the_pin_is_stored_as_a_fingerprint_not_as_the_pin(wizard) -> None:
     assert wizard.credentials.check_parent_pin("2468") is True
     assert wizard.credentials.check_parent_pin("1111") is False
     stored = wizard.credentials.backend.items[(keychain.SERVICE, "parent-pin")]
-    assert "2468" not in stored
+    assert "2468" not in _secret_material(stored)
+    # The PIN is not the record either, in any form.
+    assert stored != "2468"
+    assert stored.startswith("pbkdf2_sha256$")
+
+
+def test_a_pin_of_all_zeroes_is_stored_just_as_safely(wizard, fixed_pin_salt) -> None:
+    """The case that proves the assertion above is sound rather than lucky.
+
+    ``0000`` is a plausible PIN and it appears verbatim in the ``$200000$`` rounds field
+    of every record, so a whole-record substring check fails it deterministically -- not
+    once in 800 runs, but always. Narrowing the haystack to the secret material is what
+    makes the check mean what it says.
+    """
+    step = _step(wizard, "ParentStep")
+    step.enter()
+    step._pin.setText("0000")
+    step._again.setText("0000")
+    assert step.leave() is True
+
+    stored = wizard.credentials.backend.items[(keychain.SERVICE, "parent-pin")]
+    assert wizard.credentials.check_parent_pin("0000") is True
+    assert wizard.credentials.check_parent_pin("2468") is False
+    assert "0000" not in _secret_material(stored)
+    assert "0000" in stored, (
+        "expected the rounds field to still contain 0000 -- if this fails the record "
+        "format changed and _secret_material's reasoning needs rechecking"
+    )
+
+
+def test_the_same_pin_does_not_produce_the_same_record_twice(wizard) -> None:
+    """Without ``fixed_pin_salt``, so this exercises the real random salt.
+
+    Pinning the salt in the tests above removes randomness from the *assertion*; it must
+    not be allowed to hide the absence of salting in the implementation.
+    """
+    first = keychain._hash_pin("2468")
+    second = keychain._hash_pin("2468")
+    assert first != second, "the PIN is being hashed without a random salt"
+    assert keychain._verify_pin("2468", first)
+    assert keychain._verify_pin("2468", second)
 
 
 def test_mismatched_pins_change_nothing(wizard) -> None:

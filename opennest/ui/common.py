@@ -17,10 +17,24 @@ def section_label(text: str) -> QLabel:
     return label
 
 
-def mono_label(text: str) -> QLabel:
-    """File names, status, model information, timestamps."""
+def mono_label(text: str, *, wrap: bool = False) -> QLabel:
+    """File names, status, model information, timestamps.
+
+    ``wrap`` is for the few places that show an absolute path. Without it such a label
+    reports a size hint as wide as the path is long, and a monospace path is long: Phase
+    10 measured the Local AI settings page asking for 1,021 px inside a 520 px scroll
+    area because of one of these, which put a horizontal scrollbar on the page. Phase 9's
+    smoke test had found the same defect on Parent Settings and measured it at 13 px
+    (SPIKES.md 17F, defect 5), so this is the same fault in three places.
+
+    It is opt-in rather than the default because most callers here are single-line status
+    -- ``LOCAL AI  READY``, a timestamp, a model name -- where wrapping would let a row
+    reflow into two lines instead of staying on one.
+    """
     label = QLabel(text)
     label.setProperty("role", "mono")
+    if wrap:
+        label.setWordWrap(True)
     return label
 
 

@@ -44,6 +44,12 @@ from opennest.ui.worker import AgentWorker, ImageWorker, run_in_thread
 from opennest.versioning.checkpoint import VersionHistory
 from opennest.versioning.git_manager import GitError, SecretsFound
 
+#: WORKORDER_01 section 30's control, in the words it uses. DESIGN_DOC section 12's
+#: button language asks for the verb the child believes in, and "Show Details" is on its
+#: own list of good labels.
+SHOW_DETAILS = "Show technical details"
+HIDE_DETAILS = "Hide technical details"
+
 
 def _first_bytes(source: Path, count: int = 64) -> bytes:
     """Enough of a dropped file to tell what it actually is, before importing it."""
@@ -52,6 +58,40 @@ def _first_bytes(source: Path, count: int = 64) -> bytes:
             return stream.read(count)
     except OSError:
         return b""
+
+
+def headline_failure(run) -> str:
+    """The one line worth leading with when a run fails.
+
+    Deliberately **not** an explanation. Explaining the error is the assistant's job and
+    it happens in the conversation; inventing a friendly paraphrase here would be a
+    second, dumber account of the same failure, and one that could be wrong. This picks
+    the most informative line that is already there.
+
+    For a Python traceback that is the last line -- ``NameError: name 'player_x' is not
+    defined`` rather than eight frames of call stack above it. For ``arduino-cli`` it is
+    the error summary. Choosing the last non-empty line is what makes it work for both
+    without knowing which produced it, which matters because the compiler case is the one
+    section 30 most needs (HANDOFF section 6C).
+
+    A timeout is reported as a timeout, because for that case there is no error line at
+    all and the raw text would say nothing a child could act on.
+    """
+    if getattr(run, "timed_out", False):
+        return (
+            f"The project was still running after {run.seconds:.0f} seconds, "
+            "so it was stopped."
+        )
+    detail = (run.failure_text or "").strip()
+    if not detail:
+        return "It stopped, and said nothing about why."
+    last = detail.splitlines()[-1].strip()
+    if not last:
+        return "It stopped early."
+    hidden = len(detail.splitlines()) - 1
+    if hidden > 0:
+        return f"{last}\n\n({hidden} more lines of technical detail.)"
+    return last
 
 
 def panel(title: str) -> tuple[QFrame, QVBoxLayout]:
@@ -272,6 +312,26 @@ class Workbench(QWidget):
         self._output.setPlaceholderText("Nothing has run yet.")
         layout.addWidget(self._output, 1)
 
+        # WORKORDER_01 section 30: "Errors should appear in child-friendly language
+        # rather than raw tracebacks by default", with a Show technical details control
+        # for troubleshooting. Until now the whole of ``RunResult.failure_text`` went
+        # straight here -- and that property is documented as "what the repair loop needs
+        # to see", so it is written for the model, not for a child. It is left exactly as
+        # it is; what changes is that the panel no longer opens with it.
+        self._details_button = QPushButton(SHOW_DETAILS)
+        self._details_button.setToolTip("See the exact error the project produced")
+        self._details_button.clicked.connect(self._toggle_details)
+        self._details_button.hide()
+        details_row = QHBoxLayout()
+        details_row.addWidget(self._details_button)
+        details_row.addStretch(1)
+        layout.addLayout(details_row)
+        #: Raw text for the run on screen, revealed only if asked for.
+        self._technical_detail = ""
+        #: The short version the panel opens with, kept so the toggle can come back.
+        self._headline = ""
+        self._details_shown = False
+
         # DoD 34: a chart is only a result if somebody can see it. Hidden until a run
         # actually produces a picture, so a Games project never grows an empty frame.
         self._chart_caption = QLabel()
@@ -416,10 +476,10 @@ class Workbench(QWidget):
         try:
             self.project.save()
         except OSError as exc:
-            self._output.setPlainText(f"Could not save which board you picked: {exc}")
+            self._panel_text(f"Could not save which board you picked: {exc}")
             return
         self._upload_button.setEnabled(True)
-        self._output.setPlainText(
+        self._panel_text(
             f"Set to {self._board.currentText()}. Press Compile to check your sketch."
         )
 
@@ -545,7 +605,7 @@ class Workbench(QWidget):
 
     def _describe_asset(self, item: QListWidgetItem) -> None:
         asset: assets.Asset = item.data(Qt.ItemDataRole.UserRole)
-        self._output.setPlainText(f"{asset.path}\n\n{asset.summary}")
+        self._panel_text(f"{asset.path}\n\n{asset.summary}")
 
     def set_model_status(self, state: str, text: str) -> None:
         layout = self.layout().itemAt(0).layout()
@@ -561,9 +621,9 @@ class Workbench(QWidget):
     def _open_file(self, item: QListWidgetItem) -> None:
         path = self.project.directory / item.text()
         try:
-            self._output.setPlainText(path.read_text(encoding="utf-8"))
+            self._panel_text(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError):
-            self._output.setPlainText(f"{item.text()} is not a text file.")
+            self._panel_text(f"{item.text()} is not a text file.")
 
     def _say(self, who: str, text: str) -> None:
         self._transcript.appendPlainText(f"{who}: {text}\n")
@@ -674,7 +734,7 @@ class Workbench(QWidget):
         self.refresh_files()
         self._refresh_undo()
         self.controller.refresh_state()
-        self._output.clear()
+        self._panel_text("")
         self._say("Open Nest", f"Went back to: {restored.label}")
 
     def _turn_failed(self, message: str) -> None:
@@ -684,15 +744,50 @@ class Workbench(QWidget):
 
     def _show_run(self, result) -> None:
         run = result.run
+        self._clear_details()
         if run.still_running:
             # Not "close its window": a Raspberry Pi test loop is a console program and
             # has no window to close. Stop is true for both, and it is right there.
             self._output.setPlainText("The project is running. Press Stop when you are done.")
             self._stop_button.setEnabled(True)
             return
-        body = run.stdout if run.ok else run.failure_text
-        self._output.setPlainText(body or "(no output)")
+        if run.ok:
+            self._output.setPlainText(run.stdout or "(no output)")
+        else:
+            self._technical_detail = run.failure_text
+            self._headline = headline_failure(run)
+            self._output.setPlainText(self._headline)
+            self._details_button.setVisible(bool(run.failure_text.strip()))
         self._show_any_chart()
+
+    # -- section 30's technical detail --------------------------------------
+
+    def _panel_text(self, text: str) -> None:
+        """Show something in the Build / Preview panel that is not a run failure.
+
+        Everything except the failure display goes through here, so a Show technical
+        details button can never be left over a file listing or a later message with the
+        stderr of some earlier run behind it.
+        """
+        self._clear_details()
+        self._output.setPlainText(text)
+
+    def _clear_details(self) -> None:
+        self._technical_detail = ""
+        self._headline = ""
+        self._details_shown = False
+        self._details_button.hide()
+        self._details_button.setText(SHOW_DETAILS)
+
+    def _toggle_details(self) -> None:
+        """Swap between the headline and the exact output. Nothing is thrown away."""
+        self._details_shown = not self._details_shown
+        if self._details_shown:
+            self._output.setPlainText(self._technical_detail)
+            self._details_button.setText(HIDE_DETAILS)
+        else:
+            self._output.setPlainText(self._headline)
+            self._details_button.setText(SHOW_DETAILS)
 
     def _show_any_chart(self, relative: str | None = None) -> None:
         """Put a picture on screen (DoD 34).
@@ -750,13 +845,13 @@ class Workbench(QWidget):
         if result.run is not None:
             self._show_run(result)
         elif not result.ok:
-            self._output.setPlainText(result.content)
+            self._panel_text(result.content)
 
     def _stop(self) -> None:
         if self.toolbox.last_run is not None:
             stop_project(self.toolbox.last_run)
         self._stop_button.setEnabled(False)
-        self._output.setPlainText("Stopped.")
+        self._panel_text("Stopped.")
 
     # -- hardware -----------------------------------------------------------
 
@@ -771,18 +866,18 @@ class Workbench(QWidget):
         """
         board = self.project.manifest.arduino_board
         if not board:
-            self._output.setPlainText("Choose which Arduino you have first.")
+            self._panel_text("Choose which Arduino you have first.")
             return
 
         try:
             ports = arduino.connected_ports()
         except arduino.ArduinoUnavailable as exc:
-            self._output.setPlainText(str(exc))
+            self._panel_text(str(exc))
             return
 
         recognised = [port for port in ports if port.board is not None] or ports
         if not recognised:
-            self._output.setPlainText(
+            self._panel_text(
                 "I cannot see an Arduino plugged in. Connect it with the USB cable and "
                 "try again."
             )
@@ -801,19 +896,19 @@ class Workbench(QWidget):
         # Asked at the moment it matters, not when the project opened -- the answer can
         # be a dialog. Unanswered means no.
         if not self.upload_policy():
-            self._output.setPlainText("A parent has not allowed sending to a board.")
+            self._panel_text("A parent has not allowed sending to a board.")
             return
 
-        self._output.setPlainText(f"Sending to {port.label}…")
+        self._panel_text(f"Sending to {port.label}…")
         try:
             result = arduino.upload(self.project, board, port.address)
         except arduino.ArduinoUnavailable as exc:
-            self._output.setPlainText(str(exc))
+            self._panel_text(str(exc))
             return
         if result.ok:
-            self._output.setPlainText(f"Sent to {port.label}.\n\n{result.stdout.strip()}")
+            self._panel_text(f"Sent to {port.label}.\n\n{result.stdout.strip()}")
         else:
-            self._output.setPlainText(result.failure_text or "Sending to the board failed.")
+            self._panel_text(result.failure_text or "Sending to the board failed.")
 
     # -- image generation ---------------------------------------------------
 
@@ -828,7 +923,7 @@ class Workbench(QWidget):
             self.project.profile, allow_cloud=self.allow_cloud, credentials=self.credentials
         )
         if unmet:
-            self._output.setPlainText(unmet)
+            self._panel_text(unmet)
             return
 
         description = self._input.text().strip()
@@ -842,7 +937,7 @@ class Workbench(QWidget):
         self._input.clear()
 
         self._busy(True)
-        self._output.setPlainText("Making your picture. This takes about fifteen seconds…")
+        self._panel_text("Making your picture. This takes about fifteen seconds…")
         self._say("You", f"Make a picture: {description}")
 
         worker = ImageWorker(self.project, description, credentials=self.credentials)
@@ -865,4 +960,4 @@ class Workbench(QWidget):
 
     def _image_failed(self, message: str) -> None:
         self._busy(False)
-        self._output.setPlainText(message)
+        self._panel_text(message)

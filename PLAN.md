@@ -1098,10 +1098,63 @@ it today, deliberately.
 
 ### Phase 10 — Design and polish pass
 
-Full light and dark treatment against `DESIGN_DOC.md`, status indicators, motion restraint,
-copy and tone pass, application icon, wordmark.
+**Restated in Phase 10 by developer direction.** The four-line definition this section
+used to carry predated `brand_design_guide.md` — 63 sections covering tone, a named
+assistant, a pixel-art system, an asset pipeline and per-screen identity — so its exit
+criterion ("design checklist review against `DESIGN_DOC.md` §§2–22") was no longer
+sufficient. Phase 10 is now the final *integration* of the design and tone system, in
+four stages.
 
-**Exit:** design checklist review against `DESIGN_DOC.md` §§2–22.
+**Precedence, settled with the developer.** Where the two design documents differ,
+`brand_design_guide.md` governs, because it is the newer and more specific statement of
+the same intent. `DESIGN_DOC.md` §§2–22 still governs everything the guide does not
+contradict. The one substantive conflict and its ruling are recorded in `DESIGN_DOC.md`
+§23.
+
+#### 10A — Foundations and the five recorded UI defects — **complete**
+
+- Consume the prepared brand assets (`assets/open_nest_asset_delivery/`); do **not**
+  rebuild the pipeline or re-slice the sheet.
+- `opennest/ui/brand.py`: the five marks as components with approved sizes, correct
+  interpolation, light/dark handling and accessible names. Nothing else loads a PNG.
+- Fix the five cosmetic defects from SPIKES.md §17F.
+- Add §30's technical-details presentation layer.
+- A packaging test for every runtime brand asset.
+- Verify under the real **cocoa** platform, not only `offscreen`.
+
+**Exit criterion met.** 773 tests pass (724 at Phase 9), ruff clean, and 18/18 checks
+pass under cocoa. Three defects were found in the prepared asset delivery and two more
+instances of defect 5 were found on pages §17F never visited. A flaky parent-PIN
+assertion inherited from Phase 8 was also made sound. See `PHASE_10_HANDOFF.md`.
+
+#### 10B — Voice and copy — **not started**
+
+Adopt Gary as the visible conversational helper; apply the guide's §§1–24 tone rules
+across child-facing, parent-facing, warning, error, empty, progress and success states.
+System-level messages (installation, security, account, recovery, status) stay attributed
+to Open Nest. Keep concise technical language where clarity requires it.
+
+#### 10C — Product identity and interaction states — **not started**
+
+Flight Deck identity (§56), compact mark in the Workbench (§57), setup/onboarding
+identity (§58), eagle processing states (§§34–37), sunglasses completion states
+(§§38–39), the waiting hierarchy (§53), the completion hierarchy (§54), motion restraint,
+light/dark consistency.
+
+#### 10D — Final brand and UI integration — **not started**
+
+Wordmark and compact-logo placement, icon work, a consistency pass across app and setup,
+final cocoa screenshots at realistic window sizes.
+
+**Exit:** a design checklist review against **both** `DESIGN_DOC.md` and
+`brand_design_guide.md`, with the newer guide taking precedence where it explicitly
+clarifies an older rule. Phase 10 is done when the application no longer feels like
+technically complete software waiting for design — visual identity, Gary's voice, loading
+behaviour, completion behaviour, warnings, setup, Flight Deck, Workbench and parent
+surfaces all reading as Open Nest.
+
+This is explicitly **not** a requirement to place every asset on every screen. The guide
+defines a system, not a quota.
 
 ---
 

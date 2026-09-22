@@ -1,7 +1,14 @@
 # Handoff — start here
 
-You are picking up Open Nest after Phase 9. **Phase 10 (design and polish) is next.**
-This document is what you need before touching anything.
+You are picking up Open Nest during Phase 10 (design and polish). **Stage 10A is done and
+uncommitted; 10B, 10C and 10D are not started.** This document is what you need before
+touching anything.
+
+**If you are doing Phase 10 work, read [PHASE_10_HANDOFF.md](PHASE_10_HANDOFF.md) after
+this file.** It carries the four design decisions as settled, what 10A built, three
+defects found in the prepared brand-asset delivery, and what each remaining stage should
+do. `brand_design_guide.md` (63 sections) governs where it and `DESIGN_DOC.md` differ —
+`DESIGN_DOC.md` §23 records that ruling and the one substantive conflict.
 
 Three things before the rest.
 
@@ -95,7 +102,7 @@ it belongs in section 4.
 | 7 — Remaining profiles | complete, committed on `phase-7-profiles`. Arduino compile verified against the real toolchain; upload hardware-unverified |
 | 8 — Setup wizard and installation lifecycle | complete, committed on `phase-8-setup`. Installer acceptance pass: 71 checks, 0 failures, four defects found and fixed. A pristine-account run is still open — see §6D |
 | 9 — GitHub backup | complete, committed on `phase-9-github`. D1 resolved as OAuth device flow, **verified against the real GitHub**: real device flow, real private repo, real push, real PR, and a real Disconnect (SPIKES.md §17C-E). UI smoke-tested under cocoa: 21 checks, 21 passed (§17F). Five cosmetic defects recorded for Phase 10 |
-| **10 — Design and polish pass** | **not started** |
+| **10 — Design and polish pass** | **stage 10A complete and uncommitted**; 10B, 10C, 10D not started. See [PHASE_10_HANDOFF.md](PHASE_10_HANDOFF.md) |
 
 Branches are **stacked**: each is based on the previous one, so each PR shows only its
 own phase. Nothing is merged to `main` yet. Branch Phase 10 from `phase-9-github`.
@@ -359,11 +366,29 @@ does.** Do not "clean up" these without re-measuring:
   `_run(..., check=False)` swallows it into an empty string.** So a good push reads as a
   failed one. Authenticate before believing anything about remote state. Second instance
   of a swallowed git failure being read as a fact (Phase 8's defect 3 was the first).
-- **A numeric PIN is valid hex, which made a credential test flaky.**
-  `test_the_pin_is_stored_as_a_hash_not_as_the_pin` asserted `"2468" not in stored`
-  against 96 random hex characters of salt and digest — measured failing **1 run in 800**.
-  Fixed by fixing the salt. If you assert a secret's absence from random hex, check the
-  alphabet first.
+- **A numeric PIN is valid hex, which made a credential test flaky — and the fix was
+  recorded here before it existed.** `test_the_pin_is_stored_as_a_fingerprint_not_as_the_pin`
+  (renamed from `..._stored_as_a_hash_...`, which is probably how the fix got lost)
+  asserted `"2468" not in stored` against ~96 random hex characters of salt and digest.
+  A four-digit decimal PIN is valid hex, so the digits turned up in the salt by chance:
+  measured failing **1 run in 800**, and it failed again during Phase 10. This entry used
+  to claim it was "fixed by fixing the salt"; it was not, and the test still used a real
+  random salt until Phase 10. **Genuinely fixed now**, in two parts:
+  - The salt is pinned via a `fixed_pin_salt` fixture. `keychain._hash_pin` already took
+    an optional salt, so the real PBKDF2, the real record format and `_verify_pin` are
+    untouched — only the randomness is gone. `test_the_same_pin_does_not_produce_the_same_record_twice`
+    deliberately does *not* use the fixture, so pinning the salt in an assertion cannot
+    hide the absence of salting in the implementation.
+  - The haystack is now the salt and digest, not the whole record. Searching the whole
+    record was unsound for a second, worse reason: the format is
+    `pbkdf2_sha256$<rounds>$<salt>$<digest>` and `$200000$` **contains `0000`**, so a
+    parent PIN of `0000` "appears" in every record ever written, under every salt — a
+    deterministic failure, not a 1-in-800 one. `test_a_pin_of_all_zeroes_is_stored_just_as_safely`
+    pins that case.
+
+  Two lessons, and the second is the bigger one: if you assert a secret's absence from
+  random hex, check the alphabet first — and if you assert a secret's absence from a
+  *structured* record, check what the constant parts of the structure contain.
 - **`isVisibleTo(parent)` is *also* vacuous inside a `QStackedWidget`.** §4 already
   records that `isVisible()` is False on a widget nobody showed, and says to use
   `isVisibleTo(parent)`. That fix does not hold here: a stack **explicitly hides** every

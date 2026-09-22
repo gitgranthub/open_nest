@@ -209,6 +209,23 @@ QLabel[role="mono"], QPlainTextEdit[role="mono"], QTextEdit[role="mono"] {{
     color: {p.text_muted};
 }}
 
+/* A code a person reads off the screen and types somewhere else -- the GitHub device
+   flow's user code. This is the focal element of its dialog, so unlike role="mono" it
+   is scaled up and in the full text colour rather than the muted one. Phase 9's smoke
+   test found the device code rendered at mono's 11px and muted grey, which made the one
+   thing a parent had to read the quietest thing on screen (SPIKES.md 17F, defect 3). */
+QLabel[role="deviceCode"] {{
+    font-family: {mono};
+    font-size: 28px;
+    font-weight: 600;
+    letter-spacing: 4px;
+    color: {p.text};
+    background-color: {p.surface_alt};
+    border: 1px solid {p.border_strong};
+    border-radius: {radius}px;
+    padding: 10px 16px;
+}}
+
 /* Small, functional status indicators. Never flashing or decorative. */
 QLabel[state="ready"] {{ color: {p.ok}; }}
 QLabel[state="working"] {{ color: {p.accent}; }}

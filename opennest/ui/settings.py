@@ -154,7 +154,7 @@ class SettingsWindow(QDialog):
         ))
         layout.addWidget(horizontal_rule())
         layout.addWidget(section_label("Where things are kept"))
-        layout.addWidget(mono_label(paths.paths_report()))
+        layout.addWidget(mono_label(paths.paths_report(), wrap=True))
         layout.addStretch(1)
         return widget
 
@@ -165,7 +165,7 @@ class SettingsWindow(QDialog):
         for entry in router.local_models():
             layout.addWidget(self._model_row(entry))
         layout.addWidget(horizontal_rule())
-        layout.addWidget(mono_label(f"Models are stored in {paths.models_dir()}"))
+        layout.addWidget(mono_label(f"Models are stored in {paths.models_dir()}", wrap=True))
         layout.addStretch(1)
         return widget
 
@@ -230,6 +230,15 @@ class SettingsWindow(QDialog):
         self._lock_note = _body("")
         layout.addWidget(self._lock_note)
 
+        # GitHub Backup comes first among the controls. WORKORDER_01 section 29A presents
+        # it as a headline parent control, and Phase 9's smoke test measured it sitting
+        # 726 px down a 443 px viewport -- a parent scrolled about 63% of the page to
+        # reach it (SPIKES.md 17F, defect 4). Cloud AI stays immediately below and is
+        # still above the fold; ``tests/test_settings_layout.py`` pins both.
+        layout.addWidget(horizontal_rule())
+        layout.addWidget(section_label("GitHub Backup"))
+        layout.addWidget(self._github_block())
+
         layout.addWidget(horizontal_rule())
         layout.addWidget(section_label("Cloud AI"))
         layout.addWidget(_body(
@@ -262,10 +271,6 @@ class SettingsWindow(QDialog):
         self._gate_boxes: dict[str, QComboBox] = {}
         for gate in permissions.GATES:
             layout.addWidget(self._gate_row(gate))
-
-        layout.addWidget(horizontal_rule())
-        layout.addWidget(section_label("GitHub Backup"))
-        layout.addWidget(self._github_block())
 
         layout.addWidget(horizontal_rule())
         layout.addWidget(section_label("Parent PIN"))
@@ -369,7 +374,7 @@ class SettingsWindow(QDialog):
     def _projects_page(self) -> QWidget:
         widget, layout = _page()
         layout.addWidget(section_label("Projects"))
-        layout.addWidget(mono_label(str(paths.projects_root())))
+        layout.addWidget(mono_label(str(paths.projects_root()), wrap=True))
         try:
             count = len(list_projects())
         except OSError:
@@ -479,29 +484,52 @@ class SettingsWindow(QDialog):
         return widget
 
     def _key_row(self, status: keychain.ProviderStatus) -> QWidget:
+        """One provider's key, on two lines.
+
+        This was a single row of five fixed-width widgets, and it is what put a
+        horizontal scrollbar on the whole Parent Settings page (SPIKES.md 17F, defect 5).
+        Measured: ``Anthropic`` 66 + ``Not configured`` 93 + ``Add API Key`` 102 +
+        ``Test Connection`` 125 + ``Remove`` 77, plus 4 x 6 px spacing, gives a 487 px
+        minimum; with the page's 18 px margins that is 523 px against a 510 px viewport,
+        which is exactly the 13 px of horizontal scroll Qt reported. None of the five
+        could compress, so the row could not either.
+
+        Name and state stay on the first line and the buttons move to the second, which
+        takes the minimum to the widest single line instead of the sum of all five.
+        """
         widget = QWidget()
-        row = QHBoxLayout(widget)
-        row.setContentsMargins(0, 2, 0, 2)
+        outer = QVBoxLayout(widget)
+        outer.setContentsMargins(0, 2, 0, 2)
+        outer.setSpacing(4)
 
         caption = QLabel(status.label)
         caption.setProperty("role", "cardTitle")
         state = mono_label(status.summary)
         self._key_rows[status.provider] = state
 
+        heading = QHBoxLayout()
+        heading.setSpacing(8)
+        heading.addWidget(caption)
+        heading.addWidget(state, 1)
+        outer.addLayout(heading)
+
         add = QPushButton("Replace Key" if status.configured else "Add API Key")
         add.clicked.connect(lambda _checked=False, p=status.provider: self._add_key(p))
-        test = QPushButton("Test Connection")
+        test = QPushButton("Test")
+        test.setToolTip(f"Check that the saved {status.label} key still works")
         test.setEnabled(status.configured)
         test.clicked.connect(lambda _checked=False, p=status.provider: self._test_key(p))
         remove = QPushButton("Remove")
         remove.setEnabled(status.configured)
         remove.clicked.connect(lambda _checked=False, p=status.provider: self._remove_key(p))
 
-        row.addWidget(caption)
-        row.addWidget(state, 1)
-        row.addWidget(add)
-        row.addWidget(test)
-        row.addWidget(remove)
+        buttons = QHBoxLayout()
+        buttons.setSpacing(6)
+        buttons.addWidget(add)
+        buttons.addWidget(test)
+        buttons.addWidget(remove)
+        buttons.addStretch(1)
+        outer.addLayout(buttons)
         return widget
 
     # -- behaviour ----------------------------------------------------------

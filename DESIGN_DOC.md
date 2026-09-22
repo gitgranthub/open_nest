@@ -668,3 +668,54 @@ Not from decorative nostalgia effects.
 Open Nest should ultimately feel:
 
 **serious enough to be a real tool, simple enough for a kid to own it.**
+---
+
+## 23. Precedence — amended in Phase 10
+
+`brand_design_guide.md` was written after this document and is the newer, more specific
+statement of the same design intent. **Where the two differ, the brand guide governs.**
+Everything in §§2–22 that the guide does not contradict still stands, and most of the
+guide extends this document rather than replacing it — its colour direction, its restraint
+about mascots, and its "modern usability, not retro simulation" balance are all the same
+position in more detail.
+
+One substantive conflict, resolved by developer direction in Phase 10:
+
+### The eagle activity indicator
+
+§12 lists "eagle assistant" and "animated helper" under *Avoid*, and §16 lists "flying
+birds" under motion to avoid. Brand guide §§34–37 specify a twelve-frame eagle wing-cycle
+as the activity indicator.
+
+**Ruling: use the eagle animation.** The older language was written to prevent a mascot
+flying around the interface — swooping across screens, bouncing, orbiting controls. The
+approved usage is much narrower, and the restrictions are what make it compatible:
+
+- stationary in one location; only the wing poses animate
+- used for loading, processing and waiting, never as decoration
+- always paired with real status text, never the only signal
+- shown only when work is genuinely taking long enough to justify it
+- never moved spatially around the interface
+
+It is **not** Gary, and it is not a mascot. Brand guide §47 keeps that separation: Gary has
+no illustrated face, the symbols belong to Open Nest rather than to him, and he never
+refers to them out loud.
+
+So the semantic hierarchy is:
+
+```text
+Nest             identity / home
+Eagle cycle      processing / activity
+White sunglasses rare approval / completion
+```
+
+§12's substance survives intact — no mascot, no cartoon bird, no robot character, and the
+assistant's visual treatment still matches the rest of the application. §16's substance
+survives too: nothing swoops, bounces, or flies across anything.
+
+### The application icon
+
+§18's guidance still applies. Brand guide §31 mentions the nest for "future app icon
+development" permissively, while §18 argues concretely against a detailed nest at small
+macOS sizes. The legibility argument is the stronger one at 16 px, so icon work in 10D
+follows §18.
