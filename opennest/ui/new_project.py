@@ -3,7 +3,7 @@
 WORKORDER_01 section 27: every profile offers idea cards. Section 5 calls the same list
 "suggested starter prompts", and that second name is the useful one -- an idea card is
 only worth having if picking it actually starts something. So a chosen card becomes the
-first thing said to the Assistant, filled into the message box rather than sent, because
+first thing said to Gary, filled into the message box rather than sent, because
 a child who picked "Maze" almost always wants to add a word or two before it runs.
 
 Blank deliberately has no ideas: section 27 lists none for it, and the whole point of

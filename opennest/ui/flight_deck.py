@@ -208,7 +208,10 @@ class FlightDeck(QWidget):
 
         projects = list_projects()[:6]
         if not projects:
-            empty = QLabel("Nothing yet. Pick something above to start.")
+            # brand_design_guide.md section 14's "No Projects", in its own words. The
+            # profile cards are directly above, so "start with an idea" points at them
+            # without having to say "above".
+            empty = QLabel("Nothing here yet.\nStart with an idea.")
             empty.setProperty("role", "cardBody")
             self._recent_area.addWidget(empty)
             return

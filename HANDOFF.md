@@ -1,8 +1,15 @@
 # Handoff — start here
 
-You are picking up Open Nest during Phase 10 (design and polish). **Stage 10A is done and
-uncommitted; 10B, 10C and 10D are not started.** This document is what you need before
-touching anything.
+You are picking up Open Nest during Phase 10 (design and polish). **Stages 10A and 10B
+are done; 10C and 10D are not started.** This document is what you need before touching
+anything.
+
+**The assistant is called Gary**, as of 10B. He is a voice, not a character: no
+illustrated face, and brand guide §47 keeps him separate from the eagle, the nest and the
+sunglasses, which belong to Open Nest. `ASSISTANT_NAME` and `SYSTEM_NAME` are in
+`opennest/__init__.py`. Installation, security, account, recovery and **transport
+failure** stay attributed to Open Nest — a `ProviderError` is not Gary speaking, and
+`test_a_failed_turn_is_open_nest_not_gary` pins it.
 
 **If you are doing Phase 10 work, read [PHASE_10_HANDOFF.md](PHASE_10_HANDOFF.md) after
 this file.** It carries the four design decisions as settled, what 10A built, three
@@ -102,7 +109,7 @@ it belongs in section 4.
 | 7 — Remaining profiles | complete, committed on `phase-7-profiles`. Arduino compile verified against the real toolchain; upload hardware-unverified |
 | 8 — Setup wizard and installation lifecycle | complete, committed on `phase-8-setup`. Installer acceptance pass: 71 checks, 0 failures, four defects found and fixed. A pristine-account run is still open — see §6D |
 | 9 — GitHub backup | complete, committed on `phase-9-github`. D1 resolved as OAuth device flow, **verified against the real GitHub**: real device flow, real private repo, real push, real PR, and a real Disconnect (SPIKES.md §17C-E). UI smoke-tested under cocoa: 21 checks, 21 passed (§17F). Five cosmetic defects recorded for Phase 10 |
-| **10 — Design and polish pass** | **stage 10A complete and uncommitted**; 10B, 10C, 10D not started. See [PHASE_10_HANDOFF.md](PHASE_10_HANDOFF.md) |
+| **10 — Design and polish pass** | **stages 10A and 10B complete**, on `phase-10-design` (10A committed, 10B in the working tree); 10C and 10D not started. See [PHASE_10_HANDOFF.md](PHASE_10_HANDOFF.md) |
 
 Branches are **stacked**: each is based on the previous one, so each PR shows only its
 own phase. Nothing is merged to `main` yet. Branch Phase 10 from `phase-9-github`.
@@ -122,7 +129,7 @@ turn cloud on, and the child can switch to Claude or OpenAI after a warning, or 
 pictures with an image model. Everything except Image Creation still works with cloud off,
 which is the default.
 
-724 tests pass, ruff is clean.
+786 tests pass, ruff is clean.
 
 **Phase 10 is the design and polish pass**, and Phase 9 hands it three things:
 
@@ -146,7 +153,7 @@ privileged-action pattern in §5, not a new mechanism.
 ## 2. Get running in five minutes
 
 ```bash
-.venv/bin/python -m pytest -q      # 724 passing, about 44 seconds
+.venv/bin/python -m pytest -q      # 786 passing, about 48 seconds
 ```
 
 It is slower than it was (7 s at Phase 6). Phase 7 added tests that actually run each
@@ -421,6 +428,24 @@ does.** Do not "clean up" these without re-measuring:
 - **`permissions.reload()` returns a new object**, so anything holding the old one reads
   stale switches. `MainWindow._settings_changed` now hands the new one to `GitHubSync`;
   without that, a parent turning backup off kept pushing until the next launch.
+
+**Phase 10 traps:**
+
+- **A tone rule can be broken by the model, so grepping the copy cannot verify tone.**
+  Phase 10B swept every user-visible string for the brand guide's banned vocabulary and
+  found nothing — and the shipped product was still opening routine replies with
+  **"Great!"**, which §18 names explicitly. The word is not in the codebase; the model
+  supplies it. Static checks cover the copy the application *writes*; only running the
+  real model covers the copy it *says*. SPIKES.md §18B has both halves. If you change a
+  prompt for tone, read replies — a clean grep proves nothing about the half of the
+  interface a model generates.
+- **A harness that names a file the project does not have measures the harness.** The
+  Phase 10B tool-selection spike scored 12/16 and three of the four "misses" were the
+  model correctly answering *"I don't have a main.py file"* — the Games template's file
+  is `game.py`. Corrected, the baseline is 15/16. Third instance of the §17F lesson:
+  dump what the harness is actually seeing before you believe its number.
+- **`section_label` uppercases**, so a widget titled `Gary` renders `GARY`. A test
+  asserting the exact string pins the theme rather than the name; compare casefolded.
 
 ---
 
@@ -788,6 +813,37 @@ one for this reason.
   now has a cost dimension: summarising a 36000-token transcript through Sonnet costs
   real money at every rollover and at every close. Same lever (`close(summarise=False)`),
   higher stakes.
+- **DEFECT — "Ask before using cloud AI" is weaker than its name, in two ways.** Found
+  in Phase 10B while checking a copy claim, recorded by developer direction, and **not
+  fixed there** because it is functional work rather than a copy pass. D12 is the
+  decision it needs.
+
+  What *is* solid, so nobody re-audits it: the master switch `allow_cloud_ai` defaults
+  OFF, is genuinely parent-controlled (Parent Settings is behind the PIN), and is
+  enforced both before a provider is built and again at every model switch. A project
+  whose manifest names a cloud model is **not** silently restored to it either —
+  `MainWindow` always builds `default_model_id()`, which is local, and
+  `Workbench.select_model` follows the live provider, so the only route to a cloud model
+  is `_switch_model`, which confirms. A child cannot reach the cloud unless a parent
+  turned it on and saved a key.
+
+  The two gaps are in the *per-use* control §24 offers on top of that:
+
+  - **The warning is answered by the child, not the parent.**
+    `consent.confirm_cloud_use` is a plain `QMessageBox` and never calls
+    `ask_parent_pin` — unlike `consent.approve`, which does take the PIN for
+    `arduino_upload` and the rest. The setting is labelled "Ask before using cloud AI"
+    and sits in Parent Settings, so it reads as a parent gate; in practice the child
+    presses **Use Claude**. It is an awareness prompt, not an approval.
+  - **It fires once per model switch, not per cloud request.**
+    `cloud_needs_confirmation`'s own docstring says "before each cloud use" and the code
+    does not do that. Once confirmed, every remaining turn of the session reaches the
+    cloud unprompted. §24's "Before using a cloud model" is ambiguous between the two
+    readings; the docstring is not, and it overpromises.
+
+  Both are one-line-ish to change and neither should be changed without deciding D12
+  first — asking for a PIN on every turn would make cloud unusable, and asking on none
+  is what we have.
 - **No parent PIN exists until Phase 8's wizard collects one.** Parent Settings opens
   without one and says so plainly rather than implying a lock it does not have.
 
@@ -1146,6 +1202,7 @@ From `CLAUDE.md` and from the developer directly:
 | ~~D1~~ | ~~GitHub auth~~ | ~~Phase 9~~ |
 | D8 | **Whether image generation shows its cost.** ~800 KB and 10–15 s per image, billed per image, with no count or total anywhere. A parent who turned cloud on for chat has also turned this on | before real use |
 | D10 | **Whether a one-click in-app updater is wanted at all**, and if so what it does about local modifications, a moved model pin, and restarting a running app. Phase 8 deliberately stopped at "notice and report" — see §6D | after V1 |
+| **D12** | **What "Ask before using cloud AI" should actually require, and how often.** Today it is a child-answerable dialog shown once per model switch. Two independent questions: (a) should it take the parent PIN, making it a real approval rather than an awareness prompt? (b) should it fire per cloud *request* rather than per selection, as `cloud_needs_confirmation`'s docstring already claims? A PIN on every turn makes cloud unusable; a PIN on none is the current state. A likely answer is PIN once per session or per project, but that is a product call. See the defect in §6B | before V1 |
 | — | Only one model is verified and downloaded. The other three local ones are pinned and described but untested | — |
 | — | All measurements are from a 48 GB Mac. The target is 8 GB | before V1 |
 

@@ -1,15 +1,16 @@
 # Phase 10 handoff — design and polish
 
-**Stage 10A is complete. 10B, 10C and 10D are not started.**
+**Stages 10A and 10B are complete. 10C and 10D are not started.**
 
 Read `HANDOFF.md` first for the project as a whole; this file covers Phase 10 only and
 assumes you have read `brand_design_guide.md` (2,166 lines, 63 sections) and
 `DESIGN_DOC.md` §§2–23.
 
 ```
-773 tests pass (724 at Phase 9 — 49 added).  ruff clean.
+786 tests pass (724 at Phase 9 — 62 added).  ruff clean.
 18/18 checks pass under the real cocoa platform.
-Nothing is committed. See "Git state" at the bottom before you do anything else.
+Tool selection unchanged by Gary's prompt: 15/16 before, 15/16 after (SPIKES.md §18A).
+On branch phase-10-design, two commits, local only. See "Git state" at the bottom.
 ```
 
 ---
@@ -189,36 +190,163 @@ back. Worth widening deliberately in 10C rather than discovering it again.
 
 ---
 
-## 5. What 10B should do
+## 5. What 10B did
 
-Adopt Gary and do the copy pass. The tone rules are brand guide §§1–24; the personality
-hierarchy in §21 is the tie-breaker (clear → useful → calm → warm → human → dryly funny →
-eccentric, and never sacrifice clarity for personality).
+Gary is adopted, and the copy pass is done. `ASSISTANT_NAME` and `SYSTEM_NAME` live in
+`opennest/__init__.py` next to `APP_NAME`, so 10C and 10D have one place to read the
+names. The tone rules are brand guide §§1–24; §21's hierarchy was the tie-breaker.
 
-Where the strings are:
+### The copy pass was smaller than it reads, and that was measured first
 
-- `opennest/ui/` — `workbench.py` (the largest share, including `_say`), `flight_deck.py`,
-  `settings.py`, `consent.py`, `new_project.py`, `github_connect.py`, `common.py`
-- `opennest/setup/` — `wizard.py` (nine steps; a parent's first impression), `update_dialog.py`
-- `opennest/prompts/` — `base.txt` and the per-profile prompts. Gary's voice in
-  conversation comes from here, not from the UI.
+The guide's banned vocabulary — §2's alarm register, §17's pitch-deck words, §18's
+openers, §19's infantilisation — was swept across every string literal in the package
+before anything was edited. **Zero hits in copy.** Every match was an identifier or a
+comment. Button labels already satisfied §12; the wizard already read in §11's parent
+register. Phases 2–9 were written against `DESIGN_DOC` §20, which is the same position in
+fewer words.
 
-Three things to know before you start:
+So 10B is surgical by decision, not by omission: Gary at the seams, plus the specific
+gaps that could be pointed at. A line-by-line rewrite of ~800 literals would have been
+churn dressed as a design pass. **`tests/test_voice.py` now keeps that honest** — it
+walks the AST of all 60 modules, pulls 826 user-visible strings, and fails on the banned
+register. A new screen inherits the rule without anybody remembering to add it. Verified
+with a negative control: an injected `"Awesome! Nothing here yet, kiddo."` is caught and
+attributed to §18 and §19.
 
-- **`self._say("Assistant", ...)` and `self._say("Open Nest", ...)` are the current speaker
-  labels** in `workbench.py`. That is the seam where Gary arrives, and it is also where
-  the system-versus-Gary split gets decided per message.
+### The split, decided per message
+
+`_say` takes a speaker, and who it is was decided per call site rather than by renaming:
+
+| Site | Was | Is | Why |
+|---|---|---|---|
+| A turn's reply, the panel title | Assistant | **Gary** | — |
+| Asset import | Open Nest | **Gary** | §22's "Asset Import" is a worked Gary example |
+| Undo, both branches | Open Nest | **Gary** | §22's "Undo" likewise |
+| A generated picture | Open Nest | **Gary** | §22's shape; the honesty sentence is byte-identical |
+| **A failed turn** | Assistant | **Open Nest** | — |
+
+That last row is the substantive one and the easiest to regress. What reaches
+`_turn_failed` is a `ProviderError` from `AgentWorker`: the model would not load, the
+service refused the key, the budget ran out. Nobody said anything, so nobody is quoted —
+putting Gary's name on it would have him announce a fault in the machinery he speaks
+through. Pinned by `test_a_failed_turn_is_open_nest_not_gary`.
+
+Also renamed, outside the UI: `checkpoint.LABEL_BEFORE_CHANGE` / `LABEL_AFTER_CHANGE`
+(read in Project History and after an Undo; they describe rather than identify, so older
+commits need no migration), `assets.import_message`, and the Blank starter template's
+docstring, which a child reads.
+
+### Gary's conversational voice, and what it cost
+
+`prompts/base.txt` is where it actually lives. The identity line names Gary, and
+`HOW YOU TALK` gained what §§5/16/18/19 ask for and it lacked: specific acknowledgment
+instead of praise, no enthusiasm openers, understated success, the banned diminutives,
+and a dry aside **permitted and never required** — instructing a 4B model to be funny is
+how you get performed humour, which §1 and §21 both rule out.
+
+Two further rules were added by developer direction after the first measurement:
+
+- **The praise fix is a principle, not a word swap.** Replacing `Great!` with `Good.`
+  satisfies §18's literal list and misses the point. The rule asks for the two things
+  that carry information — name the specific part, or mark that it happened (§20's
+  *"There it is."*).
+- **A state-claim rule.** Gary may not say the project works, runs, compiles, is
+  playable, is finished or is fixed unless a tool reported it this turn or the child
+  just said so; otherwise he calls a tool and finds out. This generalises
+  `assets.invented_description` (pictures) and `_claimed_a_change_it_did_not_make`
+  (edits) to **any** unevidenced fact about the project. It cannot be deterministic —
+  "is it playable?" has no mechanical answer — so it is prompt-carried, and
+  `test_gary_may_not_claim_a_state_he_did_not_observe` pins that it stays in the prompt.
+
+**Measured, not asserted (SPIKES.md §18), and the measurement paid for itself twice.**
+
+Tool selection: **15/16 before, 15/16 after**. But the *first* draft of the two rules
+scored **14/16** — eleven lines of new prose about not claiming things crowded out the
+instruction to act, and the model answered by narrating an edit it never made. An honesty
+rule made honesty worse. Tightening the blocks ~40% and changing "find out" to **"call a
+tool and find out"** recovered the point. That phrase is asserted in the test for exactly
+this reason.
+
+And the voice arrived, verified against the real model:
+
+| Child says | Before 10B | Now |
+|---|---|---|
+| "It works! The frog jumps over the cars now." | "**Great!** The frog jumps over cars." | "**There it is.** The frog clears the cars now." |
+| "What do you think of my game now?" | invents the game — *"A green frog that moves left/right…"* | "**I haven't run it yet. Let me try it.**" |
+| the cat-and-fish praise bait | "Let me check what's in the project." | "**That could work. I like the flying cat.**" |
+
+Row 1 was a live §18 defect that reading the codebase could not find — `Great!` is not in
+the codebase; the model supplies it. **Row 2 is the more serious one**: asked an open
+question with no evidence attached, the Phase 9 prompt invented a description of a game
+it had never read, down to a green frog and a red car. Present before 10B, not introduced
+by it, and now answered honestly.
+
+### The §10 claim this file used to make was wrong, and pulling it found a defect
+
+This section previously listed "the Cloud AI warning's Cancel / Ask Parent buttons (§10)"
+as copy that already existed and was already right. **It did not exist.**
+`consent.confirm_cloud_use` had `Use {model}` / `Cancel`; "Ask Parent" is only a
+permission *state* label in `permissions.py`.
+
+**The buttons are correct as they stand and were deliberately left alone.** The brand
+guide's §10 example is generic; `WORKORDER_01` §24 specifies this exact dialog and its
+buttons are `[ Cancel ]` and `[ Use Claude ]`, which is what ships. The work order is the
+requirement here, and the guide's precedence (§1) is over *design* language, not over a
+functional specification.
+
+What did change is the warning *text*, which now leads with §10's consequence sentence
+while keeping §24's "may be sent to {company}" intact. That sentence is load-bearing: an
+earlier draft replaced it with "not on this Mac" and tripped
+`test_the_warning_does_not_pretend_it_stays_on_the_mac`, which is the guard §24 asked for.
+
+**Do not read the above as "the gap was only a documentation error."** By developer
+direction: checking the claim surfaced a real functional shortfall, and it is now
+recorded as a **defect in `HANDOFF.md` §6B with decision D12**, not left to evaporate
+with the sentence that mis-described it.
+
+In short — the master switch is genuinely parent-controlled and genuinely enforced, and
+a saved cloud model is never silently restored (all three verified, details in §6B). But
+the *per-use* control §24 offers on top of that is weaker than its label: the warning is
+answered by the **child**, never asking the parent PIN the way `consent.approve` does,
+and it fires **once per model switch** rather than per cloud request — which
+`cloud_needs_confirmation`'s own docstring already claims it does. Neither is 10B work.
+Both need D12 answered first, because a PIN on every turn makes cloud unusable.
+
+### Still true, and still worth knowing
+
 - **`prompts/base.txt` is where brevity is asked for**, not the token cap — HANDOFF §6B
   is explicit that shrinking `output_headroom_tokens` to control verbosity just truncates
-  mid-sentence.
+  mid-sentence. `test_the_base_prompt_is_gary_and_still_asks_for_what_it_asked_for` pins
+  brevity, the honesty rule, the tool boundary and §22's key rule against a future edit
+  reaching for more personality and dropping one.
 - **Do not put personality into the honesty machinery.** `assets.invented_description`
   and `_claimed_a_change_it_did_not_make` fire on deterministic checks and their wording
-  is load-bearing; HANDOFF §6A explains why the narrowness matters. Gary can be warm about
-  a correction, but the trigger stays mechanical.
+  is load-bearing; HANDOFF §6A explains why the narrowness matters. Gary says the
+  image-saved sentence now, and the sentence itself is unchanged.
+- **§47 is pinned.** Gary has no illustrated face and never names the eagle, nest or
+  sunglasses. `test_gary_never_names_the_brand_artwork` guards it before 10C puts the
+  artwork on screen.
+- `_model_row` still refuses to say "premium" or "powerful" (`DESIGN_DOC` §13).
 
-Copy that already exists and is already right per the guide: the Cloud AI warning's
-Cancel / Ask Parent buttons (§10), and `_model_row`'s refusal to say "premium" or
-"powerful" (`DESIGN_DOC` §13).
+### Not done in 10B
+
+- **The per-profile prompts were not re-voiced.** `games.txt`, `research.txt`,
+  `arduino.txt`, `raspberry_pi.txt`, `image_creation.txt` and `blank.txt` carry project
+  instructions rather than voice, and they read in register already. `base.txt` is where
+  the voice is set and it is the file every profile shares.
+- **No cloud model was sampled.** Sonnet and Luna get the same `base.txt`, and neither
+  can be pinned to temperature 0 (SPIKES §11), so their voice is unmeasured.
+- **The wizard copy was read and left.** It is a parent's first impression and it already
+  reads in §11's register; nothing in it tripped the sweep. 10D's consistency pass is the
+  natural place to look again with fresh eyes.
+- **`rollover.render_transcript` still labels turns `Assistant:`, deliberately.** It is
+  model-facing only — the transcript handed to the model to write a handoff note, with
+  `Child:` as its counterpart — so it is outside 10B's "every user-visible string".
+  Renaming it to `Gary:` is defensible on consistency grounds and was not done: it would
+  change the input to the memory path, and HANDOFF §6 records that memory *quality* has
+  never been checked against the real model. Changing an unmeasured path for tidiness is
+  how you acquire a regression nobody can see. `assistant` is the literal role name in
+  every chat template, so the model is not confused by it.
 
 ## 6. What 10C should do
 
@@ -282,6 +410,34 @@ Everything in `HANDOFF.md` §4 still applies. These are the ones 10A hit.
   `FileNotFoundError`. This project has been bitten three times by a data file nothing
   installed; a silently empty logo is the same failure wearing a nicer coat.
 
+These are the ones 10B hit.
+
+- **A clean grep of the copy proves nothing about tone.** The banned-register sweep came
+  back empty across all 826 strings, and the product was still saying "Great!" on routine
+  successes. The model supplies the word. Static checks cover what the application
+  writes; only the real model covers what it says. SPIKES §18B.
+- **A fixture that names a file the project does not have measures the fixture.** The
+  tool-selection spike scored 12/16 until three "misses" turned out to be the model
+  correctly reporting that `main.py` does not exist. The Games template's file is
+  `game.py`. Read the raw replies before believing the score — third instance of §17F's
+  lesson in this phase alone.
+- **`section_label` uppercases its argument**, so the conversation panel reads `GARY`.
+  A test asserting `"Gary" in titles` fails against `['GARY']` and would be pinning the
+  theme rather than the name. Compare casefolded.
+- **An honesty rule can make honesty worse.** Eleven lines telling the model not to
+  claim unverified things cost a tool-selection point, and the failure it caused was the
+  model *claiming an edit it never made*. Prose about not asserting things competes with
+  the instruction to act. Tie the rule to the action — "call a tool and find out", not
+  "find out" — and keep it short. SPIKES §18C.
+- **`base.txt` is hard-wrapped, so a prompt assertion can straddle a line break.**
+  `test_voice.base_prompt()` collapses whitespace before matching. Without that, a test
+  fails for a reason unrelated to the rule being present, and the tempting fix is to
+  rewrap the prompt, which teaches the wrong lesson.
+- **`test_the_warning_does_not_pretend_it_stays_on_the_mac` is a blunt substring guard,
+  and it earns it.** A first draft of the §10 rewording said the model runs "not on this
+  Mac" — factually true, phrased in the exact words §24 forbids, and caught immediately.
+  Do not reach for "on this Mac" in cloud copy even to negate it.
+
 ### Packaging — a real gap, not yet closed
 
 `pyproject.toml`'s `[tool.setuptools.package-data]` can only ship files **under
@@ -300,8 +456,11 @@ packaging decision, not a design one.
 
 ## 9. Not done, and not attempted
 
-- **10B, 10C, 10D.** Nothing wired into any screen. `brand.py` is built and tested but
-  has no consumer.
+- **10C and 10D.** Nothing wired into any screen. `brand.py` is built and tested but
+  still has no consumer — 10B was voice and copy, and touched no artwork.
+- **Gary's voice is measured on one model and five prompts** (SPIKES §18B). Read it as
+  "the voice arrived and cost nothing measurable", not "Gary is tuned". The warmth
+  instruction has one adverse data point and no follow-up.
 - **No HiDPI verification.** Brand guide §44 asks for testing at 2x, on a 13-inch display
   and an external Retina display. `brand.py` snaps to prepared sizes and never rescales,
   which is the right foundation, but `devicePixelRatio` is not consulted — a 128 px mark on
@@ -330,20 +489,14 @@ packaging decision, not a design one.
 
 ---
 
-## 10. Git state — read this before anything else
+## 10. Git state
 
-**Nothing is committed.** All of 10A is uncommitted in the working tree, and the current
-branch is still `phase-9-github`.
+**Resolved for 10A; 10B is uncommitted.** The branch is `phase-10-design`, cut from
+`phase-9-github`, with two commits, local only — nothing pushed, nothing merged to
+`main`. The guide and the prepared artwork went in as their own commit before the code,
+so `brand.py` resolves on a clean checkout.
 
-`CLAUDE.md` says not to commit, push, branch or open PRs without being asked, and that was
-not asked. So the next person needs a decision from the developer:
+10B's changes are in the working tree and **not committed**. `CLAUDE.md` says not to
+commit, push, branch or open PRs without being asked, and that was not asked.
 
-- `assets/` and `brand_design_guide.md` were already untracked before Phase 10 began. A
-  fresh clone has neither the guide nor any artwork, so **nothing in `brand.py` can
-  resolve on a clean checkout until they are committed.**
-- Per `HANDOFF.md` §1, Phase 10 should be branched from `phase-9-github` and its PR opened
-  against `phase-9-github`. Nothing is merged to `main`.
-
-Suggested first action: confirm the branch name, create it from `phase-9-github`, and
-commit the prepared assets and the guide as their own commit before the code — the code is
-meaningless without them.
+Per `HANDOFF.md` §1, Phase 10's PR opens against `phase-9-github`, not `main`.

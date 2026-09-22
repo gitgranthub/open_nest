@@ -394,7 +394,7 @@ def import_message(
         )
     else:
         lines.append(
-            f"Open Nest cannot read what is inside this kind of file, so the assistant "
+            f"Open Nest cannot read what is inside this kind of file, so Gary "
             f"will not know what {asset.name} says."
         )
 

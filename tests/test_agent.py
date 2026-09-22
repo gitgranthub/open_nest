@@ -36,7 +36,7 @@ def make(project, replies, build_style="build"):
 
 def test_system_prompt_contains_all_five_parts(project) -> None:
     prompt = build_system_prompt(project, build_style="teach")
-    assert "You are the Assistant inside Open Nest" in prompt   # base
+    assert "You are Gary, the project helper inside Open Nest" in prompt  # base
     assert "PROJECT TYPE: GAME" in prompt                        # profile
     assert "BUILD STYLE: BUILD IT AND TEACH ME" in prompt        # style
     assert "Use your tools to actually change" in prompt         # tool rules

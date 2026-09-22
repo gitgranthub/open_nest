@@ -34,7 +34,10 @@ class AgentWorker(QObject):
         except ProviderError as exc:
             self.failed.emit(str(exc))
         except Exception as exc:  # noqa: BLE001 - a crash here must not kill the app
-            self.failed.emit(f"Something went wrong: {exc}")
+            # brand_design_guide.md section 2: "That didn't work" rather than "Something
+            # went terribly wrong". The exception still goes through verbatim -- the calm
+            # register is in the framing, not in withholding what happened.
+            self.failed.emit(f"That didn't work. {exc}")
         else:
             self.finished.emit(turn)
 

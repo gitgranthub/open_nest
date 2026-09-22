@@ -46,11 +46,34 @@ def company_for(info: ModelInfo) -> str:
 
 
 def cloud_warning_text(info: ModelInfo) -> str:
-    """Section 24's warning, for one model. Separated out so it can be tested as text."""
+    """Section 24's warning, for one model. Separated out so it can be tested as text.
+
+    brand_design_guide.md section 10 asks warnings to "explain consequences, not scare
+    the user", and leads with what leaves the Mac: "This will send part of your project
+    over the internet."
+
+    Its example buttons are **Cancel** and **Ask Parent**, and those are deliberately
+    *not* used. This dialog is specified by ``WORKORDER_01`` section 24, whose own
+    buttons are ``[ Cancel ]`` and ``[ Use Claude ]`` -- the guide's precedence over
+    ``DESIGN_DOC.md`` is over design language, not over a functional specification, and
+    the work order is the requirement here.
+
+    They would also not work. Choosing a cloud model has no runtime parent gate to
+    reach: cloud is governed by the master switch and a saved key, both already
+    parent-only in Settings (HANDOFF section 6B), so an "Ask Parent" button would have
+    nothing to ask. The gate that *does* prompt a parent mid-task is ``approve`` below.
+
+    PHASE_10_HANDOFF.md section 5 used to record these buttons as already shipped. They
+    were not, and checking that claim surfaced a real shortfall in the control this
+    dialog belongs to -- it is answered by the child and fires once per model switch
+    rather than per request. That is recorded as a defect in HANDOFF section 6B under
+    **D12**, and is not a reason to change the buttons.
+    """
     company = company_for(info)
     lines = [
-        f"{info.name} uses the internet.",
+        "This will send part of your project over the internet.",
         "",
+        f"{info.name} uses the internet.",
         f"Information from this project may be sent to {company}.",
     ]
     if info.may_cost_money:

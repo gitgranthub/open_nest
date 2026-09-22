@@ -1127,12 +1127,48 @@ pass under cocoa. Three defects were found in the prepared asset delivery and tw
 instances of defect 5 were found on pages §17F never visited. A flaky parent-PIN
 assertion inherited from Phase 8 was also made sound. See `PHASE_10_HANDOFF.md`.
 
-#### 10B — Voice and copy — **not started**
+#### 10B — Voice and copy — **complete**
 
 Adopt Gary as the visible conversational helper; apply the guide's §§1–24 tone rules
 across child-facing, parent-facing, warning, error, empty, progress and success states.
 System-level messages (installation, security, account, recovery, status) stay attributed
 to Open Nest. Keep concise technical language where clarity requires it.
+
+**Exit criterion met.** 786 tests pass (773 at 10A), ruff clean. `ASSISTANT_NAME` and
+`SYSTEM_NAME` sit beside `APP_NAME`; the split is decided per message and pinned, with a
+failed turn attributed to Open Nest because a `ProviderError` is not Gary speaking.
+
+**The copy pass was scoped by measurement rather than by intent.** The guide's banned
+vocabulary was swept across all 826 user-visible strings before anything was edited and
+came back clean — Phases 2–9 were written against `DESIGN_DOC` §20, the same position in
+fewer words — so 10B is surgical, and `tests/test_voice.py` now enforces the register
+across all 60 modules so a new screen inherits the rule.
+
+**Things only the real model could show** (SPIKES.md §18). Gary's prompt costs nothing
+in tool selection — **15/16 before, 15/16 after** — but the first draft of the two
+late rules scored 14/16, and the case it broke was the model *claiming an edit it never
+made*: prose about not asserting things had crowded out the instruction to act.
+Tightening it and tying the rule to a tool call recovered the point.
+
+Two live defects were found this way, neither visible in the codebase because the words
+are not in the codebase. Routine successes were answered with **"Great!"** (§18's named
+list); and asked an open question with no evidence, the model **invented a description
+of a game it had never read**. Both now answer honestly — "There it is." and "I haven't
+run it yet. Let me try it."
+
+**A state-claim rule was added by developer direction**: Gary may not say the project
+works, compiles, is playable or is fixed unless a tool reported it or the child said so.
+It generalises the image and edit honesty checks to any unevidenced claim about the
+project, and is prompt-carried rather than deterministic because the claim has no
+mechanical test.
+
+One correction to this file's own record, and one defect out of it: PHASE_10_HANDOFF §5
+claimed the Cloud AI warning already had §10's Cancel / Ask Parent buttons. It did not.
+The buttons that ship are `WORKORDER_01` §24's own (`Cancel` / `Use Claude`) and are
+correct as they stand. But checking the claim surfaced a real shortfall — the §24
+warning is answered by the **child**, never taking the parent PIN, and fires once per
+model switch rather than per cloud request. Recorded as a defect in `HANDOFF.md` §6B
+with decision **D12**; not Phase 10 work.
 
 #### 10C — Product identity and interaction states — **not started**
 

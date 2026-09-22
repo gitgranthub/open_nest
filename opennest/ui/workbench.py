@@ -1,8 +1,13 @@
 """Workbench -- the project workspace.
 
 DESIGN_DOC.md section 11 and WORKORDER_01 section 14. Three panels: what is in the
-project, what happened when it ran, and the Assistant. Deliberately simpler than an IDE;
+project, what happened when it ran, and Gary. Deliberately simpler than an IDE;
 technical detail stays visually secondary.
+
+Who a message is attributed to is decided per message, not per call site. Gary speaks
+about the project -- a turn's reply, an import, an undo, a picture. Open Nest speaks when
+the machinery itself has something to report. ``_turn_failed`` is the case that shows the
+difference.
 """
 
 from __future__ import annotations
@@ -29,6 +34,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from opennest import ASSISTANT_NAME, SYSTEM_NAME
 from opennest.agent.controller import AgentController
 from opennest.agent.tools import Toolbox
 from opennest.ai import images
@@ -63,7 +69,7 @@ def _first_bytes(source: Path, count: int = 64) -> bytes:
 def headline_failure(run) -> str:
     """The one line worth leading with when a run fails.
 
-    Deliberately **not** an explanation. Explaining the error is the assistant's job and
+    Deliberately **not** an explanation. Explaining the error is Gary's job and
     it happens in the conversation; inventing a friendly paraphrase here would be a
     second, dumber account of the same failure, and one that could be wrong. This picks
     the most informative line that is already there.
@@ -345,7 +351,7 @@ class Workbench(QWidget):
         return frame
 
     def _assistant_panel(self) -> QFrame:
-        frame, layout = panel("Assistant")
+        frame, layout = panel(ASSISTANT_NAME)
         self._transcript = QPlainTextEdit()
         self._transcript.setReadOnly(True)
         layout.addWidget(self._transcript, 1)
@@ -553,7 +559,11 @@ class Workbench(QWidget):
                 QMessageBox.warning(self, "Open Nest", str(exc))
                 continue
 
-            self._say("Open Nest", assets.import_message(
+            # Gary, not Open Nest: brand guide section 22's "Asset Import" is one of its
+            # worked Gary examples ("Got it. spaceship.png is now part of the project.").
+            # What he says is unchanged -- import_message still states only what is
+            # actually known about the file (HANDOFF section 6A).
+            self._say(ASSISTANT_NAME, assets.import_message(
                 asset, self._model_info(), self._models_that_could_read(asset)
             ))
             if attach:
@@ -668,7 +678,7 @@ class Workbench(QWidget):
             if result.run is not None:
                 self._show_run(result)
         if turn.text:
-            self._say("Assistant", turn.text)
+            self._say(ASSISTANT_NAME, turn.text)
         self.refresh_files()
         self._refresh_undo()
         self._back_up(made_changes=turn.checkpoint is not None)
@@ -728,19 +738,32 @@ class Workbench(QWidget):
         except GitError as exc:
             QMessageBox.warning(self, "Open Nest", str(exc))
             return
+        # Gary, not Open Nest: brand guide section 22's "Undo" example is his
+        # ("Restored the version from before we changed the car speed."). Undo is a move
+        # in the project the two of them are making, not installation or account
+        # machinery, so it falls on Gary's side of the split.
         if restored is None:
-            self._say("Open Nest", "There is no earlier version to go back to.")
+            self._say(ASSISTANT_NAME, "There is no earlier version to go back to.")
             return
         self.refresh_files()
         self._refresh_undo()
         self.controller.refresh_state()
         self._panel_text("")
-        self._say("Open Nest", f"Went back to: {restored.label}")
+        self._say(ASSISTANT_NAME, f"Went back to: {restored.label}")
 
     def _turn_failed(self, message: str) -> None:
+        """A turn that never produced a reply -- so nobody said anything.
+
+        Attributed to Open Nest rather than to Gary, and that is the substantive half of
+        the split rather than a rename. What arrives here is a ``ProviderError`` from
+        ``AgentWorker``: the model would not load, the service refused the key, the call
+        budget ran out. Putting Gary's name on a transport failure would have him
+        announce a fault in the machinery he speaks through, which is exactly the
+        pretending PHASE_10_HANDOFF.md section 1 rules out.
+        """
         self._busy(False)
         self.set_model_status("attention", "Problem")
-        self._say("Assistant", message)
+        self._say(SYSTEM_NAME, message)
 
     def _show_run(self, result) -> None:
         run = result.run
@@ -951,9 +974,11 @@ class Workbench(QWidget):
         self._show_any_chart(asset.path)
         self.refresh_files()
         # Section 13's rule, kept at the point a picture appears: Open Nest asked for
-        # this image and saved it, and still has not looked at it.
+        # this image and saved it, and still has not looked at it. Gary says it, and the
+        # sentence itself is unchanged -- the honesty content is load-bearing
+        # (HANDOFF section 6C) and does not become warmer because he is the one saying it.
         self._say(
-            "Open Nest",
+            ASSISTANT_NAME,
             f"Saved as {asset.path}. {asset.summary}\n"
             f"  Nothing has looked at the picture itself -- open it to see how it came out.",
         )

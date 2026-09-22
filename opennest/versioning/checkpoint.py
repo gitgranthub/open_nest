@@ -23,10 +23,14 @@ from opennest.versioning.git_manager import Checkpoint, GitError, SecretsFound
 #: startup means the last session ended abruptly.
 SESSION_FILE = "session.json"
 
-#: Events worth saving at (WORKORDER_01 section 29A: not after every keystroke).
+#: Events worth saving at (WORKORDER_01 section 29A: not after every keystroke). These
+#: are the labels a child reads in Project History and after an Undo, so they carry the
+#: assistant's name (brand_design_guide.md section 3). They are also the commit messages;
+#: they describe rather than identify, so older commits reading "Assistant made changes"
+#: need no migration.
 LABEL_CREATED = "Project created"
-LABEL_BEFORE_CHANGE = "Before the assistant made changes"
-LABEL_AFTER_CHANGE = "Assistant made changes"
+LABEL_BEFORE_CHANGE = "Before Gary made changes"
+LABEL_AFTER_CHANGE = "Gary made changes"
 LABEL_WORKING = "Working version"
 LABEL_RECOVERED = "Recovered after Open Nest closed unexpectedly"
 
