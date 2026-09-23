@@ -33,6 +33,9 @@ LABEL_BEFORE_CHANGE = "Before Gary made changes"
 LABEL_AFTER_CHANGE = "Gary made changes"
 LABEL_WORKING = "Working version"
 LABEL_RECOVERED = "Recovered after Open Nest closed unexpectedly"
+#: A child pressed Save a Version. Distinguished from the automatic ones so the history
+#: can tell "Open Nest thought this was worth keeping" from "somebody said so".
+LABEL_SAVED_BY_HAND = "Saved by hand"
 
 
 @dataclass(frozen=True)

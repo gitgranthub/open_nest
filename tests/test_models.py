@@ -696,3 +696,55 @@ def test_a_record_claiming_a_model_that_is_gone_is_corrected() -> None:
     state = _State("", ["qwen3-4b-instruct"])
     migrate(state, installed_ids=[])
     assert state.installed_models == []
+
+
+# --------------------------------------------------------------- what a parent reads
+
+def test_an_untested_model_already_on_disk_is_not_promised_a_download() -> None:
+    """Two sentences that appeared together and contradicted each other.
+
+    Phase 12 drove the wizard and read what came out, for a model that was already on
+    the Mac:
+
+        It is already on this Mac, so nothing will be downloaded. Open Nest has not
+        tested this model itself yet. It should work on this Mac, and it will be
+        checked after it downloads.
+
+    Nothing was going to download. The check does still happen either way, so only the
+    clause naming a download was wrong.
+    """
+    from opennest.ai import router
+    from opennest.models import compatibility
+
+    entry = router.get_entry("qwen3-14b")      # pinned, described, never run
+    assert not entry.verified, "pick an unverified entry for this test"
+
+    fresh = compatibility.untested_note(entry, installed=False)
+    here = compatibility.untested_note(entry, installed=True)
+
+    assert "after it downloads" in fresh
+    assert "download" not in here, here
+    assert "checked" in here, "an untested model must still say it will be checked"
+
+
+def test_a_verified_model_says_nothing_either_way() -> None:
+    from opennest.ai import router
+    from opennest.models import compatibility
+
+    entry = router.get_entry("qwen3-4b-instruct")
+    assert entry.verified
+    assert compatibility.untested_note(entry, installed=False) == ""
+    assert compatibility.untested_note(entry, installed=True) == ""
+
+
+def test_the_second_local_model_is_verified_now() -> None:
+    """Phase 12 ran Qwen3 8B through downloader.verify: 3.0 s, all three ticks.
+
+    Worth pinning as a fact rather than a comment, because ``verified`` is what
+    ``untested_note`` keys off and because Phase 11 shipped a bug that rested on
+    exactly one entry holding it -- a tiebreak only one row can win never moves.
+    """
+    from opennest.ai import router
+
+    verified = {e.info.id for e in router.local_models() if e.verified}
+    assert {"qwen3-4b-instruct", "qwen3-8b"} <= verified, verified

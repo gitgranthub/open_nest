@@ -62,6 +62,7 @@ class IdeaCard(ClickableFrame):
         title = QLabel(idea)
         title.setProperty("role", "cardTitle")
         layout.addWidget(title)
+        self.setAccessibleName(idea)
 
 
 class StarterCard(ClickableFrame):
@@ -80,6 +81,8 @@ class StarterCard(ClickableFrame):
         body.setWordWrap(True)
         layout.addWidget(name)
         layout.addWidget(body)
+        self.setAccessibleName(title)
+        self.setAccessibleDescription(detail)
 
     def set_chosen(self, chosen: bool) -> None:
         # Both states are written as literals with a rule each in theme.py, rather than

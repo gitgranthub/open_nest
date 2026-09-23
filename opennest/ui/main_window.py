@@ -24,7 +24,7 @@ from opennest.ui import settings as settings_ui
 from opennest.ui.flight_deck import FlightDeck
 from opennest.ui.github_sync import GitHubSync
 from opennest.ui.workbench import Workbench
-from opennest.ui.worker import ModelLoader, run_in_thread
+from opennest.ui.worker import ModelLoader, run_in_thread, stop_thread
 from opennest.versioning.checkpoint import VersionHistory
 
 
@@ -112,11 +112,19 @@ class MainWindow(QMainWindow):
         self._model_problem = None
         self._deck.set_model_status("working", "Starting")
         loader = ModelLoader(self._provider)
-        loader.ready.connect(lambda: self._model_ready(True))
+        # A bound method of a QObject, never a lambda. PySide6 works out the connection
+        # type from the *receiver*: a bound method of a QObject living on the GUI thread
+        # gets a queued connection across threads, while a plain lambda has no receiver
+        # to find and is therefore delivered DIRECTLY -- on the worker thread. That ran
+        # ``_model_ready`` off the GUI thread, which swapped a status row and stopped
+        # the eagle's timer from there ("Cannot set parent, new parent is in a different
+        # thread", "Timers cannot be stopped from another thread"). Invisible until
+        # Phase 12 fixed ``run_in_thread``, because the worker never ran.
+        loader.ready.connect(self._model_ready)
         loader.failed.connect(self._model_failed)
         self._loader_thread = run_in_thread(self, loader)
 
-    def _model_ready(self, ready: bool) -> None:
+    def _model_ready(self) -> None:
         self._deck.set_model_status("ready", "Ready on this Mac")
         if self._workbench is not None:
             self._workbench.set_model_status("ready", "Ready")
@@ -382,4 +390,11 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event) -> None:
         self._close_project()
         self._sync.stop()
+        # The launch-path worker, and the one place Phase 11's rule was not applied.
+        # ``_start_model_load`` starts this on every launch and a 4B model takes about a
+        # second to load, so closing the window in that first second destroyed a running
+        # QThread and aborted the process -- measured at exit 134, with a macOS crash
+        # report. "If you add a worker, wait for it on the way out" (HANDOFF section 4).
+        stop_thread(self._loader_thread)
+        self._loader_thread = None
         super().closeEvent(event)

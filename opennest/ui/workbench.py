@@ -55,7 +55,7 @@ from opennest.ui import about_gary, brand, theme
 from opennest.ui import web_preview as web_preview_ui
 from opennest.ui.common import horizontal_rule, section_label, status_row
 from opennest.ui.worker import AgentWorker, ImageWorker, run_in_thread, stop_thread
-from opennest.versioning.checkpoint import VersionHistory
+from opennest.versioning.checkpoint import LABEL_SAVED_BY_HAND, VersionHistory
 from opennest.versioning.git_manager import GitError, SecretsFound
 
 #: WORKORDER_01 section 30's control, in the words it uses. DESIGN_DOC section 12's
@@ -520,6 +520,18 @@ class Workbench(QWidget):
         self._undo_button.clicked.connect(self._undo)
         self._undo_button.setEnabled(bool(self.versions and self.versions.can_undo))
 
+        # Section 29A saves automatically and the child is never asked to. That is the
+        # right default and it is not the whole story: somebody who has just got a
+        # chart looking right wants to *mark* that, not trust that something did. Undo
+        # has always been the visible half of version history; this is the other half,
+        # and it uses the same machinery rather than a second idea of saving.
+        self._save_button = QPushButton("Save a Version")
+        self._save_button.setToolTip(
+            "Mark how the project is right now, so you can come back to it"
+        )
+        self._save_button.clicked.connect(self._save_version)
+        self._save_button.setEnabled(self.versions is not None)
+
         self._style = QComboBox()
         self._style.addItem("Just build it", "build")
         self._style.addItem("Build it and teach me", "teach")
@@ -535,6 +547,7 @@ class Workbench(QWidget):
             for widget in self._hardware_controls():
                 row.addWidget(widget)
         row.addSpacing(16)
+        row.addWidget(self._save_button)
         row.addWidget(self._undo_button)
         row.addSpacing(16)
         row.addWidget(section_label("Build Style"))
@@ -1163,6 +1176,35 @@ class Workbench(QWidget):
         )
         self._web.show_page(web_preview.entry_url(self.project))
 
+    def _save_version(self) -> None:
+        """Mark the project as it is now, by hand.
+
+        Gary's voice, because a saved version is a move in the project the two of them
+        are making rather than installation or account machinery -- the same split that
+        puts Undo on his side (brand guide section 22).
+
+        "Nothing to save" is a real and common answer: autosave has usually already
+        taken it, and saying so is better than an identical second version or a silent
+        button. The label is the child's own words for the thing, not a commit message.
+        """
+        if self.versions is None:
+            return
+        try:
+            saved = self.versions.save(LABEL_SAVED_BY_HAND)
+        except SecretsFound as exc:
+            QMessageBox.warning(self, "Open Nest", str(exc))
+            return
+        except GitError as exc:
+            QMessageBox.warning(self, "Open Nest", str(exc))
+            return
+        self._refresh_undo()
+        if saved is None:
+            self._say(ASSISTANT_NAME,
+                      "Nothing has changed since the last saved version, so there is "
+                      "nothing new to save.")
+        else:
+            self._say(ASSISTANT_NAME, "Saved. You can come back to this version.")
+
     def _stop(self) -> None:
         if self.toolbox.last_run is not None:
             stop_project(self.toolbox.last_run)
@@ -1182,6 +1224,11 @@ class Workbench(QWidget):
         """
         stop_thread(self._thread)
         self._thread = None
+        # And a game still on screen. Closing the project left the child process
+        # running with its own window: nothing owned it any more, Stop was gone with
+        # the Workbench, and the only way to be rid of it was to quit the game itself.
+        if self.toolbox.last_run is not None:
+            stop_project(self.toolbox.last_run)
         if self._web is not None:
             self._web.close()
 

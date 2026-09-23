@@ -190,6 +190,7 @@
         "pandas",
         "numpy",
         "matplotlib",
+        "seaborn",
         "pillow"
       ],
       "starters": [

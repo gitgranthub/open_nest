@@ -230,3 +230,74 @@ def test_a_withdrawn_starter_is_still_named_rather_than_forgotten(tmp_path: Path
     project.save()
     state = project_state(open_project(project.directory))
     assert "some_withdrawn_kit" in state
+
+
+# --------------------------------------------------- the house chart style
+
+def test_the_research_starter_ships_a_chart_style() -> None:
+    """A style that depends on the model writing one right line is sometimes missing.
+
+    matplotlib reads a ``matplotlibrc`` from the working directory and a project runs
+    from its own directory, so shipping the file *is* the mechanism -- no import, no
+    setup call, nothing to remember.
+    """
+    from opennest.projects import starters
+
+    kit = next(k for k in starters.load_starters() if k.id == "research_basic")
+    assert "matplotlibrc" in kit.files
+    assert (kit.directory / "matplotlibrc").is_file()
+
+
+def test_the_chart_palette_is_the_one_that_was_validated() -> None:
+    """Six colours in a fixed order, because the ORDER is the accessibility mechanism.
+
+    Adjacent pairs were checked for deuteranopia, protanopia and tritanopia separation
+    as well as ordinary-vision difference (dataviz validator, light surface #F2EFE8):
+    worst adjacent CVD delta-E 10.6, worst adjacent normal-vision 22.4, all six at or
+    above 3:1 contrast against the background. Re-ordering them silently undoes that,
+    and nothing about the render would look wrong.
+    """
+    from opennest.projects import starters
+
+    kit = next(k for k in starters.load_starters() if k.id == "research_basic")
+    text = (kit.directory / "matplotlibrc").read_text(encoding="utf-8")
+
+    expected = ["B96A16", "1F6FB2", "A83A72", "4F8A33", "6A5BC7", "008D7C"]
+    cycle = next(line for line in text.splitlines()
+                 if line.startswith("axes.prop_cycle"))
+    found = [part.strip().strip('"') for part in
+             cycle.split("[", 1)[1].rsplit("]", 1)[0].split(",")]
+    assert found == expected, f"the validated order changed: {found}"
+
+    # The accent the rest of the product already uses, so a one-series chart is
+    # recognisably Open Nest rather than matplotlib blue.
+    from opennest.ui.theme import LIGHT
+
+    assert expected[0] == LIGHT.accent.lstrip("#").upper()
+
+
+def test_the_chart_style_does_not_name_a_font_that_might_be_missing() -> None:
+    """matplotlib warns on every run for an absent family, before it draws anything."""
+    from opennest.projects import starters
+
+    kit = next(k for k in starters.load_starters() if k.id == "research_basic")
+    text = (kit.directory / "matplotlibrc").read_text(encoding="utf-8")
+    fonts = next(line for line in text.splitlines()
+                 if line.startswith("font.sans-serif"))
+    assert fonts.strip().endswith("DejaVu Sans"), (
+        "the fallback chain must end in DejaVu Sans, which ships inside matplotlib"
+    )
+
+
+def test_the_research_prompt_does_not_tell_gary_to_replace_the_style() -> None:
+    """``sns.set_theme()`` silently reverts the palette to seaborn's blue and orange.
+
+    Measured: after ``sns.set_theme(style="whitegrid")`` the cycle is seaborn's own and
+    the background is white. An earlier draft of this prompt asked for exactly that
+    line, which would have thrown the brand palette away on every chart.
+    """
+    from opennest import paths
+
+    prompt = (paths.prompts_dir() / "research.txt").read_text(encoding="utf-8")
+    assert "set_theme" in prompt, "the prompt should name the trap explicitly"
+    assert "Never call sns.set_theme()" in prompt

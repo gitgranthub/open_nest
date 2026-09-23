@@ -31,7 +31,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 
 from opennest.github import backup
 from opennest.github.push_queue import Outcome, PushQueue
-from opennest.ui.worker import run_in_thread
+from opennest.ui.worker import run_in_thread, stop_thread
 
 #: How often the queue is swept. The backoff inside the queue is the real spacing.
 SWEEP_SECONDS = 60
@@ -105,6 +105,11 @@ class GitHubSync(QObject):
         #: this one is allowed to reach the child and therefore says much less.
         self.on_status = on_status
         self._running = False
+        #: The sweep's thread, kept so ``stop`` can wait for it. Until Phase 12 the
+        #: sweep started a thread and did not keep it, which was invisible only because
+        #: ``run_in_thread`` was silently dropping every worker anyway -- so the sweep
+        #: never ran at all and there was never a thread alive at close to notice.
+        self._thread = None
         self._timer = QTimer(self)
         self._timer.setInterval(SWEEP_SECONDS * 1000)
         self._timer.timeout.connect(self.sweep)
@@ -123,6 +128,11 @@ class GitHubSync(QObject):
 
     def stop(self) -> None:
         self._timer.stop()
+        # And wait for a sweep in flight. This object is parented to the MainWindow, so
+        # a live thread here at close is the same interpreter abort every other worker
+        # in the application is now guarded against.
+        stop_thread(self._thread)
+        self._thread = None
 
     # -- what to show -------------------------------------------------------
 
@@ -206,7 +216,7 @@ class GitHubSync(QObject):
         worker = SyncWorker(self.credentials, self.queue)
         worker.finished.connect(self._done)
         worker.failed.connect(self._problem)
-        run_in_thread(self, worker)
+        self._thread = run_in_thread(self, worker)
 
     def _done(self, outcome: Outcome) -> None:
         self._running = False

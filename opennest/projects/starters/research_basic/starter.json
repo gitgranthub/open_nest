@@ -9,8 +9,10 @@
     "analysis.py",
     "question.md",
     "sources.md",
-    "findings.md"
+    "findings.md",
+    "matplotlibrc"
   ],
+  "_matplotlibrc_note": "The house chart style. matplotlib reads a matplotlibrc from the working directory and a project runs from its own directory, so every chart picks it up with no import and no setup call -- deterministic rather than dependent on the model writing one right line. It is a shipped file like the others, which means it is the child's to change.",
   "_directories_note": "data/ and notes/ are where a research project puts things it collects. The project already has a top-level data/ directory for imported datasets; these sit beside the analysis so a child can keep working notes next to the code that reads them.",
   "directories": [
     "notes"

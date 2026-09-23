@@ -1,13 +1,23 @@
 # Handoff — start here
 
-You are picking up Open Nest after **Phase 11 (starter kits and the model registry)**,
-which is done. Phase 10 (design and polish) is done before it. This document is what you
-need before touching anything.
+You are picking up Open Nest after **Phase 12 (the owner's test drive)**, which is
+functionally complete with **one acceptance defect still open** — see §8 of
+[PHASE_12_HANDOFF.md](PHASE_12_HANDOFF.md). This document is what you need before
+touching anything.
 
-**Phase 12 is the owner's first hands-on use of the running application, and none of it
-has started.** Read [PHASE_11_HANDOFF.md](PHASE_11_HANDOFF.md) before anything else if
-you are picking that up: Phase 11 exists precisely so the starter system and the model
-registry were finished before anybody judged the finished experience.
+**Read [PHASE_12_HANDOFF.md](PHASE_12_HANDOFF.md) next, and read it before you trust
+anything else here.** Phase 12 was the first time anything clicked the application, and
+it did not work: `ui/worker.run_in_thread` was silently dropping every background
+worker, so the setup wizard hung on step 3 of 9 with Continue and Back disabled, the
+local model never finished loading, and a child's message to Gary never ran. **980 tests
+passed the whole time**, because every test reaches behaviour through an inline seam and
+the threading was the one part nothing exercised. Seven defects, three of them crashes
+or hangs, all fixed. If you add a worker, or a Qt driver, that file tells you what not
+to do.
+
+**Phases 13 and 14 are specified and not started**: the game preview drawn inside the
+workbench (PHASE_12_HANDOFF §6, feasibility measured), and getting work out of Open Nest
+at all — export, PDF, sharing (§7, nothing exists today).
 
 **The assistant is called Gary**, as of 10B. He is a voice, not a character: no
 illustrated face, and brand guide §47 keeps him separate from the eagle, the nest and the
@@ -119,7 +129,9 @@ it belongs in section 4.
 | 9 — GitHub backup | complete, committed on `phase-9-github`. D1 resolved as OAuth device flow, **verified against the real GitHub**: real device flow, real private repo, real push, real PR, and a real Disconnect (SPIKES.md §17C-E). UI smoke-tested under cocoa: 21 checks, 21 passed (§17F). Five cosmetic defects recorded for Phase 10 |
 | **10 — Design and polish pass** | **complete**, on `phase-10-design` (10A committed; 10B–10D in the working tree). The brand system is wired into every screen and verified under real cocoa at 2x in both colour schemes. Two final-QA items remain, both "somebody has to look": watching the eagle loop, and a second display. See [PHASE_10_HANDOFF.md](PHASE_10_HANDOFF.md) |
 | **11 — Starter kits, Website, model registry** | **complete**, in the working tree on `phase-10-design`. Config schema 2 (`starters` + `starter_default`) and models schema 4 (per-machine memory metadata). A Website profile that previews offline; a catalogue that tiers from an 8 GB Air to a 64 GB Studio. 980 tests, ruff clean. Five surfaces rendered under real cocoa, three defects found and fixed — one of them an interpreter abort. See [PHASE_11_HANDOFF.md](PHASE_11_HANDOFF.md) |
-| 12 — Owner test drive and final acceptance | **not started.** The owner has still never used the running application |
+| **12 — Owner test drive and final acceptance** | **functionally complete, with one active acceptance defect.** The first time anything clicked the application — and it did not work: `run_in_thread` was silently dropping every background worker, so the setup wizard hung on step 3 of 9, the model never loaded, and a child's message to Gary never ran, with 980 tests passing throughout. Seven defects fixed, three of them crashes or hangs. 1018 tests, ruff clean. **Still open: Gary narrates changes he has not made** — three Games turns claimed work while calling no tool at all. That is a product-truthfulness defect, not polish, and Phase 12 is not done until it is fixed and retested. See [PHASE_12_HANDOFF.md](PHASE_12_HANDOFF.md) §8 |
+| 13 — The game preview in the workbench | **not started.** Specified in PHASE_12_HANDOFF §6; feasibility measured |
+| 14 — Getting work out of Open Nest (export / PDF / share) | **not started.** Specified in PHASE_12_HANDOFF §7. Nothing can currently leave the app |
 
 Branches are **stacked**: each is based on the previous one, so each PR shows only its
 own phase. Nothing is merged to `main` yet. Branch Phase 10 from `phase-9-github`.
@@ -508,6 +520,39 @@ does.** Do not "clean up" these without re-measuring:
   The stylesheet gives every `QWidget` `background-color: window`, so a bare container
   inside a `role="panel"` frame draws a band across it. `role="bare"` makes it
   transparent, the same treatment `QLabel` already had.
+
+**Phase 12 traps — read these before writing any Qt:**
+
+- **`moveToThread` + `started.connect(worker.run)` does not work under PySide6 6.11.**
+  It is the idiom in every Qt tutorial and it loses the worker silently: `run()` is
+  never entered, nothing raises, nothing is logged, and the thread runs forever. Two
+  separate weak references bite, in order — the worker itself, then the bound method
+  built at connect time — and a third attempt ran the work on the *main* thread, curing
+  every symptom and losing the point. `ui.worker.WorkerThread` overrides `QThread.run`
+  so there is no connection involved at all. **Do not go back to the idiom.**
+- **Do not re-add `thread.finished.connect(worker.deleteLater)`.** Holding the worker
+  makes Python its owner and Qt then frees it twice. Measured as a SIGSEGV.
+- **A lambda connected to a worker signal runs on the worker thread.** PySide6 picks the
+  connection type from the *receiver's* thread affinity and a lambda has no receiver, so
+  a cross-thread emit is delivered directly. That put Flight Deck widget updates on a
+  worker thread. Connect a bound method of a QObject; carry extra data on the object.
+  `test_nothing_connects_a_lambda_to_a_worker_signal` enforces it.
+- **`QTest.qWait` starves worker threads of the GIL — 140x, measured.** 0.07 s on the
+  main thread against 10.02 s for the identical loop on a worker. It turned a 0.02 s
+  inspection into a minute and produced a confident wrong diagnosis. Use a nested
+  `QEventLoop`, which is what `app.exec()` does.
+- **A test that reaches behaviour through an inline seam says nothing about the thread.**
+  The seams are good and should stay; `tests/test_worker.py` is the counterweight.
+- **`requirements/` is pinned now.** `PySide6>=6.7,<7` let the GUI toolkit change under
+  the product between installs, which is exactly the failure above. Bumping a pin is a
+  deliberate edit and the thing to run afterwards is `spikes/phase12/`.
+- **`sns.set_theme()` throws away the project's chart style.** The research starter
+  ships a `matplotlibrc`, which matplotlib picks up from the working directory; that one
+  seaborn call replaces all of it. The prompt names the trap and a test pins the
+  sentence.
+- **The chart palette's slot ORDER is its accessibility mechanism**, not a preference.
+  Re-ordering silently breaks colour-blind separation and the render looks fine.
+  SPIKES §20J.
 
 **Phase 11 traps:**
 

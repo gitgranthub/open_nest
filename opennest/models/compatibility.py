@@ -209,16 +209,32 @@ def suggestion(entries, machine: MachineProfile, installed_ids=()):
     return min(usable, key=rank)
 
 
-def untested_note(entry) -> str:
+def untested_note(entry, *, installed: bool = False) -> str:
     """Said when Open Nest has not itself run this model. Empty when it has.
 
     A catalogue entry is metadata somebody wrote down; ``verified`` means a real
-    inference completed through the application's own provider code. Only the default
-    model has had that done to it, and a parent about to spend seventeen gigabytes is
-    entitled to know which kind of claim they are acting on.
+    inference completed through the application's own provider code. A parent about to
+    spend seventeen gigabytes is entitled to know which kind of claim they are acting
+    on.
+
+    ``installed`` exists because the sentence has to agree with the one beside it.
+    Driving the wizard in Phase 12 produced this, in one paragraph, about a model that
+    was already on the Mac:
+
+        It is already on this Mac, so nothing will be downloaded. Open Nest has not
+        tested this model itself yet. It should work on this Mac, and it will be
+        checked after it downloads.
+
+    Nothing was going to download. The check still happens -- pressing the button runs
+    a real inference either way -- so only the clause naming a download is wrong.
     """
     if entry.verified:
         return ""
+    if installed:
+        return (
+            "Open Nest has not tested this model itself yet. It should work on this "
+            "Mac, and it will be checked now."
+        )
     return (
         "Open Nest has not tested this model itself yet. It should work on this Mac, "
         "and it will be checked after it downloads."

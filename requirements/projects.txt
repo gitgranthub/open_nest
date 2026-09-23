@@ -10,3 +10,12 @@ pandas>=2.2,<3
 matplotlib>=3.8,<4
 pillow>=10.3,<12
 requests>=2.32,<3
+
+# Charts that look designed without a child having to know why. seaborn is a thin
+# layer over matplotlib -- same figures, same axes, same everything Gary already knows
+# how to adjust -- so asking him to change a colour, a label or a font still works.
+# That is the reason for choosing it over plotly or altair, which render through a
+# browser: this product runs offline, inside a sandbox, and shows a PNG.
+#
+# It is small and its dependencies are already here (numpy, pandas, matplotlib).
+seaborn>=0.13,<0.14

@@ -143,3 +143,68 @@ def can_send_images(monkeypatch):
 @pytest.fixture
 def project(tmp_path: Path):
     return create_project("Asteroid Game", "games", root=tmp_path)
+
+
+# --------------------------------------------------------------------------- Qt
+
+@pytest.fixture(scope="session")
+def qt_app():
+    """One QApplication for the session, under whatever platform the module set.
+
+    Lives here rather than in each Qt test module because Phase 12 added a second and
+    a third of them, and a fixture copied three times is a fixture that drifts.
+    """
+    pytest.importorskip("PySide6.QtWidgets")
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    yield app
+
+
+@pytest.fixture
+def wizard(qt_app, tmp_path, monkeypatch):
+    """A setup wizard wired to throwaway state, a fake Keychain and no real model.
+
+    ``complain`` and ``confirm`` are replaced with recorders. Both open a modal
+    ``QMessageBox``, and a modal dialog blocks forever under the offscreen platform
+    too -- there is no one to press the button. They are the wizard's own seams for
+    asking a person something, so stubbing them is the honest place to cut.
+    """
+    from opennest.security import permissions
+    from opennest.setup import downloader
+    from opennest.setup import wizard as wizard_module
+    from opennest.setup.state import InstallationState
+
+    # Nothing in the suite may touch the real Keychain or the real model cache.
+    monkeypatch.setattr(downloader, "is_installed", lambda entry: False)
+
+    complaints: list = []
+    questions: list = []
+    answer = {"value": False}
+
+    monkeypatch.setattr(
+        wizard_module.SetupWizard, "complain",
+        lambda self, message: complaints.append(message),
+    )
+    monkeypatch.setattr(
+        wizard_module.SetupWizard, "confirm",
+        lambda self, question, detail: (questions.append(question), answer["value"])[1],
+    )
+
+    state = InstallationState(path=tmp_path / "installation.json")
+    controls = permissions.ParentControls(path=tmp_path / "settings.json")
+    built = wizard_module.SetupWizard(
+        state=state,
+        controls=controls,
+        credentials=keychain.Credentials(backend=FakeKeyring()),
+    )
+    built.complaints = complaints
+    built.questions = questions
+    built.answer_confirmations = lambda value: answer.__setitem__("value", value)
+    yield built
+    # Before deleteLater, always. ``LocalAIStep.enter`` starts a real inspection thread,
+    # and a widget destroyed while one of its threads runs aborts the interpreter --
+    # with no traceback and no failed test. That was latent while ``run_in_thread`` was
+    # dropping every worker; Phase 12 made these threads real.
+    built.wait_for_workers()
+    built.deleteLater()

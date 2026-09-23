@@ -173,6 +173,16 @@ class Step(QWidget):
         """Called when Continue is pressed. Return False to stay on this step."""
         return True
 
+    def initial_focus(self) -> QWidget | None:
+        """What the keyboard should be on when this step opens. None leaves it alone.
+
+        Only steps with something to type into override this. A step whose page is all
+        explanation should not steal focus onto an arbitrary button -- the footer's
+        Continue is the default button, so Return already works from nowhere in
+        particular.
+        """
+        return None
+
 
 class WelcomeStep(Step):
     """Section 35A step 1, plus the "Installation environment" hardware summary."""
@@ -245,6 +255,10 @@ class IdentityStep(Step):
         self._name.setText(self.state.child_name)
         self._git_name.setText(self.state.git_author_name or self.state.child_name)
         self._git_email.setText(self.state.git_author_email)
+
+    def initial_focus(self) -> QWidget | None:
+        """The one required field in the whole wizard."""
+        return self._name
 
     def leave(self) -> bool:
         name = self._name.text().strip()
@@ -377,6 +391,9 @@ class LocalAIStep(Step):
         self._verdicts: dict = {}
         self._installed: tuple = ()
         self._inspected = False
+        #: The entry a download or verification is running for. Held here rather than
+        #: captured in the signal's lambda -- see ``_start``.
+        self._pending = None
 
     # -- looking at the Mac -------------------------------------------------
 
@@ -508,7 +525,7 @@ class LocalAIStep(Step):
             if installed else
             f"About {entry.download_gb:.1f} GB to download."
         )
-        untested = compatibility.untested_note(entry)
+        untested = compatibility.untested_note(entry, installed=installed)
         self._detail.setText(
             " ".join(part for part in (f"{entry.info.description}.", size, untested)
                      if part)
@@ -668,9 +685,14 @@ class LocalAIStep(Step):
         self._status.setText(f"Downloading {entry.info.name}...")
         self._activity.show_working(f"Installing {entry.info.name}")
 
+        # The entry travels on the step, not in a lambda. A lambda has no receiver
+        # QObject for PySide6 to find, so the connection is DIRECT and the handler runs
+        # on the worker thread -- touching a progress bar, a status label and the eagle
+        # from off the GUI thread. Phase 12; see the note in ``main_window``.
+        self._pending = entry
         worker = _DownloadWorker(entry, lambda: self._cancelled)
         worker.progress.connect(self._on_progress)
-        worker.finished.connect(lambda result: self._downloaded(entry, result))
+        worker.finished.connect(self._downloaded)
         self._thread = run_in_thread(self, worker)
 
     def _request_cancel(self) -> None:
@@ -682,7 +704,8 @@ class LocalAIStep(Step):
         self._bar.setValue(progress.percent)
         self._status.setText(f"Downloading — {progress.describe()}")
 
-    def _downloaded(self, entry, result: downloader.DownloadResult) -> None:
+    def _downloaded(self, result: downloader.DownloadResult) -> None:
+        entry = self._pending
         self._activity.done()
         self._bar.hide()
         self._cancel.hide()
@@ -696,13 +719,15 @@ class LocalAIStep(Step):
     # -- verifying ----------------------------------------------------------
 
     def _verify(self, entry) -> None:
+        self._pending = entry
         self._status.setText(f"Checking {entry.info.name} can answer...")
         self._activity.show_working(f"Checking {entry.info.name}")
         worker = _VerifyWorker(entry)
-        worker.finished.connect(lambda result: self._verified(entry, result))
+        worker.finished.connect(self._verified)
         self._thread = run_in_thread(self, worker)
 
-    def _verified(self, entry, result: downloader.VerificationResult) -> None:
+    def _verified(self, result: downloader.VerificationResult) -> None:
+        entry = self._pending
         if result.ok:
             # Only now. Section 35A: "The wizard should only mark the model as ready
             # after this test succeeds" -- a finished download is not a working model.
@@ -1127,6 +1152,9 @@ class ParentStep(Step):
         else:
             self._pin_note.setText("No PIN is set yet.")
 
+    def initial_focus(self) -> QWidget | None:
+        return self._pin
+
     def leave(self) -> bool:
         pin = self._pin.text()
         again = self._again.text()
@@ -1408,6 +1436,18 @@ class SetupWizard(QDialog):
         footer.addWidget(self._next)
         outer.addLayout(footer)
 
+        # Return has to mean Continue, and until Phase 12 it meant nothing. QPushButton
+        # sets ``autoDefault`` inside a QDialog, so Qt picked a default on its own: it
+        # chose "Show other options" -- a control on the Local AI step, invisible from
+        # every other page. So a parent who typed a name and pressed Return got no
+        # response at all, and on one page would have toggled a fold-out they were not
+        # looking at. Every button gives up autoDefault; the primary action claims it.
+        for button in self.findChildren(QPushButton):
+            button.setAutoDefault(False)
+            button.setDefault(False)
+        self._next.setAutoDefault(True)
+        self._next.setDefault(True)
+
         self._show_step(0)
 
     # -- navigation ---------------------------------------------------------
@@ -1425,6 +1465,13 @@ class SetupWizard(QDialog):
         self._next.setText(step.next_label)
         self._back.setEnabled(index > 0)
         step.enter()
+        # After ``enter``, because a step may only know what to focus once it has
+        # refreshed. Arriving at "Who will use Open Nest?" used to leave focus on the
+        # page's QScrollArea, so the one field a parent has to fill in was not where
+        # their typing went.
+        target = step.initial_focus()
+        if target is not None:
+            target.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _go_back(self) -> None:
         if self._busy:
@@ -1472,6 +1519,25 @@ class SetupWizard(QDialog):
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt's name
         self.wait_for_workers()
         super().closeEvent(event)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt's name
+        """Escape does not end setup.
+
+        A QDialog rejects on Escape, and rejecting here is what "Quit Setup" does:
+        ``installation.json`` is written once, at the end, so everything held on
+        ``self.state`` -- the child's name, the Git identity, which model was verified,
+        whether cloud was enabled, the GitHub account -- is discarded, ``setup_complete``
+        stays false, and the next launch starts the wizard again from step 1. No
+        confirmation, no warning, one key.
+
+        Quit Setup is still there and still immediate: that is a button somebody chose
+        to press. This is the accident, and nothing else in this file has a destructive
+        step reachable by mistake.
+        """
+        if event.key() == Qt.Key.Key_Escape:
+            event.ignore()
+            return
+        super().keyPressEvent(event)
 
     def complain(self, message: str) -> None:
         QMessageBox.warning(self, f"{APP_NAME} Setup", message)

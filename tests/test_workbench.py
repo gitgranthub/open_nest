@@ -748,3 +748,109 @@ def test_the_model_is_still_told_what_is_really_in_the_project(make_bench) -> No
 
     bench = make_bench("website", name="Real Files")
     assert "project.json" in visible_files(bench.project.directory)
+
+
+# ----------------------------------------------- the game window's lifetime
+
+def test_closing_a_project_stops_a_game_that_is_still_running(bench, monkeypatch) -> None:
+    """Otherwise the window outlives the Workbench and nothing owns it any more.
+
+    Found in the Phase 12 test drive, watching it happen: Run Game opens a window in
+    another process -- that is the security boundary, a game is not run inside the
+    application -- and Stop lived on the Workbench. Once the project closed there was
+    no control left for it, so the only way to be rid of the game was to quit the game
+    itself.
+
+    Deliberately *not* accompanied by a test about where the window opens. SDL already
+    centres it on macOS (measured: a 640x480 window landed at 544,318 on a 1728x1117
+    screen, identical with and without SDL_VIDEO_CENTERED), so there was nothing to
+    fix there -- and positioning it over the Build / Preview panel to look docked was
+    tried and withdrawn, because Open Nest can place another process's window but
+    cannot clip it. See SPIKES.md section 20I.
+    """
+    from opennest.execution.python_runner import RunResult
+
+    stopped: list = []
+    monkeypatch.setattr(
+        "opennest.ui.workbench.stop_project", lambda run: stopped.append(run)
+    )
+    running = RunResult(None, "", "", 0.1, False, still_running=True)
+    bench.toolbox.last_run = running
+
+    bench.release()
+    assert stopped == [running], "closing the project left the game running"
+
+
+def test_releasing_a_project_that_never_ran_anything_is_harmless(bench) -> None:
+    bench.toolbox.last_run = None
+    bench.release()
+
+
+# ------------------------------------------------------ saving a version by hand
+
+def test_a_child_can_save_a_version_on_purpose(bench, monkeypatch) -> None:
+    """Section 29A saves automatically, and that is not the whole story.
+
+    Somebody who has just got a chart looking right wants to *mark* that, not trust
+    that something did. The machinery already existed -- ``VersionHistory.save`` --
+    and Undo was the only thing exposing any of it.
+    """
+    saved: list = []
+
+    class Versions:
+        can_undo = True
+
+        def save(self, label):
+            saved.append(label)
+            return "abc123"
+
+    bench.versions = Versions()
+    bench._save_button.setEnabled(True)
+    bench._save_button.click()
+
+    from opennest.versioning.checkpoint import LABEL_SAVED_BY_HAND
+
+    assert saved == [LABEL_SAVED_BY_HAND]
+    assert "Saved" in bench._transcript.toPlainText()
+
+
+def test_saving_when_nothing_changed_says_so_rather_than_lying(bench) -> None:
+    """Autosave has usually taken it already, and an identical second version is noise."""
+
+    class Versions:
+        can_undo = True
+
+        def save(self, label):
+            return None          # git_manager.commit: nothing to commit
+
+    bench.versions = Versions()
+    bench._save_button.setEnabled(True)
+    bench._save_button.click()
+
+    said = bench._transcript.toPlainText()
+    assert "nothing new to save" in said, said
+
+
+def test_a_blocked_credential_stops_a_manual_save_visibly(bench, monkeypatch) -> None:
+    """The one failure that must surface: silently not saving would be worse."""
+    from opennest.versioning.git_manager import SecretsFound
+    from opennest.versioning.secret_scanner import Finding
+
+    warned: list = []
+    monkeypatch.setattr(
+        "opennest.ui.workbench.QMessageBox.warning",
+        lambda *args, **kwargs: warned.append(args[-1]),
+    )
+
+    findings = [Finding(path="src/analysis.py", line=3, description="an API key")]
+
+    class Versions:
+        can_undo = True
+
+        def save(self, label):
+            raise SecretsFound(findings)
+
+    bench.versions = Versions()
+    bench._save_button.setEnabled(True)
+    bench._save_button.click()
+    assert warned and "API key" in warned[0]

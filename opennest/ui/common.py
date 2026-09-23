@@ -76,6 +76,18 @@ class ClickableFrame(QFrame):
     layouts, so such a "card" collapses and its labels never appear. A QFrame lays its
     children out correctly and still gives the bordered, rectangular, equipment-panel
     look DESIGN_DOC section 6 asks for.
+
+    **"Behaves like a button" has to include the keyboard**, and until Phase 12 it did
+    not. A QFrame's default focus policy is ``NoFocus``, so Tab never landed on one and
+    Space and Return did nothing. Every card in the product is one of these -- the seven
+    profile cards, the recent-project rows, and the starter and idea cards in New
+    Project -- which left the Flight Deck's entire tab chain as
+    ``QScrollArea -> Settings``. A child who cannot use a mouse could reach Parent
+    Settings and nothing else: not a new project, not an existing one.
+
+    Three things make it a button rather than a frame that can be focused: a focus
+    policy, keyboard activation, and an accessible name, since a screen reader
+    otherwise meets an unnamed frame containing two labels.
     """
 
     clicked = Signal()
@@ -85,7 +97,35 @@ class ClickableFrame(QFrame):
         self.setObjectName(object_name)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFrameShape(QFrame.Shape.NoFrame)
+        # StrongFocus: reachable by Tab *and* by clicking, which is what a button does.
+        # macOS only visits buttons with Full Keyboard Access on, and that is the user's
+        # setting to make -- what matters here is that the application stops opting out.
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._pressed = False
+
+    def keyPressEvent(self, event) -> None:
+        """Space and Return activate, the way they do on a real button.
+
+        Both, deliberately: Space is the button convention, Return is what most people
+        press, and a card is the one control on the Flight Deck worth reaching.
+        """
+        if event.key() in (
+            Qt.Key.Key_Space, Qt.Key.Key_Return, Qt.Key.Key_Enter,
+        ):
+            event.accept()
+            self.clicked.emit()
+            return
+        super().keyPressEvent(event)
+
+    def focusInEvent(self, event) -> None:
+        self.setProperty("focused", True)
+        self._restyle()
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event) -> None:
+        self.setProperty("focused", False)
+        self._restyle()
+        super().focusOutEvent(event)
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:

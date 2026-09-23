@@ -1541,4 +1541,331 @@ and real pins without anyone downloading 90 GB to write it.
 
 Only the first is `verified`. The rest are pinned, sized and described, and **nothing has
 run an inference through any of them** — `compatibility.untested_note()` is how that is
-said on screen rather than hidden.
+said on screen rather than hidden. *(Phase 12 ran the 8B; see section 20E.)*
+
+---
+
+## 20. Phase 12 — what happens when somebody actually clicks it
+
+Eleven phases built the application and nothing had ever driven it. Every earlier UI
+pass constructed a widget, rendered it and looked at the picture; the automated suite
+reaches behaviour through inline seams — `LocalAIStep.inspect_now` instead of `enter`, a
+controller called directly instead of an `AgentWorker`. Both are reasonable, and between
+them they left the *joins* untested.
+
+Phase 12 drove the real windows under the **cocoa** platform: real clicks
+(`QTest.mouseClick`), real key presses, modals answered rather than stubbed, every
+surface grabbed to PNG. 980 tests were passing throughout.
+
+### 20A. No background work in the application happened at all
+
+`ui/worker.run_in_thread` used the documented Qt idiom — `moveToThread` plus
+`started.connect(worker.run)` — and under PySide6 6.11.2 it silently dropped every
+worker. `run()` was never entered, nothing raised, nothing was logged, and the thread sat
+in its event loop forever.
+
+Measured four ways with everything else held constant:
+
+| | worker kept referenced? | collected before start? | result |
+|---|---|---|---|
+| dropped | no | no | **never ran** |
+| dropped+gc | no | yes | **never ran** |
+| held | yes | no | ran |
+| held+gc | yes | yes | ran |
+
+`moveToThread` requires an object with no parent, so `setParent(None)` is forced; after
+it the caller's local is the only reference, because **PySide6 holds a receiver QObject
+weakly in a signal connection**. All eight call sites dropped that local on return:
+`AgentWorker` (a child's message to Gary), `ModelLoader` (the model warming at launch),
+`ImageWorker`, `SyncWorker`, and the wizard's inspect, download, verify and toolchain
+workers.
+
+What it looked like: the setup wizard stopped on *"Checking this Mac…"* forever, and
+`_begin_inspection` had already called `set_busy(True)`, which disables Continue **and**
+Back. A parent reaching step 3 of nine could not go forward, could not go back, and the
+only live control was Quit Setup.
+
+**Two further failures were hiding behind the first, and each looked like a fix.**
+
+1. Holding the worker was not enough. `started.connect(worker.run)` builds a temporary
+   bound-method object that PySide6 does not keep either, so the connection decayed with
+   the worker plainly still alive on the thread.
+2. Holding both made it run **on the main thread** — every visible symptom cured and the
+   entire point lost.
+
+The fix abandons the idiom: `WorkerThread(QThread)` overrides `run()` and calls the
+worker directly. Qt calls `run()` on the new thread with no signal, no connection and no
+reference semantics in between. `tests/test_worker.py` pins all three properties — it
+runs, it runs off the GUI thread, and its result arrives on the GUI thread.
+
+One thing to keep: `thread.finished.connect(worker.deleteLater)` had to go. Holding the
+worker makes Python its owner, and asking Qt to delete an object Python owns frees it
+twice — measured as a **SIGSEGV** the first time the reference was added without removing
+that line.
+
+### 20B. A lambda handler runs on the worker thread
+
+Exposed by fixing 20A, because until then the handlers never ran at all.
+
+PySide6 decides a connection's type from the *receiver's* thread affinity, and a plain
+lambda has no receiver to ask — so a cross-thread signal is delivered **directly**, on
+the emitting thread. `MainWindow` did `loader.ready.connect(lambda: self._model_ready(True))`,
+so `_model_ready` ran on the worker thread and from there swapped a Flight Deck status
+row and stopped the eagle's timer. Qt said so twice and nothing was listening:
+
+```
+QObject::setParent: Cannot set parent, new parent is in a different thread
+QObject::killTimer: Timers cannot be stopped from another thread
+```
+
+Three sites, all lambdas, all now bound methods of QObjects: `main_window.py`,
+`wizard.py` twice. `test_nothing_connects_a_lambda_to_a_worker_signal` tokenises the
+package so a fourth cannot appear.
+
+### 20C. Closing the window during the model load aborted the process
+
+`MainWindow._start_model_load` starts a worker on every launch and a 4B model takes about
+a second to load. `closeEvent` released the project and stopped the GitHub sync; it never
+waited for that loader. Closing the window in that first second destroyed a running
+QThread: **exit 134**, `QThread: Destroyed while thread is still running`, and a macOS
+crash report in front of a parent.
+
+`stop_thread`'s comment claimed it left a wedged worker alone and closed the window. It
+did not — the thread stayed a child of the closing widget, so Qt destroyed it anyway.
+`_park()` now detaches a thread that will not stop, which makes the comment true: a
+leaked thread finishes its call and idles, which is a bounded cost where an abort is not.
+
+### 20D. The harness was 140x slower than the application, and it changed a conclusion
+
+Worth recording because it produced a wrong diagnosis first. `QTest.qWait` spins
+`processEvents` on the GUI thread, which starves Python worker threads of the GIL:
+
+| | 3x `sysctl` | identical pure-Python loop |
+|---|---|---|
+| main thread | 0.01 s | 0.07 s |
+| worker thread, under `QTest.qWait` | 6.30 s | **10.02 s** |
+| worker thread, under a nested `QEventLoop` | 0.01 s | 0.07 s |
+
+Driven with `qWait`, the wizard's machine inspection took about a minute against 0.02 s
+called directly, and the first write-up called that a hang in the application. It was the
+driver. `drive.pump` now runs a nested `QEventLoop`, which is what `app.exec()` does.
+
+The defect in 20A was real and separately proven — `run()` entered zero times, while
+`held` ran promptly in the same harness — but the *stall* was mine. Third instance of
+this project's recurring lesson: dump what the harness is actually seeing before you
+believe its number.
+
+### 20E. Qwen3 8B, and what 4.62 GB bought that a flag flip would not have
+
+PHASE_11_HANDOFF §8 named this as the cheapest open gap. Downloaded in **438 s**, pinned
+to `545dc42`, and verified through `downloader.verify` — the application's own provider
+code — in **3.0 s**: engine loaded, model loaded, test response received. `verified` is
+now true for two entries rather than one, which matters beyond bookkeeping: Phase 11
+shipped a ranking bug that rested on exactly one entry holding the flag.
+
+**The memory rule now has a second data point.** Every entry's figures come from
+`estimated_memory_gb = download_gb × 1.15 + 0.5`, fitted to one measurement.
+
+| | on disk | peak resident | resident/on-disk | catalogue estimate |
+|---|---|---|---|---|
+| Qwen3 4B (Phase 1) | 2.28 GB | 2.61 GB | 1.15 | 3.1 GB |
+| Qwen3 8B (here) | 4.31 GB | 4.62 GB | **1.07** | 5.8 GB |
+
+The rule holds and errs **generous** — about 25% high at 8B — which is the safe direction
+for a threshold that decides whether a family's Mac will swap. Measure each model in its
+**own process**: a first attempt loaded both in one and `ru_maxrss` reported the 4B at
+6.78 GB, because peak RSS is cumulative.
+
+**And the thing only a real run could show: the 8B is a different kind of model from the
+4B.** The catalogue's 4B is `Qwen3-4B-Instruct-2507`, which answers. The 8B and 14B are
+the hybrid *thinking* `Qwen3-8B`/`Qwen3-14B`, and the 8B answered the verification prompt
+with:
+
+```
+<think>
+Okay, the user wants me to respond with exactly "OPEN NEST READY". Let me make sure ...
+```
+
+Nothing in the local path stripped that or asked the template not to produce it. A parent
+picking the model Open Nest itself recommends for a 16 GB Mac would have got the model's
+internal monologue as Gary's side of the conversation. Measured on both templates:
+
+| `enable_thinking` | Qwen3 4B Instruct | Qwen3 8B |
+|---|---|---|
+| omitted | 87 chars | 87 chars — reasons freely |
+| `False` | 87 chars, **byte-identical** | 106 chars — appends a pre-closed `<think></think>` |
+| `True` | 87 chars, byte-identical | 87 chars |
+
+So the flag is the template's own mechanism, it is safe to pass unconditionally, and
+`_render` now does. `strip_tool_calls` also removes any `<think>` block that survives,
+including an **unclosed** one — a reply cut off by `max_tokens` mid-thought has an opening
+tag and no closing one, which is the case with the most reasoning on screen.
+
+**8B costs about four times the time.** Same Games edit, same 48 GB M4 Pro: 16.5 s on the
+4B, **62.7 s** on the 8B. Worth knowing before recommending it to a 16 GB Mac, where it
+will be slower still.
+
+### 20F. The interface could not be used without a mouse
+
+`ClickableFrame` is every card in the product — seven profile cards, the recent-project
+rows, the starter and idea cards in New Project. A `QFrame` defaults to `NoFocus`, and
+nothing overrode it or handled a key. Measured with `Qt.TabFocusAllControls` forced on,
+so this is not the macOS Full Keyboard Access setting:
+
+```
+Flight Deck tab chain:  QScrollArea -> QPushButton 'Settings'
+```
+
+That is the whole screen. A keyboard user could reach Parent Settings and nothing else —
+not a new project, not an existing one — and the screen's own question, *"What do you
+want to make?"*, had no keyboard answer. Space and Return did nothing on a card, and a
+screen reader met an unnamed frame containing two labels.
+
+Parent Settings, by contrast, was already fine: 20 controls on its busiest page, all
+reachable. The defect was specific to the card, which is the control the product's main
+paths are built from.
+
+After the fix the chain is `QScrollArea -> Settings -> six profile cards -> the recent
+row`, Space and Return both activate, and each card carries its own accessible name. The
+seventh profile card is correctly skipped — Image Creation is disabled with cloud off.
+
+### 20G. The setup wizard's keyboard, and one key that ended setup
+
+- **Return did nothing.** `QPushButton` sets `autoDefault` inside a `QDialog`, so Qt
+  picked a default on its own — and it picked **"Show other options"**, a control on the
+  Local AI step, invisible from every other page. A parent typing a name and pressing
+  Return got no response on eight steps and would have toggled a fold-out on the ninth.
+- **Focus landed on the scroll area**, not the one field the step exists to collect.
+- **Escape ended setup.** A `QDialog` rejects on Escape and rejecting here is what Quit
+  Setup does. `installation.json` is written once, at the end, so the child's name, the
+  Git identity, the verified model, the cloud choice and the GitHub account all live on
+  `state` until then — discarded, with `setup_complete` left false, so the next launch
+  starts again at step 1. No confirmation, one key. Quit Setup is still immediate,
+  because that is a button somebody chose to press.
+
+Driven end to end afterwards: **51 of 51 checks**, all nine steps, modals answered through
+their real buttons, `installation.json` restored and the test PIN removed.
+
+### 20H. Two sentences that contradicted each other
+
+Read off the rendered Local AI step, about a model already on the Mac:
+
+> It is already on this Mac, so nothing will be downloaded. Open Nest has not tested this
+> model itself yet. It should work on this Mac, and **it will be checked after it
+> downloads**.
+
+Nothing was going to download. `untested_note` now takes `installed` and says "it will be
+checked now" instead — the check does still happen either way, so only the clause naming
+a download was wrong.
+
+One thing noticed and **not** changed: on a 48 GB Mac five of the seven rows in the model
+picker read "Recommended for this Mac", because everything fits. The label is accurate and
+does no ranking work at that size; the headline above it is what actually answers the
+question, and on an 8 GB Mac the labels differ. Recorded rather than fixed.
+
+### 20I. Where a game's window opens
+
+The owner, watching the first test drive: *"the preview window for game building must open
+in the workbench too, locked into the window system of Open Nest."*
+
+It cannot literally be inside the panel, and the reason is the security model. A game runs
+out of process because `process_sandbox` is the product's outer boundary, and **macOS has
+no API for adopting another process's window into a Qt view** — X11 has `QWindow::fromWinId`
+and Windows has `SetParent`; Cocoa has neither. Running Pygame in-process would make it
+embeddable and would hand generated code the application's own memory.
+
+Three routes were measured:
+
+| | measured | verdict |
+|---|---|---|
+| **Tell the child where to open** | `SDL_VIDEO_WINDOW_POS=412,337` produced a window at exactly `(412, 337)` on cocoa; wired to the Build / Preview panel it produced `459,299` for a panel at `447,265`, and followed the window when it moved | **built, then withdrawn** |
+| **Leave SDL to it** | a 640x480 window landed at `544,318` on a 1728x1117 screen — dead centre — and **identically with and without `SDL_VIDEO_CENTERED=1`** | kept |
+| **Draw the frames ourselves** | `SDL_VIDEODRIVER=dummy` with a hook on `pygame.display.flip` captured 180 frames at **0.06 ms/frame**, 192 KB per 320x200 frame, headroom far past 60 fps | **Phase 13** |
+
+The positioning work was built, measured working, and then removed, which is the useful
+part of this entry.
+
+**It was solving a problem that did not exist.** The window was never appearing in a
+random place — SDL centres it on macOS by default, so the flag changed nothing. What
+positioning actually bought was the *appearance* of docking, and Open Nest can place
+another process's window but cannot **clip** it: a game larger than the 543x656 panel
+overflows the application, it can be dragged away, and Mission Control treats it as its
+own window regardless. Half-docked sets an expectation the implementation cannot keep,
+which is the small lie this project declines to tell elsewhere — the indeterminate
+progress bar in the wizard is the same judgement.
+
+So the game stays a normal centred window, and **Phase 13's frame streaming is the only
+honest "in the workbench"**. What did survive is the defect underneath the complaint:
+closing a project left a running game on screen with nothing owning it. Stop lived on
+the Workbench, so once the project closed the only way to be rid of the game was to quit
+the game itself. `Workbench.release` now stops it, with a test.
+
+### 20J. A chart palette, computed rather than chosen
+
+The owner asked for seaborn and for a default palette in the Open Nest colours — "the
+beige, black, white orange… however make sure to follow best design standards".
+
+**The brand's entire non-neutral vocabulary is four colours, and two of them are
+reserved.** `theme.LIGHT` has one accent (amber `#B96A16`) plus `ok` green, `attention`
+rust and `info` slate — and green/rust are *status* colours, which a categorical series
+may never borrow, or "series 4" and "something is wrong" become the same signal. So the
+brand supplies the register (warm, earthy, restrained) and the first slot; the rest had
+to be derived and then checked.
+
+Checked, not eyeballed. Every candidate went through the validator against the real
+surface `#F2EFE8`:
+
+| attempt | what failed |
+|---|---|
+| muted, brand-faithful hues | **chroma floor** — three of six read as gray; and terracotta↔plum at normal-vision ΔE 10.6, under the 15 floor |
+| chroma raised | teal↔plum **CVD ΔE 4.1** — indistinguishable to a deuteranope |
+| re-ordered | teal chroma 0.095, still a hair under 0.1 |
+| teal to `#008D7C` | passes every gate |
+
+The shipped set, in this order:
+
+| slot | light | dark |
+|---|---|---|
+| 1 amber (the brand accent) | `#B96A16` | `#C6813A` |
+| 2 blue | `#1F6FB2` | `#4E90CE` |
+| 3 magenta | `#A83A72` | `#C85B90` |
+| 4 green | `#4F8A33` | `#6FA349` |
+| 5 violet | `#6A5BC7` | `#8B80DC` |
+| 6 teal | `#008D7C` | `#2AA491` |
+
+Light: worst adjacent CVD ΔE 10.6, worst adjacent normal-vision 22.4, all six ≥ 3:1 on
+the beige surface. Dark on `#272420`: worst adjacent CVD 10.5, normal-vision 19.6, all
+six in the L 0.48–0.67 band. The first three also clear the stricter **all-pairs** gate
+(CVD 11.8, normal 18.0), which is the cap for scatter and small multiples.
+**The ordering is the accessibility mechanism, not a preference** — a test pins it,
+because re-ordering silently undoes the result and nothing about the render looks wrong.
+
+Sequential is one hue light→dark (`#F7E7D2 … #8E4F0E`, monotonic in OKLCH L). Diverging
+is amber↔slate across a warm neutral (`#9C5510, #D2A05C, #E9E4DA, #79A3C2, #2570B2`);
+its lightness correctly rises to the midpoint and falls, with the poles balanced to
+ΔL 0.009. A first pass flagged the diverging ramp as "not monotonic" — the check was
+wrong, not the ramp.
+
+**How it is delivered matters more than the values.** matplotlib reads a `matplotlibrc`
+from the working directory, and `run_project` runs a project from its own directory —
+so shipping the file *in the research starter kit* styles every chart with no import,
+no setup call, and nothing for the model to remember. Measured: the rc is picked up and
+the cycle, font and surface all take effect.
+
+**And the trap that came with it.** The first draft of the prompt told Gary to open
+every chart with `sns.set_theme(style="whitegrid")`. Measured, that call **replaces the
+whole rc**: the cycle reverts to seaborn's blue-and-orange and the background to white.
+The prompt now names the trap instead — *"Never call sns.set_theme()"* — and a test
+asserts that sentence is still there. Rendered and looked at afterwards, per the skill's
+last step, because a validator checks colour and not layout.
+
+### What Phase 12 did not reach
+
+- **Still a 48 GB M4 Pro.** Every number here, as everywhere else in this file.
+- **Ollama and LM Studio remain unseen.** The search on this Mac found the two Qwen models
+  and correctly declined a `faster-whisper` model in the Hugging Face cache with a reason.
+  Neither Ollama nor LM Studio is installed, so the copy that declines *them* is still
+  exercised only against mocked payloads.
+- **Qwen3 14B and Coder 30B have still never been run**, and 14B is called a thinking
+  model on the strength of its name and the 8B's behaviour rather than a measurement.
+- **No pristine macOS user account**, unchanged from Phase 8.

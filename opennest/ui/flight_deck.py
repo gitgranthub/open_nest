@@ -85,10 +85,42 @@ class ProfileCard(ClickableFrame):
         layout.addWidget(name)
         layout.addWidget(tagline)
 
+        # A card is a frame holding two labels, so without this a screen reader meets an
+        # unnamed container and reads its children. Guide section 46 asks for one clear
+        # name per thing; the profile name is what the child is choosing between.
+        self.setAccessibleName(profile.name)
+        self.setAccessibleDescription(unavailable_reason or profile.tagline)
+
         if unavailable_reason:
             self.setEnabled(False)
             self.setCursor(Qt.CursorShape.ArrowCursor)
             self.setToolTip(unavailable_reason)
+
+
+#: How many projects the Flight Deck shows before offering the rest. Six fits the
+#: screen at the 900x600 minimum without pushing the status footer off it.
+RECENT_SHOWN = 6
+
+
+class MoreProjectsRow(ClickableFrame):
+    """"Show all 9 projects" / "Show fewer". The way past the six most recent.
+
+    A row rather than a link, so it is the same kind of thing as the projects above it
+    -- reachable by Tab, activated by Return, and announced with a name.
+    """
+
+    def __init__(self, hidden: int) -> None:
+        super().__init__("recentRow")
+        self.hidden = hidden
+        text = (f"Show all {hidden + RECENT_SHOWN} projects" if hidden
+                else "Show fewer")
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 6, 12, 6)
+        label = QLabel(text)
+        label.setProperty("role", "cardBody")
+        layout.addWidget(label)
+        layout.addStretch(1)
+        self.setAccessibleName(text)
 
 
 class RecentProjectRow(ClickableFrame):
@@ -105,6 +137,9 @@ class RecentProjectRow(ClickableFrame):
         layout.addWidget(name)
         layout.addStretch(1)
         layout.addWidget(kind)
+
+        self.setAccessibleName(project.name)
+        self.setAccessibleDescription(f"{project.profile.name} project")
 
 
 class FlightDeck(QWidget):
@@ -127,6 +162,9 @@ class FlightDeck(QWidget):
         #: Only ever asked whether a key exists, never for its value.
         self.allow_cloud = allow_cloud
         self.credentials = credentials
+        #: Whether the recent list is expanded past ``RECENT_SHOWN``. Session state,
+        #: deliberately not remembered: the common case is a short list.
+        self._show_all = False
         self._build()
 
     def _build(self) -> None:
@@ -255,13 +293,20 @@ class FlightDeck(QWidget):
             self._profile_area.addWidget(card)
 
     def refresh(self) -> None:
-        """Reload the recent-project list from disk."""
+        """Reload the recent-project list from disk.
+
+        Shows the six most recent and offers the rest, rather than showing six and
+        pretending that is all of them. Until Phase 12 this was ``list_projects()[:6]``
+        with nothing after it, so a seventh project was **unreachable from the
+        interface** -- still on disk, still in the manifest, and impossible to open
+        without going through Finder. A child who makes seven games loses the first one.
+        """
         while self._recent_area.count():
             item = self._recent_area.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
 
-        projects = list_projects()[:6]
+        projects = list_projects()
         if not projects:
             # brand_design_guide.md section 14's "No Projects", in its own words. The
             # profile cards are directly above, so "start with an idea" points at them
@@ -270,10 +315,30 @@ class FlightDeck(QWidget):
             empty.setProperty("role", "cardBody")
             self._recent_area.addWidget(empty)
             return
-        for project in projects:
+
+        shown = projects if self._show_all else projects[:RECENT_SHOWN]
+        for project in shown:
             row = RecentProjectRow(project)
             row.clicked.connect(lambda p=project: self.project_opened.emit(p))
             self._recent_area.addWidget(row)
+
+        hidden = len(projects) - len(shown)
+        if hidden > 0:
+            more = MoreProjectsRow(hidden)
+            more.clicked.connect(self._show_the_rest)
+            self._recent_area.addWidget(more)
+        elif self._show_all and len(projects) > RECENT_SHOWN:
+            fewer = MoreProjectsRow(0)
+            fewer.clicked.connect(self._show_fewer)
+            self._recent_area.addWidget(fewer)
+
+    def _show_the_rest(self) -> None:
+        self._show_all = True
+        self.refresh()
+
+    def _show_fewer(self) -> None:
+        self._show_all = False
+        self.refresh()
 
     def set_model_status(self, state: str, text: str) -> None:
         self._status = self._replace_status(self._status, "Local AI", state, text)

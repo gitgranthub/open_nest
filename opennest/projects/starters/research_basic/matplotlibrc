@@ -1,0 +1,100 @@
+# Open Nest house chart style.
+#
+# matplotlib reads a `matplotlibrc` from the working directory, and a project runs from
+# its own directory -- so every chart this project draws picks this up with no import,
+# no setup call and nothing for anyone to remember. That matters: a style that depends
+# on the model writing one right line is a style that is sometimes missing.
+#
+# This file is yours. Change a colour, a font, a size -- or ask Gary to.
+#
+# Do NOT call seaborn's sns.set_theme(). It replaces every setting below with seaborn's
+# own defaults: the colours go back to blue/orange and the background to white. Use
+# seaborn's plotting functions directly and they will draw in these colours.
+
+# -- colours ------------------------------------------------------------------
+#
+# Six series colours, in this order. The order is the accessibility mechanism, not a
+# preference: adjacent pairs were checked for deuteranopia, protanopia and tritanopia
+# separation as well as ordinary-vision difference, and this ordering is one that
+# passes. Re-order them and that stops being true.
+#
+#   1 amber    the Open Nest accent
+#   2 blue
+#   3 magenta
+#   4 green
+#   5 violet
+#   6 teal
+#
+# Past six series, colour stops doing the work. Group the rest as "Other", or draw
+# several small charts instead of one crowded one.
+axes.prop_cycle: cycler("color", ["B96A16", "1F6FB2", "A83A72", "4F8A33", "6A5BC7", "008D7C"])
+
+# Warm paper rather than white: the same surface the rest of Open Nest uses, so a chart
+# sits in the window instead of glaring out of it. All six series colours were checked
+# for at least 3:1 contrast against this exact background.
+figure.facecolor:  F2EFE8
+axes.facecolor:    F2EFE8
+savefig.facecolor: F2EFE8
+
+# -- type ---------------------------------------------------------------------
+#
+# A fallback chain ending in DejaVu Sans, which ships inside matplotlib. Naming a font
+# that is not installed makes matplotlib warn on every single run, and a chart that
+# prints a warning before it draws is not a calm chart.
+font.family:     sans-serif
+font.sans-serif: Helvetica Neue, Helvetica, Arial, DejaVu Sans
+font.size:       11
+
+# The title says what the chart shows, so it gets the weight and sits over the plot's
+# left edge where reading starts -- not centred over the whole figure.
+axes.titlesize:     14
+axes.titleweight:   medium
+axes.titlelocation: left
+axes.titlepad:      12
+axes.labelsize:     11
+axes.labelcolor:    6C6559
+xtick.labelsize:    10
+ytick.labelsize:    10
+text.color:         2B2825
+xtick.color:        6C6559
+ytick.color:        6C6559
+legend.fontsize:    10
+
+# -- the frame ----------------------------------------------------------------
+#
+# Recessive. The data is the thing on the page; the grid is there to be measured
+# against and then ignored. Top and right spines carry no information, so they go.
+axes.spines.top:    False
+axes.spines.right:  False
+axes.edgecolor:     C8C1B2
+axes.linewidth:     0.8
+axes.grid:          True
+axes.grid.axis:     y
+axes.axisbelow:     True
+grid.color:         C8C1B2
+grid.linewidth:     0.6
+grid.alpha:         0.9
+xtick.direction:    out
+ytick.direction:    out
+xtick.major.size:   0
+ytick.major.size:   0
+
+legend.frameon:     False
+legend.loc:         best
+
+# -- marks --------------------------------------------------------------------
+lines.linewidth:      2.0
+lines.markersize:     7
+lines.solid_capstyle: round
+patch.linewidth:      0
+scatter.marker:       o
+
+# -- output -------------------------------------------------------------------
+#
+# 150 dpi so the PNG is sharp on a Retina screen and still fine dropped into a
+# document. tight keeps a long axis label from being cut off.
+figure.figsize:      7.0, 4.3
+figure.dpi:          110
+savefig.dpi:         150
+savefig.bbox:        tight
+savefig.pad_inches:  0.25

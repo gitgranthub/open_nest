@@ -31,6 +31,10 @@ from opennest.ai.provider import (
 #: Qwen-family chat templates wrap calls in these tags.
 _TOOL_CALL_BLOCK = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL)
 _FENCED_JSON = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+#: A reasoning model's internal monologue. Also matches an unclosed block, because a
+#: reply cut off by ``max_tokens`` mid-thought has an opening tag and no closing one --
+#: and that is the case where the most reasoning is on screen.
+_THINK_BLOCK = re.compile(r"<think>.*?(?:</think>|$)", re.DOTALL)
 
 
 def resolve_local_model(model_id: str, revision: str | None = None) -> Path:
@@ -151,10 +155,33 @@ class MLXProvider(ModelProvider):
         return self._reply
 
     def _render(self, messages: Sequence[Message], tools: Sequence[dict] | None) -> str:
+        """Build the prompt, with reasoning switched off where the template offers it.
+
+        ``enable_thinking=False`` is Qwen3's own template mechanism, and Phase 12
+        measured what it does to each of the two shapes in the catalogue:
+
+        - **Qwen3 8B / 14B** (the hybrid thinking models) gain a pre-closed
+          ``<think>\\n\\n</think>`` in the generation prompt, so the model answers
+          instead of reasoning out loud. Without it, the reply a child reads as Gary
+          begins *"Okay, the user wants me to respond with exactly..."*.
+        - **Qwen3 4B Instruct** ignores the flag completely -- the rendered prompt is
+          byte-identical with it, without it, and with it set True.
+
+        So it is safe to pass unconditionally, and the fallback below covers a template
+        that refuses an unexpected argument rather than ignoring it.
+        """
         payload = [m.as_dict() for m in messages]
         kwargs: dict[str, Any] = {"add_generation_prompt": True, "tokenize": False}
         if tools:
             kwargs["tools"] = list(tools)
+        try:
+            return self._tokenizer.apply_chat_template(
+                payload, enable_thinking=False, **kwargs
+            )
+        except TypeError:
+            pass
+        except Exception as exc:
+            raise ProviderError(f"The conversation could not be prepared: {exc}") from exc
         try:
             return self._tokenizer.apply_chat_template(payload, **kwargs)
         except Exception as exc:
@@ -188,5 +215,15 @@ def parse_tool_calls(text: str) -> tuple[ToolCall, ...]:
 
 
 def strip_tool_calls(text: str) -> str:
-    """The prose part of a reply, with call blocks removed."""
-    return _FENCED_JSON.sub("", _TOOL_CALL_BLOCK.sub("", text))
+    """The prose part of a reply: no call blocks, and no reasoning monologue.
+
+    The ``<think>`` half is belt and braces behind ``_render``'s
+    ``enable_thinking=False``. It is worth having because the prompt flag is a request
+    to a chat template and this is a fact about the string: a model that reasons anyway,
+    a future catalogue entry whose template spells the flag differently, or the
+    pre-closed ``<think></think>`` the flag itself inserts would each otherwise reach
+    the child as Gary's words.
+    """
+    return _FENCED_JSON.sub(
+        "", _TOOL_CALL_BLOCK.sub("", _THINK_BLOCK.sub("", text))
+    )

@@ -1,9 +1,24 @@
 # Open Nest application dependencies.
 #
-# Floors only for now. Phase 1 replaces these with exact pins once the versions have
-# actually been exercised on Apple silicon (WORKORDER_01 section 35A: avoid installing
-# the newest package versions on every launch).
+# Pinned, at Phase 12, to the versions the application has actually been driven on.
+#
+# The floors these replace were written at Phase 0 with a note saying Phase 1 would pin
+# them "once the versions have actually been exercised on Apple silicon". That did not
+# happen, and section 35A's "avoid installing the newest package versions on every
+# launch" stayed unmet for eleven phases.
+#
+# What it cost: PySide6 holds a receiver QObject weakly in a signal connection, and
+# ``ui/worker.py`` relied on the opposite. Phase 12 found every background worker in the
+# application being silently dropped on 6.11.2 -- the setup wizard stuck forever on
+# "Checking this Mac...", the model never loading, a child's message to Gary never
+# running -- with 980 tests passing throughout. An unpinned range means the GUI toolkit
+# can change under the product between one `pip install` and the next, which is exactly
+# the reproducibility this project already insists on for model weights, where every
+# entry in models.json carries a commit SHA.
+#
+# Bumping one of these is a deliberate edit, and the thing to run afterwards is
+# spikes/phase12/ -- the suite cannot see this class of change.
 
-PySide6>=6.7,<7
-keyring>=25,<26
-requests>=2.32,<3
+PySide6==6.11.2
+keyring==25.7.0
+requests==2.34.2

@@ -196,6 +196,7 @@ QFrame#profileCard[pressed="true"], QFrame#recentRow[pressed="true"] {{
     border-color: {p.text_muted};
 }}
 
+
 /* The card a child has actually picked, in the one place a card is a choice rather
    than a doorway: how a new project starts (opennest/ui/new_project.py). Border and
    weight only -- section 25 keeps the accent for activity and approval, and a selected
@@ -208,6 +209,27 @@ QFrame#profileCard[state="chosen"] {{
 QFrame#profileCard[state="unchosen"] {{
     border: 1px solid {p.border};
 }}
+
+/* Where the keyboard is. A card became focusable in Phase 12 -- before that the Flight
+   Deck's whole tab chain was the scroll area and the Settings button -- and a control
+   the keyboard can reach has to show that it has been reached. The accent is already
+   what this stylesheet uses for focus on a text field further down, so this is the same
+   signal rather than a second vocabulary.
+
+   LAST on purpose. Qt resolves equal-specificity rules by source order, so placing
+   these above ``[state="chosen"]``/``[state="unchosen"]`` let an unchosen starter card
+   overwrite its own focus ring with a 1 px border -- the ring vanished on exactly the
+   cards a keyboard user is moving between. */
+QFrame#profileCard[focused="true"], QFrame#recentRow[focused="true"] {{
+    border: 2px solid {p.accent};
+    background-color: {p.surface_alt};
+}}
+
+/* No ``[focused="false"]`` rule, unlike ``chosen``/``unchosen``. There the property is
+   the only thing that styles the card, so both values need a rule. Here the base
+   ``QFrame#profileCard`` and the chosen/unchosen rules already describe an unfocused
+   card completely, and a rule for "false" could only undo the 2 px border of a card
+   that is chosen but not focused. */
 
 QSplitter::handle {{
     background-color: {p.border};

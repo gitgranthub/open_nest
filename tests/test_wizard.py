@@ -24,57 +24,6 @@ from opennest.models.machine import MachineProfile  # noqa: E402
 from opennest.security import keychain, permissions  # noqa: E402
 from opennest.setup import checks, downloader  # noqa: E402
 from opennest.setup.state import InstallationState  # noqa: E402
-from tests.conftest import FakeKeyring  # noqa: E402
-
-
-@pytest.fixture(scope="session")
-def qt_app():
-    pytest.importorskip("PySide6.QtWidgets")
-    from PySide6.QtWidgets import QApplication
-
-    app = QApplication.instance() or QApplication([])
-    yield app
-
-
-@pytest.fixture
-def wizard(qt_app, tmp_path, monkeypatch):
-    """A wizard wired to throwaway state, a fake Keychain and no real model.
-
-    ``complain`` and ``confirm`` are replaced with recorders. Both open a modal
-    ``QMessageBox``, and a modal dialog blocks forever under the offscreen platform
-    too -- there is no one to press the button. They are the wizard's own seams for
-    asking a person something, so stubbing them is the honest place to cut.
-    """
-    from opennest.setup import wizard as wizard_module
-
-    # Nothing in the suite may touch the real Keychain or the real model cache.
-    monkeypatch.setattr(downloader, "is_installed", lambda entry: False)
-
-    complaints: list = []
-    questions: list = []
-    answer = {"value": False}
-
-    monkeypatch.setattr(
-        wizard_module.SetupWizard, "complain",
-        lambda self, message: complaints.append(message),
-    )
-    monkeypatch.setattr(
-        wizard_module.SetupWizard, "confirm",
-        lambda self, question, detail: (questions.append(question), answer["value"])[1],
-    )
-
-    state = InstallationState(path=tmp_path / "installation.json")
-    controls = permissions.ParentControls(path=tmp_path / "settings.json")
-    built = wizard_module.SetupWizard(
-        state=state,
-        controls=controls,
-        credentials=keychain.Credentials(backend=FakeKeyring()),
-    )
-    built.complaints = complaints
-    built.questions = questions
-    built.answer_confirmations = lambda value: answer.__setitem__("value", value)
-    yield built
-    built.deleteLater()
 
 
 def _step(wizard, cls_name):
@@ -231,14 +180,17 @@ def test_a_model_is_only_ready_after_it_actually_answers(wizard) -> None:
     step.enter()
     entry = router.get_entry(router.default_model_id())
 
-    step._verified(entry, downloader.VerificationResult(
+    # The entry is carried on the step rather than captured in the signal's lambda: a
+    # lambda has no receiver QObject, so PySide6 delivers it on the worker thread.
+    step._pending = entry
+    step._verified(downloader.VerificationResult(
         engine_loaded=True, model_loaded=True, inference_completed=False,
         message="loaded but answered with nothing",
     ))
     assert wizard.state.preferred_model == ""
     assert wizard.state.installed_models == []
 
-    step._verified(entry, downloader.VerificationResult(
+    step._verified(downloader.VerificationResult(
         engine_loaded=True, model_loaded=True, inference_completed=True, reply="OK",
     ))
     assert wizard.state.preferred_model == entry.info.id
@@ -252,7 +204,8 @@ def test_a_finished_download_that_fails_verification_is_not_recorded(wizard) -> 
     step = _step(wizard, "LocalAIStep")
     step.enter()
     entry = router.get_entry(router.default_model_id())
-    step._downloaded(entry, downloader.DownloadResult(False, "failed", "no network"))
+    step._pending = entry
+    step._downloaded(downloader.DownloadResult(False, "failed", "no network"))
     assert wizard.state.preferred_model == ""
     assert "no network" in step._status.text()
 
