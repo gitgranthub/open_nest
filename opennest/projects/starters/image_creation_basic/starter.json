@@ -1,0 +1,11 @@
+{
+  "id": "image_creation_basic",
+  "profile": "image_creation",
+  "name": "Picture Notes",
+  "description": "A place to keep the descriptions that made each picture.",
+  "entry_point": "prompts.md",
+  "version": 1,
+  "files": [
+    "prompts.md"
+  ]
+}

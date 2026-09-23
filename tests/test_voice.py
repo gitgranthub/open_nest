@@ -216,7 +216,7 @@ def user_visible_strings():
     A curated list would have to be maintained, and the failure mode of forgetting to
     add a new screen is silence.
 
-    ``projects/templates/`` is included -- a child reads that code. ``prompts/`` is
+    ``projects/starters/`` is included -- a child reads that code. ``prompts/`` is
     checked separately by :func:`test_the_prompt_files_keep_the_register` because those
     are text files, not Python.
     """
@@ -362,3 +362,69 @@ def test_the_base_prompt_is_gary_and_still_asks_for_what_it_asked_for() -> None:
     assert "Never claim to have done something" in text     # the honesty rule
     assert "no network" in text                             # the tool boundary
     assert "Never put an API key" in text                   # section 22's rule
+
+
+# ------------------------------------------------------- About Gary (the optional aside)
+
+def test_gary_wrote_his_own_bio() -> None:
+    """The last line is the joke, and it reads like a stray sentence without this.
+
+    The bio is written throughout in the third person and then signs itself, which is
+    the whole gag -- self-absorbed and sweet rather than lore. Somebody tidying the copy
+    would reasonably delete a four-word paragraph or rewrite the piece into the first
+    person, and either would remove the point. Approved verbatim by the developer.
+    """
+    from opennest.ui import about_gary
+
+    assert about_gary.BIO.rstrip().endswith("Gary wrote this bio.")
+    assert about_gary.SHORT_BIO.rstrip().endswith("Gary wrote this bio.")
+    # Third person throughout, or the signature is not a joke.
+    assert " I " not in about_gary.BIO
+    assert not about_gary.BIO.startswith("I ")
+
+
+def test_the_bio_uses_the_assistant_name_the_rest_of_the_app_uses() -> None:
+    """Written as a plain literal rather than interpolated, so the sweep sees it whole.
+
+    ``user_visible_strings`` walks ``ast.Constant`` nodes, and an f-string is split into
+    fragments at every substitution -- which would let a banned phrase straddle a join
+    unnoticed. The cost of spelling the name out is that a rename could leave this
+    stale, so this is the test that catches it instead.
+    """
+    from opennest.ui import about_gary
+
+    assert ASSISTANT_NAME in about_gary.BIO
+    assert ASSISTANT_NAME in about_gary.SHORT_BIO
+    assert ASSISTANT_NAME in about_gary.TITLE
+
+
+def test_the_bio_stays_dry() -> None:
+    """Sections 1, 18 and 21: no performed personality, no manufactured enthusiasm.
+
+    The banned-register sweep already covers the vocabulary. This covers the register
+    an eccentric bio is most likely to drift into -- exclamation, shouting, and the
+    emoji the developer ruled out explicitly.
+    """
+    from opennest.ui import about_gary
+
+    for text in (about_gary.BIO, about_gary.SHORT_BIO):
+        assert "!" not in text, "the humour is in the deadpan, not in punctuation"
+        assert text == text.replace("...", "…") or "..." not in text
+        assert all(ord(ch) < 0x2100 or ch in "—…’‘“”" for ch in text), (
+            "no emoji or pictographs in the bio"
+        )
+
+
+def test_the_bio_never_borrows_the_brand_artwork() -> None:
+    """Section 47, stated directly rather than relying on the global regex.
+
+    The general sweep catches "my eagle"; this catches any mention at all. The symbols
+    belong to Open Nest, and a bio is exactly where somebody would be tempted to give
+    Gary one as a pet.
+    """
+    from opennest.ui import about_gary
+
+    for text in (about_gary.BIO, about_gary.SHORT_BIO):
+        lowered = text.lower()
+        for symbol in ("eagle", "sunglasses", "nest graphic", "logo", "mascot"):
+            assert symbol not in lowered, f"the bio mentions the {symbol}"

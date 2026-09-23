@@ -1,4 +1,4 @@
-"""Naming a new project, and picking an idea to start from.
+"""Naming a new project, choosing what it starts from, and picking an idea.
 
 WORKORDER_01 section 27: every profile offers idea cards. Section 5 calls the same list
 "suggested starter prompts", and that second name is the useful one -- an idea card is
@@ -8,6 +8,13 @@ a child who picked "Maze" almost always wants to add a word or two before it run
 
 Blank deliberately has no ideas: section 27 lists none for it, and the whole point of
 "Start with an idea" is that the idea is theirs. The card area simply does not appear.
+
+Phase 11 added the row above the ideas: what the project begins *with*. A profile's
+starter kits are offered beside "Start Empty", and empty is always available -- section
+61 of the Phase 11 work order asks for it and section 8 asks that the words stay the
+child's ("Start Empty", "Use Starter") rather than a developer's ("scaffold",
+"bootstrap", "initialize template"). Blank offers no kit at all, so the row does not
+appear there either.
 """
 
 from __future__ import annotations
@@ -22,8 +29,14 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from opennest.projects import starters
 from opennest.projects.profiles import Profile
 from opennest.ui.common import ClickableFrame, section_label
+
+#: What the "no starter" choice carries. Named rather than written as a bare ``None`` at
+#: each site, because ``None`` here means the child chose emptiness -- which is not the
+#: same as ``manager.PROFILE_DEFAULT``, the caller having chosen nothing.
+START_EMPTY = None
 
 
 @dataclass(frozen=True)
@@ -32,6 +45,9 @@ class NewProject:
 
     name: str
     starter_idea: str | None = None
+    #: The kit to begin from, or ``None`` for empty. Never ``PROFILE_DEFAULT``: by the
+    #: time the dialog closes the choice has actually been made.
+    starter_id: str | None = None
 
 
 class IdeaCard(ClickableFrame):
@@ -48,6 +64,36 @@ class IdeaCard(ClickableFrame):
         layout.addWidget(title)
 
 
+class StarterCard(ClickableFrame):
+    """One way to begin: a kit, or nothing at all."""
+
+    def __init__(self, starter_id: str | None, title: str, detail: str) -> None:
+        super().__init__("profileCard")
+        self.starter_id = starter_id
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(0)
+        name = QLabel(title)
+        name.setProperty("role", "cardTitle")
+        body = QLabel(detail)
+        body.setProperty("role", "cardBody")
+        body.setWordWrap(True)
+        layout.addWidget(name)
+        layout.addWidget(body)
+
+    def set_chosen(self, chosen: bool) -> None:
+        # Both states are written as literals with a rule each in theme.py, rather than
+        # setting and clearing one: an unstyled property value renders in the system
+        # appearance and Qt does not warn, which is what
+        # ``test_every_property_a_widget_sets_is_actually_styled`` exists to catch.
+        if chosen:
+            self.setProperty("state", "chosen")
+        else:
+            self.setProperty("state", "unchosen")
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+
 class NewProjectDialog(QDialog):
     """Name it, and optionally start from one of the profile's ideas."""
 
@@ -55,6 +101,9 @@ class NewProjectDialog(QDialog):
         super().__init__(parent)
         self.profile = profile
         self.chosen_idea: str | None = None
+        #: The kit this project will begin from, or ``START_EMPTY``. Seeded from the
+        #: profile's own default so the common path is one click on OK.
+        self.chosen_starter: str | None = START_EMPTY
         self.setWindowTitle("New Project")
 
         layout = QVBoxLayout(self)
@@ -69,6 +118,25 @@ class NewProjectDialog(QDialog):
         self._name.setPlaceholderText("My project")
         self._name.textChanged.connect(self._name_changed)
         layout.addWidget(self._name)
+
+        self._starter_cards: list[StarterCard] = []
+        offered = starters.starters_for(profile)
+        if offered:
+            layout.addSpacing(10)
+            layout.addWidget(section_label("How it starts"))
+            default = starters.default_starter(profile)
+            self.chosen_starter = default.id if default else START_EMPTY
+            for starter in offered:
+                self._add_starter_card(layout, starter.id, starter.name,
+                                       starter.description)
+            self._add_starter_card(
+                layout, START_EMPTY, "Start Empty",
+                "No files. Say what you want and it gets written from nothing.",
+            )
+            self._show_choice()
+        else:
+            # Blank offers no kit, so there is nothing to choose between and no row.
+            self.chosen_starter = START_EMPTY
 
         if profile.starter_ideas:
             layout.addSpacing(10)
@@ -92,6 +160,20 @@ class NewProjectDialog(QDialog):
         layout.addWidget(self._buttons)
         self._name_changed()
 
+    def _add_starter_card(self, layout, starter_id, title: str, detail: str) -> None:
+        card = StarterCard(starter_id, title, detail)
+        card.clicked.connect(lambda chosen=starter_id: self._pick_starter(chosen))
+        layout.addWidget(card)
+        self._starter_cards.append(card)
+
+    def _pick_starter(self, starter_id: str | None) -> None:
+        self.chosen_starter = starter_id
+        self._show_choice()
+
+    def _show_choice(self) -> None:
+        for card in self._starter_cards:
+            card.set_chosen(card.starter_id == self.chosen_starter)
+
     def _name_changed(self) -> None:
         ok = self._buttons.button(QDialogButtonBox.StandardButton.Ok)
         ok.setEnabled(bool(self._name.text().strip()))
@@ -108,7 +190,11 @@ class NewProjectDialog(QDialog):
         name = self._name.text().strip()
         if not name:
             return None
-        return NewProject(name=name, starter_idea=self.chosen_idea)
+        return NewProject(
+            name=name,
+            starter_idea=self.chosen_idea,
+            starter_id=self.chosen_starter,
+        )
 
 
 def ask(parent, profile: Profile) -> NewProject | None:

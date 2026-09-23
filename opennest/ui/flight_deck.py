@@ -1,8 +1,18 @@
 """Flight Deck -- the Open Nest home screen.
 
 DESIGN_DOC.md section 10. Simple and spacious: what do you want to make, what have you
-made before, and is the AI ready. "Flight Deck" is a quiet internal name, not a theme --
-there are no aviation graphics here.
+made before, and is the AI ready. "Flight Deck" is a quiet internal name, not a theme.
+
+Brand guide section 56 makes this "the strongest everyday expression of the brand", so
+the identity here is the pixel wordmark with the nest beneath it rather than the letters
+`OPEN NEST` set in the interface font. Section 30 lists the Flight Deck identity area as
+one of the places the wordmark belongs, and is equally clear that ordinary text should
+still say "Open Nest" everywhere else -- window titles, settings, accessible names. The
+descriptor, the greeting and the question stay as text; only the identity becomes art.
+
+The eagle appears here for one thing: the local model warming up at launch. That is a
+real wait of seconds on a 4B model, and it is section 36's first listed case. It is
+stationary, paired with a status line, and gone the moment the model answers.
 """
 
 from __future__ import annotations
@@ -22,10 +32,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from opennest import APP_NAME
 from opennest.ai import images
 from opennest.projects.manager import Project, list_projects
 from opennest.projects.profiles import Profile, load_profiles
+from opennest.ui import brand, theme
 from opennest.ui.common import (
     ClickableFrame,
     horizontal_rule,
@@ -131,15 +141,33 @@ class FlightDeck(QWidget):
         layout.setContentsMargins(36, 30, 36, 28)
         layout.setSpacing(4)
 
-        wordmark = QLabel(APP_NAME.upper())
-        wordmark.setProperty("role", "wordmark")
+        dark = theme.is_dark()
+        # Guide section 56's hierarchy: the wordmark, the nest under it, then the
+        # descriptor. The nest is marked decorative so a screen reader says "Open Nest"
+        # once rather than twice for one identity (section 46).
+        wordmark = brand.placed("flight_deck_wordmark", dark=dark)
+        nest = brand.placed("flight_deck_nest", dark=dark, decorative=True)
         deck = QLabel("FLIGHT DECK")
         deck.setProperty("role", "descriptor")
+
+        # Nest *beside* the wordmark rather than beneath it. Guide section 48 allows
+        # either ("with optional nest beneath or adjacent depending on layout") and the
+        # measurement decides: stacked, the identity block ran about 200 px and pushed
+        # "What do you want to make?" 38% down the window at the 900x600 minimum, with
+        # the status footer off screen entirely. Adjacent it is about 80 px. The
+        # identity stays unmistakable; what it stops doing is outranking the thing the
+        # child came here to do.
+        lockup = QHBoxLayout()
+        lockup.setSpacing(14)
+        lockup.addWidget(wordmark, 0, Qt.AlignmentFlag.AlignVCenter)
+        lockup.addWidget(nest, 0, Qt.AlignmentFlag.AlignVCenter)
+        lockup.addStretch(1)
 
         masthead = QHBoxLayout()
         titles = QVBoxLayout()
         titles.setSpacing(0)
-        titles.addWidget(wordmark)
+        titles.addLayout(lockup)
+        titles.addSpacing(6)
         titles.addWidget(deck)
         settings = QPushButton("Settings")
         settings.clicked.connect(self.settings_requested.emit)
@@ -147,7 +175,7 @@ class FlightDeck(QWidget):
         masthead.addStretch(1)
         masthead.addWidget(settings, 0, Qt.AlignmentFlag.AlignTop)
         layout.addLayout(masthead)
-        layout.addSpacing(26)
+        layout.addSpacing(22)
 
         hello = QLabel(greeting(self.user_name))
         hello.setProperty("role", "greeting")
@@ -172,12 +200,39 @@ class FlightDeck(QWidget):
         layout.addStretch(1)
         layout.addWidget(horizontal_rule())
         layout.addSpacing(10)
+
+        # Guide section 37: inline beside the status it belongs to, where space is
+        # constrained. The footer is exactly that -- a 32 pt bird next to two status
+        # lines, rather than a graphic dropped into the middle of the page.
+        footer = QHBoxLayout()
+        footer.setSpacing(12)
+        self._eagle = brand.EagleActivityIndicator(
+            self, size=brand.EAGLE_INLINE, dark=theme.is_dark()
+        )
+        self._eagle.hide()
+        footer.addWidget(self._eagle, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        # Held explicitly, because ``_replace_status`` swaps rows and cannot find them
+        # from the widget: a nested layout adds no widget of its own, so a row's
+        # ``parentWidget()`` is still the page body while the layout that actually holds
+        # it is this one. Asking the body for its layout finds a layout the row is not
+        # in, ``replaceWidget`` then does nothing, and the new row is left unparented
+        # and draws over whatever is behind it.
+        self._status_lines = lines = QVBoxLayout()
+        lines.setSpacing(2)
         self._status = status_row("Local AI", "idle", "Checking")
-        layout.addWidget(self._status)
+        lines.addWidget(self._status)
         # DESIGN_DOC section 14 shows CLOUD as its own status line, and section 34 wants
         # the internet/on-this-Mac distinction visible without opening anything.
         self._cloud_status = status_row("Cloud", "idle", "Off")
-        layout.addWidget(self._cloud_status)
+        lines.addWidget(self._cloud_status)
+        # Backup is a third piece of equipment status, and deliberately the plainest of
+        # the three. A child may see whether their work is safe; the queue depth, the
+        # repository and anything that went wrong belong to a parent, in Settings.
+        self._backup_status = status_row("Backup", "idle", "Not set up")
+        lines.addWidget(self._backup_status)
+        footer.addLayout(lines, 1)
+        layout.addLayout(footer)
 
         scroll.setWidget(body)
         outer.addWidget(scroll)
@@ -222,19 +277,46 @@ class FlightDeck(QWidget):
 
     def set_model_status(self, state: str, text: str) -> None:
         self._status = self._replace_status(self._status, "Local AI", state, text)
+        # Section 36: the eagle means "Open Nest is working", so it is tied to the one
+        # state that is actually work rather than being started and stopped by hand.
+        # Section 53 puts a model load in the "meaningful wait" tier; every other state
+        # here is instantaneous and gets no graphic at all.
+        self.set_working(state == "working")
 
     def set_cloud_status(self, state: str, text: str) -> None:
         self._cloud_status = self._replace_status(
             self._cloud_status, "Cloud", state, text
         )
 
+    def set_backup_status(self, state: str, text: str) -> None:
+        self._backup_status = self._replace_status(
+            self._backup_status, "Backup", state, text
+        )
+
+    def set_working(self, working: bool) -> None:
+        """Show or hide the activity indicator.
+
+        Hidden rather than merely stopped: a still eagle sitting under the status lines
+        would be exactly the decoration section 36 rules out, and
+        ``EagleActivityIndicator`` stops its own timer on hide so nothing ticks.
+        """
+        self._eagle.setVisible(working)
+        if working:
+            self._eagle.start()
+        else:
+            self._eagle.stop()
+
     def _replace_status(self, existing, name: str, state: str, text: str):
-        parent = existing.parentWidget()
-        layout = parent.layout() if parent else None
-        replacement = status_row(name, state, text)
-        if layout is None:
+        """Swap one status line for a fresh one, in the layout that really holds it."""
+        layout = self._status_lines
+        index = layout.indexOf(existing)
+        if index < 0:
             return existing
+        replacement = status_row(name, state, text)
+        # ``replaceWidget`` leaves the old widget parented to the page, where it keeps
+        # painting on top of whatever is behind it until it is actually gone.
         layout.replaceWidget(existing, replacement)
+        existing.setParent(None)
         existing.deleteLater()
         return replacement
 

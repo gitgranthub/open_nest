@@ -8,78 +8,41 @@ problem and lets a person choose.
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 
-from opennest import paths
 from opennest.ai import provider as provider_module
 from opennest.ai.provider import ModelInfo, ModelProvider, ProviderError
+from opennest.models.catalog import ModelEntry, load
+
+#: Re-exported. ``ModelEntry`` moved to :mod:`opennest.models.catalog` in Phase 11B,
+#: when it gained the fields a machine-aware recommendation compares against and stopped
+#: being something the router alone built. Everything that imported it from here still
+#: can -- the router remains the place you ask "which models, and give me a provider for
+#: one", and the catalogue is now the place that answers the first half.
+__all__ = [
+    "ModelEntry", "load_catalogue", "default_model_id", "get_entry", "local_models",
+    "cloud_models", "is_available", "models_that_can_read", "unmet_requirements",
+    "models_for_project", "why_unavailable", "build_provider",
+]
 
 
-@dataclass(frozen=True)
-class ModelEntry:
-    """One row of the curated model list, as configured."""
-
-    info: ModelInfo
-    model_id: str | None
-    revision: str | None = None
-    upstream_model: str | None = None
-    license: str | None = None
-    download_gb: float | None = None
-    recommended: bool = False
-    verified: bool = False
-    #: Passed to a cloud provider's request body untouched. This is how a model declares
-    #: its own request shape -- Sonnet 5's adaptive thinking versus Haiku's
-    #: ``budget_tokens`` -- without a branch in Python (WORKORDER_01 section 3).
-    provider_options: dict | None = None
-
-
-@lru_cache(maxsize=1)
 def load_catalogue(config_path: Path | None = None) -> tuple[ModelEntry, ...]:
-    path = config_path or (paths.config_dir() / "models.json")
-    raw = json.loads(Path(path).read_text(encoding="utf-8"))
-    entries = []
-    for item in raw["models"]:
-        entries.append(
-            ModelEntry(
-                info=ModelInfo(
-                    id=item["id"],
-                    name=item["name"],
-                    provider=item["provider"],
-                    description=item.get("description", ""),
-                    supports_images=bool(item.get("supports_images", False)),
-                    supports_documents=bool(item.get("supports_documents", True)),
-                    supports_tools=bool(item.get("supports_tools", True)),
-                    requires_internet=bool(item.get("requires_internet", False)),
-                    may_cost_money=bool(item.get("may_cost_money", False)),
-                    context_policy=dict(item.get("context_policy", {})),
-                    supports_temperature=bool(item.get("supports_temperature", True)),
-                    supports_thinking_budget=bool(
-                        item.get("supports_thinking_budget", False)
-                    ),
-                    output_headroom_tokens=int(
-                        item.get("output_headroom_tokens", 0) or 0
-                    ),
-                ),
-                model_id=item.get("model_id"),
-                revision=item.get("revision"),
-                upstream_model=item.get("upstream_model"),
-                license=item.get("license"),
-                download_gb=item.get("download_gb"),
-                recommended=bool(item.get("recommended", False)),
-                verified=bool(item.get("verified", False)),
-                provider_options=dict(item.get("provider_options") or {}) or None,
-            )
-        )
-    return tuple(entries)
+    """The merged catalogue: bundled, plus any cached remote revision of it.
+
+    A single function call away from where it used to read ``models.json`` directly,
+    which is the point -- one source of truth, and a remote catalogue that revises a
+    recommendation reaches every caller at once.
+    """
+    return load(config_path).entries
 
 
-@lru_cache(maxsize=1)
 def default_model_id(config_path: Path | None = None) -> str:
-    path = config_path or (paths.config_dir() / "models.json")
-    return json.loads(Path(path).read_text(encoding="utf-8"))["default_local_model"]
+    """What a fresh installation downloads.
+
+    Deliberately not something a remote catalogue may change: it decides what happens on
+    a Mac nobody has looked at yet, and this release was tested with this answer.
+    """
+    return load(config_path).default_local_model
 
 
 def get_entry(model_id: str) -> ModelEntry:

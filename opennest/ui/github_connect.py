@@ -88,6 +88,13 @@ class ConnectGitHubDialog(QDialog):
 
         buttons = QHBoxLayout()
         self._connect = QPushButton("Connect GitHub")
+        # The action this dialog exists for, and the only one here that gets the accent.
+        # Every other action surface marks its primary -- Settings' Done, the wizard's
+        # Continue, the Workbench's Send and Run, the migration dialog's Update -- and
+        # this one did not, so a parent met two identical buttons and had to read both.
+        # "Open GitHub again" stays plain deliberately: it is a recovery action for a
+        # browser that did not appear, not the way through.
+        self._connect.setProperty("role", "primary")
         self._connect.clicked.connect(self._begin)
         self._copy = QPushButton("Copy code")
         self._copy.setVisible(False)

@@ -1,0 +1,175 @@
+/* How the page looks.
+ *
+ * The colours are named once here and used everywhere below, so changing one line
+ * changes the whole site. Try it: change --accent and reload the preview.
+ *
+ * No web fonts and no downloaded stylesheets. This page works with the Wi-Fi off.
+ */
+
+:root {
+  --bg: #fbfaf7;
+  --ink: #1d1d1f;
+  --muted: #5f5f66;
+  --accent: #2f6f4f;
+  --card: #ffffff;
+  --line: #e4e2dc;
+  --radius: 12px;
+}
+
+/* Respects the setting on the computer rather than guessing. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17181a;
+    --ink: #f2f2f0;
+    --muted: #a6a6ad;
+    --accent: #7fd1a4;
+    --card: #212327;
+    --line: #33353a;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  /* The fonts already on the computer. Nothing is downloaded. */
+  font-family: system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+.site-header,
+.site-nav,
+main,
+.site-footer {
+  /* Keeps a line of text a comfortable length however wide the window is. */
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+}
+
+.site-header {
+  padding-top: 3rem;
+  padding-bottom: 1rem;
+}
+
+h1 {
+  font-size: clamp(2rem, 6vw, 3rem);
+  line-height: 1.1;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.tagline {
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+}
+
+.site-nav {
+  display: flex;
+  gap: 1.25rem;
+  padding-top: 0.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.site-nav a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.site-nav a:hover,
+.site-nav a:focus-visible {
+  text-decoration: underline;
+}
+
+main {
+  padding-top: 2rem;
+  padding-bottom: 3rem;
+}
+
+section + section {
+  margin-top: 2.5rem;
+}
+
+h2 {
+  font-size: 1.4rem;
+  margin: 0 0 0.5rem;
+}
+
+code {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.1em 0.35em;
+  font-size: 0.9em;
+}
+
+button {
+  font: inherit;
+  font-weight: 600;
+  color: var(--bg);
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius);
+  padding: 0.65rem 1.1rem;
+  cursor: pointer;
+}
+
+button:hover {
+  filter: brightness(1.08);
+}
+
+/* Never remove the focus ring without putting a visible one back: it is how somebody
+ * using only a keyboard can tell where they are. */
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+  /* One column on a phone, more when there is room. Nothing to configure. */
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+}
+
+.card h3 {
+  margin: 0 0 0.25rem;
+  font-size: 1.05rem;
+}
+
+.card p {
+  margin: 0;
+  color: var(--muted);
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+}
+
+.site-footer {
+  padding-top: 1.5rem;
+  padding-bottom: 3rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.9rem;
+}

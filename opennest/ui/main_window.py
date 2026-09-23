@@ -39,6 +39,15 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle(APP_NAME)
         self.resize(1180, 760)
+        # A normal desktop window: opens at a comfortable size, resizes freely, and goes
+        # full screen like anything else on the Mac. The floor is the part that was
+        # missing -- with no minimum the shell reported 88x88, so the window could be
+        # dragged down to a size where the Workbench header clips and the three panels
+        # collapse into slivers. Measured, that header needs 779 px and the whole
+        # Workbench 811x444; 900x600 clears both with room and is a conventional
+        # minimum. Nothing here caps the maximum, which is what lets macOS offer the
+        # green full-screen button.
+        self.setMinimumSize(900, 600)
 
         #: What the setup wizard recorded: who this is for, and what name goes on a
         #: saved version. Until Phase 8 nothing supplied either, so the greeting was
@@ -69,8 +78,8 @@ class MainWindow(QMainWindow):
             credentials=self.credentials,
             controls=self.controls,
             on_problem=self._backup_problem,
+            on_status=self._backup_status,
         )
-        self._sync.start()
 
         self._stack = QStackedWidget()
         self._deck = FlightDeck(
@@ -84,6 +93,8 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._deck)
         self.setCentralWidget(self._stack)
 
+        # After the deck exists, because the first status arrives synchronously.
+        self._sync.start()
         self._show_cloud_status()
         self._start_model_load()
 
@@ -212,7 +223,13 @@ class MainWindow(QMainWindow):
         if chosen is None:
             return
         try:
-            project = create_project(chosen.name, profile.id, model=default_model_id())
+            # The dialog always decides, so PROFILE_DEFAULT never reaches here: by this
+            # point "empty" is a choice the child made rather than one nobody made.
+            project = create_project(
+                chosen.name, profile.id,
+                model=default_model_id(),
+                starter_id=chosen.starter_id,
+            )
         except ProjectError as exc:
             QMessageBox.warning(self, APP_NAME, str(exc))
             return
@@ -320,6 +337,16 @@ class MainWindow(QMainWindow):
         self._deck.refresh()
         self._stack.setCurrentWidget(self._deck)
 
+    def _backup_status(self, status) -> None:
+        """Follow the backup state on the Flight Deck's status footer.
+
+        Only the child-facing half is shown here. The queue depth, why a push is
+        waiting and anything that failed are the parent's, and live in Settings --
+        section 29A's rule is that a child's normal experience gains no complexity from
+        backup existing, not that they must be unaware their work is safe.
+        """
+        self._deck.set_backup_status(status.state, status.child)
+
     def _backup_problem(self, project_name: str, message: str) -> None:
         """A backup failure a parent has to see -- in practice, a blocked credential.
 
@@ -334,6 +361,12 @@ class MainWindow(QMainWindow):
 
         Memory is written before the final checkpoint so the saved version contains it.
         """
+        # Before anything else, because the web engine has to be let go of in order:
+        # Qt destroys a profile whose page is still alive with "Expect troubles!", and
+        # the trouble is a crash. Closing a parent widget does not call closeEvent on
+        # its children, so the Workbench has to be asked.
+        if self._workbench is not None:
+            self._workbench.release()
         if self._controller is not None:
             self._controller.close()
             self._controller = None

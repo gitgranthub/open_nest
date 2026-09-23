@@ -214,6 +214,76 @@ def is_installed(entry: router.ModelEntry) -> bool:
     return True
 
 
+@dataclass(frozen=True)
+class RemovalResult:
+    ok: bool
+    message: str
+    freed_bytes: int = 0
+
+
+def installed_bytes(entry: router.ModelEntry, store: Path | None = None) -> int:
+    """What this model actually occupies. 0 when it is not installed.
+
+    Asked of huggingface_hub rather than worked out from the directory, because the
+    directory does not say. SPIKES.md section 15C records ``du`` producing two wrong
+    answers in a row here, and Phase 11 confirmed why: the weights are a *shared*
+    content-addressed blob store (``<cache>/blobs`` carries a
+    ``.huggingface-shared-blobs`` marker), so ``models--<repo>/`` reads as a few
+    megabytes while holding a 2.3 GB model.
+    """
+    if not entry.model_id:
+        return 0
+    try:
+        from huggingface_hub import scan_cache_dir
+
+        info = scan_cache_dir(str(store or paths.models_dir()))
+    except Exception:
+        return 0
+    for repo in info.repos:
+        if repo.repo_id == entry.model_id:
+            return int(repo.size_on_disk)
+    return 0
+
+
+def remove(entry: router.ModelEntry, store: Path | None = None) -> RemovalResult:
+    """Delete a downloaded model, and report what that actually freed.
+
+    Section 49. Through huggingface_hub's own cache API rather than by deleting the
+    repository directory: the bytes are in a shared blob store, so removing the folder
+    frees almost nothing and leaves gigabytes nothing will ever read. The library owns
+    that layout and is the only thing entitled to reason about it.
+
+    This removes a *model*. It has nothing to do with project data, and the caller is
+    responsible for making sure a parent was told which of the two they are doing.
+    """
+    if not entry.model_id:
+        return RemovalResult(False, f"{entry.info.name} is not installed.")
+    try:
+        from huggingface_hub import scan_cache_dir
+
+        info = scan_cache_dir(str(store or paths.models_dir()))
+    except Exception as exc:
+        return RemovalResult(False, f"{entry.info.name} could not be removed.\n\n{exc}")
+
+    revisions = [
+        revision.commit_hash
+        for repo in info.repos if repo.repo_id == entry.model_id
+        for revision in repo.revisions
+    ]
+    if not revisions:
+        return RemovalResult(False, f"{entry.info.name} is not on this Mac.")
+
+    strategy = info.delete_revisions(*revisions)
+    freed = int(strategy.expected_freed_size)
+    try:
+        strategy.execute()
+    except Exception as exc:
+        return RemovalResult(False, f"{entry.info.name} could not be removed.\n\n{exc}")
+    return RemovalResult(
+        True, f"{entry.info.name} was removed, freeing about {_gb(freed)}.", freed
+    )
+
+
 def expected_bytes(entry: router.ModelEntry) -> int:
     """The download size, from the catalogue.
 

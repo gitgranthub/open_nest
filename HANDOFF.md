@@ -1,12 +1,20 @@
 # Handoff — start here
 
-You are picking up Open Nest during Phase 10 (design and polish). **Stages 10A and 10B
-are done; 10C and 10D are not started.** This document is what you need before touching
-anything.
+You are picking up Open Nest after **Phase 11 (starter kits and the model registry)**,
+which is done. Phase 10 (design and polish) is done before it. This document is what you
+need before touching anything.
+
+**Phase 12 is the owner's first hands-on use of the running application, and none of it
+has started.** Read [PHASE_11_HANDOFF.md](PHASE_11_HANDOFF.md) before anything else if
+you are picking that up: Phase 11 exists precisely so the starter system and the model
+registry were finished before anybody judged the finished experience.
 
 **The assistant is called Gary**, as of 10B. He is a voice, not a character: no
 illustrated face, and brand guide §47 keeps him separate from the eagle, the nest and the
-sunglasses, which belong to Open Nest. `ASSISTANT_NAME` and `SYSTEM_NAME` are in
+sunglasses, which belong to Open Nest. 10C added a small optional aside — a quiet `ⓘ`
+beside his name opens a popover explaining who he is, and it is never shown unless
+somebody clicks it (`opennest/ui/about_gary.py`). Its last line, *"Gary wrote this bio."*,
+is the joke and has a test; the bio is third person throughout and then signs itself. `ASSISTANT_NAME` and `SYSTEM_NAME` are in
 `opennest/__init__.py`. Installation, security, account, recovery and **transport
 failure** stay attributed to Open Nest — a `ProviderError` is not Gary speaking, and
 `test_a_failed_turn_is_open_nest_not_gary` pins it.
@@ -109,7 +117,9 @@ it belongs in section 4.
 | 7 — Remaining profiles | complete, committed on `phase-7-profiles`. Arduino compile verified against the real toolchain; upload hardware-unverified |
 | 8 — Setup wizard and installation lifecycle | complete, committed on `phase-8-setup`. Installer acceptance pass: 71 checks, 0 failures, four defects found and fixed. A pristine-account run is still open — see §6D |
 | 9 — GitHub backup | complete, committed on `phase-9-github`. D1 resolved as OAuth device flow, **verified against the real GitHub**: real device flow, real private repo, real push, real PR, and a real Disconnect (SPIKES.md §17C-E). UI smoke-tested under cocoa: 21 checks, 21 passed (§17F). Five cosmetic defects recorded for Phase 10 |
-| **10 — Design and polish pass** | **stages 10A and 10B complete**, on `phase-10-design` (10A committed, 10B in the working tree); 10C and 10D not started. See [PHASE_10_HANDOFF.md](PHASE_10_HANDOFF.md) |
+| **10 — Design and polish pass** | **complete**, on `phase-10-design` (10A committed; 10B–10D in the working tree). The brand system is wired into every screen and verified under real cocoa at 2x in both colour schemes. Two final-QA items remain, both "somebody has to look": watching the eagle loop, and a second display. See [PHASE_10_HANDOFF.md](PHASE_10_HANDOFF.md) |
+| **11 — Starter kits, Website, model registry** | **complete**, in the working tree on `phase-10-design`. Config schema 2 (`starters` + `starter_default`) and models schema 4 (per-machine memory metadata). A Website profile that previews offline; a catalogue that tiers from an 8 GB Air to a 64 GB Studio. 980 tests, ruff clean. Five surfaces rendered under real cocoa, three defects found and fixed — one of them an interpreter abort. See [PHASE_11_HANDOFF.md](PHASE_11_HANDOFF.md) |
+| 12 — Owner test drive and final acceptance | **not started.** The owner has still never used the running application |
 
 Branches are **stacked**: each is based on the previous one, so each PR shows only its
 own phase. Nothing is merged to `main` yet. Branch Phase 10 from `phase-9-github`.
@@ -129,9 +139,18 @@ turn cloud on, and the child can switch to Claude or OpenAI after a warning, or 
 pictures with an image model. Everything except Image Creation still works with cloud off,
 which is the default.
 
-786 tests pass, ruff is clean.
+980 tests pass, ruff is clean.
 
-**Phase 10 is the design and polish pass**, and Phase 9 hands it three things:
+**The application icon is deliberately unresolved, and that is a ruling rather than a
+gap.** Phase 10D was told not to design or simplify one: it needs a separately approved
+simplified Open Nest mark suitable for macOS icon sizes, and deriving one from the
+canonical nest artwork without design approval is not an engineering decision. The full
+ruling is in `DESIGN_DOC.md` §23, where it closes the apparent §18 conflict. If you pick
+it up, it is a design task first and a packaging task second — the `MANIFEST.in` gap in
+`PHASE_10_HANDOFF.md` §8 means an app bundle does not currently ship the brand assets
+at all.
+
+**Phase 10 was the design and polish pass**, and Phase 9 handed it three things:
 
 - **GitHub backup is on, and `CLIENT_ID` is what holds it on.** `github/auth.py` carries
   the registered OAuth App's client ID — public by design, it ships in every copy. Empty
@@ -140,9 +159,9 @@ which is the default.
 - **The update check still needs no credentials and must not start using the token.**
   `git ls-remote` against a public repository is unauthenticated, and
   `test_the_check_only_ever_runs_read_only_git_commands` guards the read-only half.
-- **Nothing surfaces a pending backup.** Deliberate (§29A: no visible complexity), but
-  whether a parent wants to see "3 projects waiting" is a §6C-bis open question and a
-  natural Phase 10 one.
+- ~~**Nothing surfaces a pending backup.**~~ **Answered in Phase 10C**, in two levels: a
+  child sees plain backup *state* on the Flight Deck, a parent sees the count and the
+  reason in Settings. §6C-bis has the detail.
 
 Still with no consumer: `raspberry_pi_deployment`. §7 calls SSH deployment future, so
 Phase 7 had nothing to gate without inventing a feature. When you build it, it takes the
@@ -153,7 +172,7 @@ privileged-action pattern in §5, not a new mechanism.
 ## 2. Get running in five minutes
 
 ```bash
-.venv/bin/python -m pytest -q      # 786 passing, about 48 seconds
+.venv/bin/python -m pytest -q      # 980 passing, about 50 seconds
 ```
 
 It is slower than it was (7 s at Phase 6). Phase 7 added tests that actually run each
@@ -238,7 +257,18 @@ opennest/
 │   ├── context_budget.py   per-model policy, usage, when to hand over
 │   ├── archive.py          thread_vNN.jsonl, sequential, never overwritten
 │   └── rollover.py         the section 15A handover sequence
-├── projects/               manifest, profiles, starter templates (one per profile)
+├── projects/               manifest, profiles, and starter kits
+│   ├── starters.py         a kit, its manifest, and applying one without overwriting
+│   └── starters/           the shipped kits, one directory + starter.json each
+├── models/                 what this Mac can run -- Phase 11B
+│   ├── machine.py          the ONLY thing that inspects hardware. Everything else is
+│   │                       handed the MachineProfile it produced.
+│   ├── catalog.py          bundled + cached remote, merged and strictly validated
+│   ├── remote.py           the updateable catalogue. Offline is a normal answer.
+│   ├── discovery.py        what is installed, what a provider has, what else is on disk.
+│   │                       load_paths() is contained; discover_paths() is wider.
+│   ├── compatibility.py    Recommended / Can Run / Not Recommended / Incompatible
+│   └── migration.py        carrying an existing installation into the registry
 ├── execution/
 │   ├── python_runner.py    out-of-process running, batch vs interactive
 │   ├── arduino.py          arduino-cli: is it here, boards, ports, compile, upload
@@ -446,6 +476,68 @@ does.** Do not "clean up" these without re-measuring:
   dump what the harness is actually seeing before you believe its number.
 - **`section_label` uppercases**, so a widget titled `Gary` renders `GARY`. A test
   asserting the exact string pins the theme rather than the name; compare casefolded.
+- **An average over an animation's frames cannot see an animation defect.** Three
+  single-frame measures — ink mass, round-trip error, per-frame fidelity — all rated
+  nearest-neighbour the *best* way to downscale the eagle. The defect was a 3.90
+  percentage-point swing in apparent weight **between** frames, which is the bird pulsing
+  as it flaps, and every one of those metrics averages it away. Measure the spread across
+  a cycle. This is the third instance in Phase 10 of an aggregate hiding a per-element
+  failure (the compact mark's contrast was the first, the tool-selection harness the
+  second).
+- **`QLabel.pixmap()` does not return the pixmap you set.** Give it a 128 px pixmap at
+  device ratio 2.0 and it hands back a 64 px one at ratio 1.0. The *rendering* is fine —
+  a 1 px stripe pattern survives a 2x `grab()` intact, so Qt keeps the high-resolution
+  data — but a HiDPI assertion that trusts the getter reports a defect that does not
+  exist. Assert on what `brand.pixmap` returns.
+- **A nested layout silently breaks `widget.parentWidget().layout()`.** A layout adds no
+  widget, so a row moved into a nested layout still reports the page as its parent while
+  the page's layout no longer contains it. `QLayout.replaceWidget` then does nothing,
+  returns quietly, and the replacement is left unparented — painting on top of whatever
+  is behind it. This shipped two overlapping labels on the Flight Deck and **the entire
+  suite passed**; only looking at the render found it. Keep a reference to the layout
+  that owns a widget, and `setParent(None)` the one you replaced.
+- **The prepared delivery's smallest size for a mark is a legibility threshold.** A 40 px
+  compact mark was generated and withdrawn: below 64 px the `ON` is illegible and the
+  nest is a blob, and 64 is exactly where the supplied ladder starts. The eagle is the
+  exception — one bold silhouette with no fine detail — which is why 32 px works for it
+  and not for a lockup containing two letters. Render a candidate size before adding one.
+- **`QT_SCALE_FACTOR=2` gives a genuine 2x display under the `offscreen` platform**, so
+  HiDPI behaviour is testable without a Retina screen. It has to be a subprocess: the
+  scale factor is read once when `QGuiApplication` is constructed.
+- **A plain `QWidget` used as a layout holder paints the window colour over its panel.**
+  The stylesheet gives every `QWidget` `background-color: window`, so a bare container
+  inside a `role="panel"` frame draws a band across it. `role="bare"` makes it
+  transparent, the same treatment `QLabel` already had.
+
+**Phase 11 traps:**
+
+- **A widget destroyed while one of its worker threads runs aborts the interpreter.** No
+  traceback, no failed test, a dead process. The test fixtures have quit-and-waited by
+  hand since Phase 5, so this was understood and guarded everywhere except in the
+  application. Phase 11 made it reachable — the setup wizard now starts a worker the
+  moment the Local AI step opens, and Quit Setup is deliberately never disabled. Use
+  `ui.worker.stop_thread`, and wait for anything you start.
+- **`<cache>/blobs` is a *shared* content-addressed store**, marked with
+  `.huggingface-shared-blobs`, and `models--<repo>/` holds links into it. So deleting a
+  repository directory frees almost nothing. This is the second half of §4's existing
+  `du` warning. Removal goes through `scan_cache_dir(...).delete_revisions(...)`; SPIKES
+  §19C has the figures.
+- **Chromium refuses a remote request from a `file:` page before a
+  `QWebEngineUrlRequestInterceptor` is consulted.** Measured both ways in SPIKES §19A. The
+  page really is offline — and a blocked request is therefore *silent*, which is why
+  `web_preview.remote_references()` reads the source before the render instead. If you
+  rely on a hook to tell a child something, check the hook actually fires.
+- **Qt destroys a `QWebEngineProfile` whose page is still alive with "Expect troubles!",
+  and the trouble is a crash.** Closing a parent widget does not call `closeEvent` on its
+  children, so `MainWindow._close_project` asks the Workbench to release explicitly.
+- **A capability flag about *Open Nest's testing* is not a fact about the model.**
+  `verified` ranked above size in the model suggestion, and exactly one entry is verified
+  — so every Mac was permanently suggested the 2.3 GB model however much memory it had.
+  Rank on fit; say "untested" out loud instead.
+- **Every decision that depends on the machine takes the machine as an argument.**
+  `models.machine.detect()` is the only thing that inspects hardware, and nothing else
+  calls it. The target is an 8 GB Mac and every measurement here was taken on 48 GB, so a
+  test that inherits the machine it runs on is a test that passes for the wrong reason.
 
 ---
 
@@ -1039,9 +1131,19 @@ still the wrong fix, because the check must not require a connected account.
 - **A large first push is untimed.** `PUSH_TIMEOUT_SECONDS` is 300 s on the reasoning in
   SPIKES.md §17B, but no project with real assets in it has been pushed over a real
   connection.
-- **Nothing shows a child or a parent that a backup is pending.** The queue is silent by
-  design (§29A: no visible complexity), and only a blocked credential surfaces. Whether
-  a parent wants a "3 projects waiting to back up" line is a Phase 10 question.
+- ~~**Nothing shows a child or a parent that a backup is pending.**~~ **Resolved in
+  Phase 10C**, with the split the developer set. A child sees `BACKUP ● COMPLETE` /
+  `○ WAITING FOR INTERNET` / `○ NOT SET UP` on the Flight Deck and never a queue depth,
+  a repository, a commit count, a push failure or any git vocabulary — §29A's "no
+  visible complexity" is about mechanism, not about hiding whether their work is safe.
+  Parent Settings gets the count and the reason. `GitHubSync.status()` is the one place
+  that decides, and both strings come from it.
+
+  One detail worth keeping: **"Waiting for internet" is verified, not assumed.**
+  `PushQueue.drain` keeps an entry only when the push raised `Offline`; a rejected or
+  secret-blocked push is dropped and reported to a parent instead. So anything still
+  queued really is waiting on the network — except an entry queued and not yet swept,
+  which has failed at nothing and says plain "Waiting".
 
 ---
 

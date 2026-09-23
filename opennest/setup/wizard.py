@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import sys
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -54,12 +54,19 @@ from PySide6.QtWidgets import (
 from opennest import APP_NAME, paths
 from opennest.ai import router
 from opennest.ai.provider import ProviderError
+from opennest.models import compatibility, discovery
+from opennest.models import machine as machine_service
 from opennest.security import keychain, permissions
 from opennest.setup import checks, downloader, toolchain
 from opennest.setup.state import InstallationState
-from opennest.ui import consent, theme
+from opennest.ui import brand, consent, theme
 from opennest.ui.common import horizontal_rule, section_label
-from opennest.ui.worker import run_in_thread
+from opennest.ui.worker import run_in_thread, stop_thread
+
+#: The control that folds the model ladder away. Section 42: first-run setup shows a
+#: very small set, and a parent who wants the rest can ask.
+SHOW_OPTIONS = "Show other options"
+HIDE_OPTIONS = "Hide other options"
 
 
 def _body(text: str) -> QLabel:
@@ -74,6 +81,56 @@ def _mono(text: str) -> QLabel:
     label.setProperty("role", "mono")
     label.setWordWrap(True)
     return label
+
+
+def _identity(dark: bool) -> QWidget:
+    """The wordmark with the nest beneath it -- guide section 58's opening.
+
+    The setup wizard is a product-level experience, so section 58 allows the full
+    identity here more prominently than anywhere inside the app. This is also the first
+    of the three moments that teach the visual language without explaining it: identity
+    at the start, the eagle while the model installs, the approval mark at the end.
+    """
+    holder = QWidget()
+    column = QVBoxLayout(holder)
+    column.setContentsMargins(0, 0, 0, 0)
+    column.setSpacing(6)
+    column.addWidget(brand.placed("wizard_wordmark", dark=dark))
+    # Decorative: the wordmark beside it already carries the accessible name, and
+    # section 46 asks not to announce a repeat of the same identity.
+    column.addWidget(brand.placed("wizard_nest", dark=dark, decorative=True))
+    return holder
+
+
+class _Activity(QWidget):
+    """The eagle with the status line it belongs to (guide sections 36, 37, 46).
+
+    Hidden until there is real work, and it can only be shown *with* text -- the graphic
+    is never the only indication that something is happening. Section 53 is the rule
+    about which waits qualify: everything driven from here is a download, an install or
+    a real inference, all of them well past the "just do it" threshold.
+    """
+
+    def __init__(self, dark: bool) -> None:
+        super().__init__()
+        self.setProperty("role", "bare")
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(10)
+        self._eagle = brand.EagleActivityIndicator(self, size=brand.EAGLE_SETUP, dark=dark)
+        self._text = _body("")
+        row.addWidget(self._eagle, 0, Qt.AlignmentFlag.AlignVCenter)
+        row.addWidget(self._text, 1, Qt.AlignmentFlag.AlignVCenter)
+        self.hide()
+
+    def show_working(self, text: str) -> None:
+        self._text.setText(text)
+        self.show()
+        self._eagle.start()
+
+    def done(self) -> None:
+        self._eagle.stop()
+        self.hide()
 
 
 def _field(layout: QVBoxLayout, caption: str, placeholder: str = "") -> QLineEdit:
@@ -124,6 +181,8 @@ class WelcomeStep(Step):
     next_label = "Get Started"
 
     def build(self) -> None:
+        self.body.addWidget(_identity(theme.is_dark()))
+        self.body.addSpacing(8)
         self.body.addWidget(_body(
             "Open Nest helps kids make games, robots, Arduino projects, research "
             "projects and pictures, with AI running on this Mac.\n\n"
@@ -142,18 +201,12 @@ class WelcomeStep(Step):
         self.body.addStretch(1)
 
     def enter(self) -> None:
-        machine = _detect_machine()
-        if machine is None:
-            self._machine.setText("This Mac could not be inspected.")
-            return
-        hardware = "Apple silicon" if machine.is_apple_silicon else machine.arch
-        self._machine.setText(
-            f"Mac              {hardware}\n"
-            f"macOS            {machine.macos_version or 'unknown'}\n"
-            f"Memory           {machine.memory_gb:.0f} GB\n"
-            f"Free storage     {machine.free_disk_gb:.0f} GB"
-        )
-        problems = machine.problems()
+        # One service owns this (Phase 11 work order section 23). The wizard used to
+        # call the bootstrap's detection here and the model step used nothing at all,
+        # which is exactly the scattering that section forbids.
+        machine = machine_service.detect()
+        self._machine.setText(machine.summary())
+        problems = machine_service.problems(machine)
         if problems:
             # A warning, never a refusal. Section 35A says "warn if the computer does
             # not meet supported requirements" -- an unsupported Mac is not always a
@@ -207,7 +260,25 @@ class IdentityStep(Step):
 
 
 class LocalAIStep(Step):
-    """Sections 35A steps 3, "Model installation" and "Model verification"."""
+    """Sections 35A steps 3, "Model installation" and "Model verification".
+
+    Phase 11B made this machine-aware, and the shape of the page follows from two rules
+    that pull in opposite directions.
+
+    Section 41 wants the step to *begin by detecting the computer* and recommend on what
+    it finds. Section 56 wants the page not to become more technical as a result -- the
+    complexity belongs underneath. So the page asks a question a parent already has
+    ("what should I install?"), answers it in one sentence, and puts the ladder of
+    alternatives behind a control nobody has to press.
+
+    What is deliberately still on screen is the download size. Section 47 requires it
+    before anything is fetched, and "calm" is not a reason to stop telling somebody that
+    a thing is 17 GB.
+
+    The inspection is real work off the GUI thread -- subprocesses for the hardware,
+    every approved cache searched for an existing model -- which is what entitles this
+    page to the eagle under guide sections 36 and 53.
+    """
 
     title = "Local AI"
 
@@ -216,10 +287,52 @@ class LocalAIStep(Step):
             "Open Nest uses an AI model that runs on this Mac. Nothing a child types "
             "goes to the internet while they use it."
         ))
-        self._picker = QComboBox()
-        self.body.addWidget(self._picker)
-        self._detail = _mono("")
+
+        # -- the answer, before the options --------------------------------
+        self._headline = QLabel("")
+        self._headline.setProperty("role", "cardTitle")
+        self._headline.setWordWrap(True)
+        self.body.addWidget(self._headline)
+        self._detail = _body("")
         self.body.addWidget(self._detail)
+
+        # -- everything else, folded away ----------------------------------
+        self._more = QPushButton(SHOW_OPTIONS)
+        self._more.clicked.connect(self._toggle_options)
+        self._more.hide()
+        # Offered rather than automatic. A family who has used Ollama, LM Studio or any
+        # Hugging Face tool may already have gigabytes of models on this Mac, and
+        # section 31 is about not downloading a second copy of something already here.
+        self._find = QPushButton("Already have a model?")
+        self._find.setToolTip("Look for AI models already on this Mac")
+        self._find.clicked.connect(self._search_for_models)
+        self._find.hide()
+        more_row = QHBoxLayout()
+        more_row.addWidget(self._more)
+        more_row.addWidget(self._find)
+        more_row.addStretch(1)
+        self.body.addLayout(more_row)
+
+        self._found = _body("")
+        self._found.hide()
+        self.body.addWidget(self._found)
+        self._found_picker = QComboBox()
+        self._found_picker.hide()
+        self.body.addWidget(self._found_picker)
+        self._use_found = QPushButton("Use This Model")
+        self._use_found.clicked.connect(self._adopt_found)
+        self._use_found.hide()
+        found_row = QHBoxLayout()
+        found_row.addWidget(self._use_found)
+        found_row.addStretch(1)
+        self.body.addLayout(found_row)
+
+        self._picker = QComboBox()
+        self._picker.hide()
+        self.body.addWidget(self._picker)
+        self._fit = _body("")
+        self._fit.hide()
+        self.body.addWidget(self._fit)
 
         self.body.addWidget(horizontal_rule())
         self._status = _body("")
@@ -228,6 +341,13 @@ class LocalAIStep(Step):
         self._bar.setRange(0, 100)
         self._bar.hide()
         self.body.addWidget(self._bar)
+        # Section 53's major-download tier is "eagle animation **plus** real progress
+        # information", and "never replace useful numerical progress information with
+        # animation alone". The bar and the byte counts above are untouched; the bird is
+        # added beside them. It also covers the verification step, which is a real
+        # inference and takes a couple of seconds with nothing to count.
+        self._activity = _Activity(theme.is_dark())
+        self.body.addWidget(self._activity)
 
         buttons = QHBoxLayout()
         self._install = QPushButton("Install")
@@ -250,20 +370,103 @@ class LocalAIStep(Step):
         self._picker.currentIndexChanged.connect(self._model_changed)
         self._cancelled = False
         self._thread = None
+        self._options_shown = False
+        self._found_models: dict = {}
+        #: Filled by the inspection. Until then there is nothing to recommend.
+        self._machine = None
+        self._verdicts: dict = {}
+        self._installed: tuple = ()
+        self._inspected = False
+
+    # -- looking at the Mac -------------------------------------------------
 
     def enter(self) -> None:
-        if self._picker.count():
+        """Section 41: begin by detecting the computer."""
+        if self._inspected:
             self._describe()
             return
-        # Straight from the catalogue: section 35A forbids hard-coding model ids or
-        # sizes into wizard logic, and recommended-ness is a field on the entry.
-        for entry in router.local_models():
-            mark = "Recommended — " if entry.recommended else ""
-            self._picker.addItem(f"{mark}{entry.info.name}", entry.info.id)
-        preferred = self.state.preferred_model or router.default_model_id()
-        index = self._picker.findData(preferred)
-        self._picker.setCurrentIndex(max(0, index))
+        self._begin_inspection()
+        worker = _InspectWorker()
+        worker.finished.connect(self._inspected_machine)
+        self._thread = run_in_thread(self, worker)
+
+    def inspect_now(self, machine=None) -> None:
+        """Do the inspection on this thread, optionally for a Mac that is not this one.
+
+        The seam the tests cut at, and it exists for a reason beyond convenience: the
+        machine a developer happens to own must never be what decides whether a test
+        passes. The target hardware is an 8 GB Mac and this was written on a 48 GB one,
+        so every test of the recommendation behaviour hands in the machine it means.
+        """
+        self._begin_inspection()
+        self._inspected_machine(inspect_machine(machine))
+
+    def _begin_inspection(self) -> None:
+        self._install.setEnabled(False)
+        self._picker.setEnabled(False)
+        self.wizard.set_busy(True)
+        self._headline.setText("Checking this Mac…")
+        self._detail.setText(
+            "Open Nest is looking at how much memory and storage this Mac has, and "
+            "whether a model is already installed."
+        )
+        # Indeterminate: there is nothing here to count, and a bar that invents a
+        # percentage is the kind of small lie this project does not tell. The eagle is
+        # what carries "something is happening"; the bar carries "and it is this page".
+        self._bar.setRange(0, 0)
+        self._bar.show()
+        self._activity.show_working("Checking this Mac")
+
+    def _inspected_machine(self, result) -> None:
+        self._activity.done()
+        self._bar.hide()
+        self._bar.setRange(0, 100)
+        self._machine, self._verdicts, self._installed = result
+        self._inspected = True
+        self._install.setEnabled(True)
+        self._picker.setEnabled(True)
+        self.wizard.set_busy(False)
+        self._fill_picker()
+        self._choose_suggestion()
+        self._more.setVisible(self._picker.count() > 1)
+        self._find.setVisible(True)
         self._describe()
+
+    def _fill_picker(self) -> None:
+        """Every model this Mac could actually install, best fit first.
+
+        Section 25: a model known not to work here is not offered as a normal
+        installation choice, so an ``incompatible`` verdict keeps it out of the list
+        rather than putting it in greyed out. The reason a Mac cannot run anything at
+        all is said once, above, instead of seven times.
+        """
+        self._picker.blockSignals(True)
+        self._picker.clear()
+        pairs = [
+            (entry, self._verdicts[entry.info.id])
+            for entry in router.local_models()
+            if entry.info.id in self._verdicts
+            and self._verdicts[entry.info.id].usable
+        ]
+        for entry, verdict in compatibility.sort_for_display(pairs):
+            note = "Already installed" if verdict.installed else verdict.label
+            self._picker.addItem(f"{entry.info.name} — {note}", entry.info.id)
+        self._picker.blockSignals(False)
+
+    def _choose_suggestion(self) -> None:
+        """Select what Open Nest would pick, so the common path is pressing Install."""
+        suggested = compatibility.suggestion(
+            router.local_models(), self._machine,
+            installed_ids=[m.model_id for m in self._installed],
+        )
+        # A model this parent already chose beats a fresh suggestion: they are running
+        # setup again, not starting over.
+        preferred = self.state.preferred_model
+        wanted = preferred if preferred and self._picker.findData(preferred) >= 0 else (
+            suggested[0].info.id if suggested else None
+        )
+        index = self._picker.findData(wanted) if wanted else -1
+        self._picker.setCurrentIndex(max(0, index))
 
     # -- the chosen model ---------------------------------------------------
 
@@ -272,21 +475,172 @@ class LocalAIStep(Step):
         return router.get_entry(model_id) if model_id else None
 
     def _describe(self) -> None:
-        """Refresh the size line and the button, and deliberately not the status.
+        """Refresh the suggestion, the size line and the button.
 
-        ``_finish_attempt`` calls this, and an earlier version cleared the status here
-        too -- which wiped "could not be downloaded" in the same instant it appeared.
-        A failure a parent cannot read is a failure they will hit again.
+        Deliberately not the status: ``_finish_attempt`` calls this, and an earlier
+        version cleared the status here too -- which wiped "could not be downloaded" in
+        the same instant it appeared. A failure a parent cannot read is a failure they
+        will hit again.
         """
         entry = self._entry()
         if entry is None:
+            self._headline.setText("No model can run on this Mac.")
+            self._detail.setText(
+                "Open Nest needs an Apple silicon Mac with at least 8 GB of memory. "
+                "You can continue, and use cloud AI instead."
+            )
+            self._install.setEnabled(False)
             return
-        if downloader.is_installed(entry):
-            self._detail.setText(f"Already on this Mac. About {entry.download_gb} GB.")
-            self._install.setText("Check It Works")
-        else:
-            self._detail.setText(f"Download is about {entry.download_gb} GB.")
-            self._install.setText("Install")
+
+        verdict = self._verdicts.get(entry.info.id)
+        installed = bool(verdict and verdict.installed)
+        # Folded away, this is a suggestion. Opened up, it is whichever row they are
+        # looking at, and calling that a suggestion would be Open Nest agreeing with
+        # whatever was clicked last.
+        self._headline.setText(
+            entry.info.name if self._options_shown
+            else f"Open Nest suggests {entry.info.name} for this Mac."
+        )
+        # Section 47: the size is stated before anything is downloaded, whatever else
+        # the page is trying to keep quiet about.
+        size = (
+            "It is already on this Mac, so nothing will be downloaded."
+            if installed else
+            f"About {entry.download_gb:.1f} GB to download."
+        )
+        untested = compatibility.untested_note(entry)
+        self._detail.setText(
+            " ".join(part for part in (f"{entry.info.description}.", size, untested)
+                     if part)
+        )
+        self._fit.setText(verdict.reason if verdict else "")
+        self._install.setText("Check It Works" if installed else "Install")
+
+    # -- models already on this Mac -----------------------------------------
+
+    def _search_for_models(self) -> None:
+        """Look for models a family already has, and say honestly what was found.
+
+        Reading several caches off a disk is real work, so it gets the eagle and the
+        button goes quiet while it runs -- guide section 36. It is fast enough that
+        nobody will read the status line, which is fine: the line is there so the
+        graphic is never the only thing saying something is happening.
+        """
+        self._find.setEnabled(False)
+        self._activity.show_working("Looking for models on this Mac")
+        try:
+            found = discovery.search_local_models(router.load_catalogue())
+        except Exception:
+            found = ()
+        finally:
+            self._activity.done()
+            self._find.setEnabled(True)
+        self._show_found(found)
+
+    def _show_found(self, found) -> None:
+        usable = [item for item in found if item.can_attempt]
+        blocked = [item for item in found if not item.can_attempt]
+
+        self._found_picker.clear()
+        self._found_models = {}
+        for index, item in enumerate(usable):
+            self._found_picker.addItem(f"{item.name} — {item.store}", index)
+            self._found_models[index] = item
+        self._found_picker.setVisible(bool(usable))
+        self._use_found.setVisible(bool(usable))
+        self._found.show()
+
+        if not found:
+            # The empty case, and the one most likely to leave somebody stuck. It offers
+            # the two things that actually move them forward and names the third.
+            self._found.setText(
+                "No AI models were found on this Mac. You can download the suggested "
+                "one above, or skip this step — Open Nest can use cloud AI instead, "
+                "and you can add a local model later in Settings."
+            )
+            return
+
+        lines = []
+        if usable:
+            lines.append(
+                f"Found {len(usable)} model(s) already on this Mac that Open Nest "
+                f"can use."
+            )
+        if blocked:
+            # Listed rather than hidden. A parent who has models here and is told
+            # "none found" will conclude the search is broken, and they would be right
+            # to -- what is true is that these cannot be used, which is a different
+            # thing and worth one sentence each.
+            lines.append("These are on this Mac and Open Nest cannot use them:")
+            lines.extend(f"  {item.name} — {item.reason}" for item in blocked[:5])
+            if len(blocked) > 5:
+                lines.append(f"  and {len(blocked) - 5} more.")
+        if not usable:
+            lines.append(
+                "You can download the suggested model above, or skip this step."
+            )
+        self._found.setText("\n".join(lines))
+
+    def _adopt_found(self) -> None:
+        """Use a model that is already here, after checking it actually answers.
+
+        Two things have to happen and the order matters.
+
+        **A model outside Open Nest's own store is an explicit exception, so it is
+        asked about.** Everything Open Nest downloads lives under ``OPENNEST_HOME`` and
+        it loads from nowhere else by default -- that is the containment promise, and on
+        a work-managed machine it is the point rather than a detail. Adopting a model
+        from the standard Hugging Face cache widens that, and widening it silently to
+        save a download would be trading the promise for convenience without telling
+        anybody. So the parent is shown where the model is and agrees to it, and the
+        path is written into ``installation.json`` where it can be seen and undone.
+
+        **Only a catalogued model can be adopted in this release.** Open Nest has real
+        metadata for those -- a context budget, a tool-calling capability, a memory
+        requirement. For an unrecognised directory it has none of the three and would be
+        guessing at all of them, which is the caution section 32 asks for. An
+        unrecognised MLX model is reported as present and not offered: making it
+        selectable needs somewhere for its metadata to come from, and that is a
+        catalogue question rather than a detection one.
+        """
+        found = self._found_models.get(self._found_picker.currentData())
+        if found is None or not found.model_id:
+            return
+
+        if not found.is_contained:
+            allowed = self.wizard.confirm(
+                "Use the model already on this Mac?",
+                f"{found.name} is not in Open Nest's own folder. It is here:\n\n"
+                f"{found.cache_root}\n\n"
+                f"Open Nest normally only reads models it downloaded itself. Using this "
+                f"one means it will also read from that folder. Nothing is copied or "
+                f"moved, and you can undo this in Settings.",
+            )
+            if not allowed:
+                return
+            recorded = str(found.cache_root)
+            if recorded not in self.state.extra_model_paths:
+                self.state.extra_model_paths.append(recorded)
+
+        index = self._picker.findData(found.model_id)
+        if index >= 0:
+            self._picker.setCurrentIndex(index)
+        self._status.setText("")
+        # Straight to the same real-inference check every other route uses. Nothing is
+        # downloaded -- the model is here -- but "it is on disk" has never been allowed
+        # to mean "it works" anywhere else in this file and does not start now.
+        self._install.setEnabled(False)
+        self._picker.setEnabled(False)
+        self.wizard.set_busy(True)
+        self._verify(router.get_entry(found.model_id))
+
+    def _toggle_options(self) -> None:
+        """Section 42: setup shows a small choice; the rest is available, not present."""
+        self._options_shown = not self._options_shown
+        self._more.setText(HIDE_OPTIONS if self._options_shown else SHOW_OPTIONS)
+        self._picker.setVisible(self._options_shown)
+        self._fit.setVisible(self._options_shown)
+        self._describe()
 
     def _model_changed(self) -> None:
         """Picking a different model does clear the last one's result."""
@@ -312,6 +666,7 @@ class LocalAIStep(Step):
         self._bar.setValue(0)
         self._bar.show()
         self._status.setText(f"Downloading {entry.info.name}...")
+        self._activity.show_working(f"Installing {entry.info.name}")
 
         worker = _DownloadWorker(entry, lambda: self._cancelled)
         worker.progress.connect(self._on_progress)
@@ -328,6 +683,7 @@ class LocalAIStep(Step):
         self._status.setText(f"Downloading — {progress.describe()}")
 
     def _downloaded(self, entry, result: downloader.DownloadResult) -> None:
+        self._activity.done()
         self._bar.hide()
         self._cancel.hide()
         self._cancel.setEnabled(True)
@@ -341,6 +697,7 @@ class LocalAIStep(Step):
 
     def _verify(self, entry) -> None:
         self._status.setText(f"Checking {entry.info.name} can answer...")
+        self._activity.show_working(f"Checking {entry.info.name}")
         worker = _VerifyWorker(entry)
         worker.finished.connect(lambda result: self._verified(entry, result))
         self._thread = run_in_thread(self, worker)
@@ -353,11 +710,19 @@ class LocalAIStep(Step):
             if entry.info.id not in self.state.installed_models:
                 self.state.installed_models.append(entry.info.id)
             self._status.setText("\n".join(result.lines()))
+            # It is on disk now, so the page should stop offering to download it. The
+            # verdict is recomputed rather than patched, because "installed" also
+            # changes whether free disk is checked at all.
+            if self._machine is not None:
+                self._verdicts[entry.info.id] = compatibility.assess(
+                    entry, self._machine, installed=True
+                )
         else:
             self._status.setText(result.message or "That model could not be checked.")
         self._finish_attempt()
 
     def _finish_attempt(self) -> None:
+        self._activity.done()
         self._install.setEnabled(True)
         self._picker.setEnabled(True)
         self.wizard.set_busy(False)
@@ -395,6 +760,8 @@ class ArduinoStep(Step):
         self.body.addWidget(horizontal_rule())
         self._status = _mono("")
         self.body.addWidget(self._status)
+        self._activity = _Activity(theme.is_dark())
+        self.body.addWidget(self._activity)
 
         row = QHBoxLayout()
         self._install = QPushButton("Install Arduino Tools")
@@ -423,12 +790,14 @@ class ArduinoStep(Step):
         self._install.setEnabled(False)
         self.wizard.set_busy(True)
         self._status.setText("Starting...")
+        self._activity.show_working("Installing the Arduino tools")
         worker = _ToolchainWorker()
         worker.progress.connect(self._status.setText)
         worker.finished.connect(self._done)
         self._thread = run_in_thread(self, worker)
 
     def _done(self, result: toolchain.ToolchainResult) -> None:
+        self._activity.done()
         self._status.setText(result.message)
         self.state.arduino_installed = bool(result.ok)
         self._install.setEnabled(not result.ok)
@@ -825,12 +1194,35 @@ class HealthStep(Step):
 
 
 class FinishStep(Step):
-    """Section 35A step 8."""
+    """Section 35A step 8, and guide section 58's closing moment.
 
-    title = "Open Nest is ready"
+    The third of the three graphics that teach the visual language: identity at the
+    start, the eagle while something installs, the approval mark when it is done. This
+    is also the clearest case in the whole product for the sunglasses -- section 38's
+    first example is literally a finished setup -- and it is rare by construction,
+    because a parent sees it once.
+    """
+
+    # Not "Open Nest is ready" any more: guide section 58 puts that sentence next to the
+    # approval mark below, and the rendered page said it twice, once as chrome and once
+    # as the moment. The heading gives way, because the graphic and its line are the
+    # part that is supposed to land.
+    title = "Setup complete"
     next_label = "Launch Open Nest"
 
     def build(self) -> None:
+        approval = QHBoxLayout()
+        approval.setSpacing(12)
+        approval.addWidget(
+            brand.placed("completion_glasses", dark=theme.is_dark()),
+            0, Qt.AlignmentFlag.AlignVCenter,
+        )
+        ready = QLabel(f"{APP_NAME} is ready.")
+        ready.setProperty("role", "greeting")
+        approval.addWidget(ready, 1, Qt.AlignmentFlag.AlignVCenter)
+        self.body.addLayout(approval)
+        self.body.addSpacing(6)
+
         self._summary = _mono("")
         self.body.addWidget(self._summary)
         self.body.addStretch(1)
@@ -863,6 +1255,47 @@ STEPS: tuple = (
 
 
 # --------------------------------------------------------------------------- workers
+
+def inspect_machine(machine=None):
+    """Read the Mac, find what is already installed, and judge one against the other.
+
+    No Qt, so it runs on a worker thread or inline. ``machine`` overrides detection,
+    which is what lets the recommendation be tested for Macs nobody here owns.
+
+    Deliberately does not refresh the remote catalogue -- section 45 forbids blocking on
+    the network, and a parent who wants a newer list presses the button in Settings.
+    """
+    profile = machine if machine is not None else machine_service.detect()
+    entries = router.local_models()
+    try:
+        installed = discovery.installed(router.load_catalogue())
+    except Exception:
+        # A cache Open Nest cannot read is not a reason to fail setup. The worst case is
+        # offering to download something already present, which wastes bandwidth rather
+        # than breaking anything.
+        installed = ()
+    installed_ids = [item.model_id for item in installed]
+    verdicts = {
+        verdict.model_id: verdict
+        for verdict in compatibility.assess_all(entries, profile, installed_ids)
+    }
+    return profile, verdicts, installed
+
+
+class _InspectWorker(QObject):
+    """:func:`inspect_machine`, off the UI thread.
+
+    Both halves are genuinely slow enough to matter: the hardware means subprocesses,
+    and finding an existing model means asking huggingface_hub about every catalogue
+    entry across every approved cache. Neither belongs on the thread drawing the window,
+    and together they are what entitles this page to the eagle.
+    """
+
+    finished = Signal(object)
+
+    def run(self) -> None:
+        self.finished.emit(inspect_machine())
+
 
 class _DownloadWorker(QObject):
     """One model download, off the UI thread so Cancel can be pressed."""
@@ -1017,6 +1450,29 @@ class SetupWizard(QDialog):
 
     # -- asking -------------------------------------------------------------
 
+    # -- shutting down ------------------------------------------------------
+
+    def wait_for_workers(self) -> None:
+        """Let every step's worker finish before this dialog goes away.
+
+        A model download, a verification, a toolchain install and the machine inspection
+        all run on threads parented to a step. Destroying the wizard underneath one of
+        them aborts the interpreter outright -- see ``ui.worker.stop_thread``. Quit Setup
+        is the route that reaches it, because ``set_busy`` disables Back and Continue and
+        deliberately does not disable quitting.
+        """
+        for step in self.steps:
+            stop_thread(getattr(step, "_thread", None))
+
+    def done(self, result: int) -> None:
+        """Both Accept and Reject funnel through here, so this is the one place to wait."""
+        self.wait_for_workers()
+        super().done(result)
+
+    def closeEvent(self, event) -> None:  # noqa: N802 - Qt's name
+        self.wait_for_workers()
+        super().closeEvent(event)
+
     def complain(self, message: str) -> None:
         QMessageBox.warning(self, f"{APP_NAME} Setup", message)
 
@@ -1064,21 +1520,6 @@ def run_wizard(argv=None) -> int:
     from opennest.app import main as run_app
 
     return run_app([sys.argv[0]] if argv is None else list(argv)[:1])
-
-
-def _detect_machine():
-    """The hardware panel, from the bootstrap's own detection.
-
-    Imported lazily and tolerantly: the bootstrap is the authority on what this Mac is,
-    but the wizard should still open if it cannot be reached. The dependency only goes
-    this way -- the bootstrap must never import the application.
-    """
-    try:
-        from bootstrap import environment
-
-        return environment.detect_machine()
-    except Exception:
-        return None
 
 
 if __name__ == "__main__":

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import re
+import tokenize
 from pathlib import Path
 
 import pytest
 
 from opennest import paths
+from opennest.projects import starters
 
 REPO = paths.repo_root()
 
@@ -130,42 +132,151 @@ def test_profile_ids_are_unique(profiles: list[dict]) -> None:
 
 
 def test_all_v1_profiles_are_present(profiles: list[dict]) -> None:
-    """WORKORDER_01 section 5's five, plus Image Creation (PLAN.md decision D6)."""
-    expected = {"games", "raspberry_pi", "arduino", "research", "blank", "image_creation"}
+    """WORKORDER_01 section 5's five, plus Image Creation (D6) and Website (Phase 11)."""
+    expected = {
+        "games", "website", "raspberry_pi", "arduino", "research", "blank",
+        "image_creation",
+    }
     assert {p["id"] for p in profiles} == expected
 
 
-def test_every_profile_starter_template_exists_and_holds_its_entrypoint(
+def test_the_profile_schema_is_the_phase_11_one() -> None:
+    """Schema 2 replaced ``starter_template`` with ``starters`` + ``starter_default``.
+
+    Pinned because a renamed field is the kind of change that leaves one consumer
+    quietly reading a key nobody writes any more.
+    """
+    raw = _load("profiles.json")
+    assert raw["schema_version"] == 2
+    for profile in raw["profiles"]:
+        assert "starter_template" not in profile, (
+            "profile {} still carries the schema 1 field".format(profile["id"])
+        )
+        assert "starters" in profile and "starter_default" in profile, profile["id"]
+
+
+def test_nothing_still_reads_the_schema_1_starter_field() -> None:
+    """The other half of a rename: no code left looking for the old key.
+
+    Comments and docstrings are stripped first, because the modules that made the change
+    explain it in prose and should go on doing so -- what must not survive is an
+    attribute access or a dictionary key.
+    """
+    package = paths.package_root()
+    offenders = []
+    for path in sorted(package.rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        with tokenize.open(path) as handle:
+            code = "".join(
+                token.string
+                for token in tokenize.generate_tokens(handle.readline)
+                if token.type not in (tokenize.COMMENT, tokenize.STRING)
+            )
+        if "starter_template" in code:
+            offenders.append(str(path.relative_to(package.parent)))
+    assert not offenders, f"still referencing starter_template: {offenders}"
+
+
+def test_every_offered_starter_exists_and_belongs_to_the_profile_offering_it(
     profiles: list[dict],
 ) -> None:
-    """The test that was missing for seven phases.
+    """The test that was missing for seven phases, in its Phase 11 form.
 
     ``profiles.json`` named five starter templates and only ``pygame_basic`` had ever
     existed. ``create_project`` skipped a missing one silently, so four of the five
     profiles created a project containing nothing but ``project.json``, with the
     manifest pointing at an entrypoint that was not there. Nothing failed; the projects
     were simply empty.
+    """
+    installed = {starter.id: starter for starter in starters.load_starters()}
+    for profile in profiles:
+        for starter_id in profile["starters"]:
+            assert starter_id in installed, "profile {} offers missing starter {}".format(
+                profile["id"], starter_id
+            )
+            assert installed[starter_id].profile == profile["id"], (
+                "starter {} is offered by {} but declares profile {}".format(
+                    starter_id, profile["id"], installed[starter_id].profile
+                )
+            )
 
-    Checking the entrypoint too, not just the directory, is what makes this bite: the
-    Arduino template has to be ``project/project.ino`` rather than ``project.ino``,
+
+def test_a_default_starter_is_one_the_profile_actually_offers(profiles: list[dict]) -> None:
+    """``starter_default`` is null or a member of ``starters``. Never a third thing."""
+    for profile in profiles:
+        default = profile["starter_default"]
+        if default is None:
+            continue
+        assert default in profile["starters"], (
+            "profile {} defaults to {} which it does not offer".format(
+                profile["id"], default
+            )
+        )
+
+
+def test_no_profile_uses_an_empty_string_where_it_means_no_default(
+    profiles: list[dict],
+) -> None:
+    """``null``, not ``""``. A falsy-string sentinel is one every consumer must recall."""
+    for profile in profiles:
+        assert profile["starter_default"] != "", profile["id"]
+
+
+def test_blank_is_genuinely_blank(profiles: list[dict]) -> None:
+    """Section 7 of the Phase 11 work order, pinned.
+
+    A profile whose entire purpose is an empty page should not have a starter to
+    decline, so Blank offers none at all rather than offering one and defaulting away
+    from it.
+    """
+    blank = next(p for p in profiles if p["id"] == "blank")
+    assert blank["starters"] == []
+    assert blank["starter_default"] is None
+    assert not (starters.starters_root() / "blank_basic").exists(), (
+        "the withdrawn Phase 0 blank kit is back on disk"
+    )
+
+
+def test_every_starter_holds_the_entrypoint_its_profile_expects(
+    profiles: list[dict],
+) -> None:
+    """Checking the entrypoint, not just the directory, is what makes this bite.
+
+    The Arduino kit has to be ``project/project.ino`` rather than ``project.ino``,
     because arduino-cli requires a sketch folder whose name matches its sketch
     (SPIKES.md section 14).
     """
-    templates = paths.package_root() / "projects" / "templates"
+    installed = {starter.id: starter for starter in starters.load_starters()}
     for profile in profiles:
-        template = templates / profile["starter_template"]
-        assert template.is_dir(), "profile {} names missing template {}".format(
-            profile["id"],
-            profile["starter_template"],
-        )
-        entrypoint = template / profile["entrypoint"]
-        assert entrypoint.is_file(), (
-            "profile {} points at {} which its template {} does not contain".format(
-                profile["id"],
-                profile["entrypoint"],
-                profile["starter_template"],
+        for starter_id in profile["starters"]:
+            starter = installed[starter_id]
+            assert starter.entry_point == profile["entrypoint"], (
+                "starter {} enters at {} but profile {} expects {}".format(
+                    starter_id, starter.entry_point, profile["id"], profile["entrypoint"]
+                )
             )
+            assert (starter.directory / starter.entry_point).is_file(), (
+                f"starter {starter_id} does not contain its own entry point {starter.entry_point}"
+            )
+
+
+def test_every_starter_declares_every_file_it_ships(profiles: list[dict]) -> None:
+    """A kit that quietly gains a file is a kit whose tests no longer describe it."""
+    for starter in starters.load_starters():
+        shipped = {
+            str(path.relative_to(starter.directory))
+            for path in starter.directory.rglob("*")
+            if path.is_file() and path.name != starters.MANIFEST_NAME
+        }
+        assert shipped == set(starter.files), (
+            f"starter {starter.id} ships {sorted(shipped)} but declares {sorted(starter.files)}"
         )
+
+
+def test_a_starter_id_matches_its_directory(profiles: list[dict]) -> None:
+    for starter in starters.load_starters():
+        assert starter.id == starter.directory.name
 
 
 def test_every_profile_prompt_file_exists(profiles: list[dict]) -> None:
@@ -200,21 +311,24 @@ def test_every_profile_package_is_allowlisted(profiles: list[dict]) -> None:
 def test_every_profile_gives_the_child_a_button_that_does_something(
     profiles: list[dict],
 ) -> None:
-    """Run, compile, or generate -- but never nothing.
+    """Run, compile, preview or generate -- but never nothing.
 
-    Image Creation is the one profile that executes no code at all: the process sandbox
-    denies network, so generation has to happen in the application. It therefore has
-    neither command, and ``run_mode: generate`` is what says so.
+    Two profiles execute no code at all, for different reasons. Image Creation asks a
+    service, because the process sandbox denies network and a child's own code could
+    never reach an image model. Website is opened rather than executed, because a page
+    has no process and no exit code. Both therefore have neither command, and
+    ``run_mode`` is what says which.
     """
     for profile in profiles:
-        generates = profile.get("run_mode") == "generate"
+        mode = profile.get("run_mode", "batch")
+        acts_without_running = mode in {"generate", "preview"}
         has_command = bool(profile.get("run_command") or profile.get("compile_command"))
-        assert generates or has_command, (
+        assert acts_without_running or has_command, (
             "profile {} offers the child no way to make anything happen".format(profile["id"])
         )
         # A profile cannot claim both: one executes inside the sandbox, one does not.
-        assert not (generates and has_command), (
-            "profile {} is both a generate profile and a run/compile one".format(profile["id"])
+        assert not (acts_without_running and has_command), (
+            "profile {} both executes and does not execute".format(profile["id"])
         )
         assert profile.get("run_label")
 

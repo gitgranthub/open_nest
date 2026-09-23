@@ -1,11 +1,12 @@
 {
   "_note": "Project profiles (WORKORDER_01 section 5). A profile is data. Tool sets are four tools wide and deliberately exclude list_project_files and inspect_error: both return information the application already knows, so the file list and the last run result are injected as context instead. Phase 1 and 2 measured selection accuracy falling as the tool set grows. edit_file is the primary way to change a file; write_file is only for creating a new one. See SPIKES.md.",
-  "schema_version": 1,
+  "_note_starters": "Schema 2 (Phase 11) replaced the single 'starter_template' string with 'starters' -- the kits this profile offers -- and 'starter_default' -- which of them a new project begins with. A default of null means the project begins empty, and a profile may offer no kits at all. The schema allows a starter; it does not require one. Each id names a directory under opennest/projects/starters/ carrying a starter.json manifest (opennest/projects/starters.py).",
+  "schema_version": 2,
   "profiles": [
     {
       "id": "games",
       "name": "Game",
-      "symbol": "\ud83c\udfae",
+      "symbol": "🎮",
       "tagline": "Build a game",
       "prompt_file": "games.txt",
       "default_language": "python",
@@ -16,7 +17,10 @@
         "pygame",
         "pillow"
       ],
-      "starter_template": "pygame_basic",
+      "starters": [
+        "pygame_basic"
+      ],
+      "starter_default": "pygame_basic",
       "entrypoint": "game.py",
       "run_command": [
         "python",
@@ -47,9 +51,50 @@
       "run_mode": "interactive"
     },
     {
+      "id": "website",
+      "name": "Website",
+      "symbol": "🌐",
+      "tagline": "Build a website",
+      "prompt_file": "website.txt",
+      "default_language": "html",
+      "frameworks": [],
+      "_packages_note": "None. A first website is files a child can read, not a toolchain: no React, no Node, no npm, no bundler and no build step. Section 6 of the Phase 11 work order.",
+      "packages": [],
+      "starters": [
+        "website_basic"
+      ],
+      "starter_default": "website_basic",
+      "entrypoint": "index.html",
+      "_run_mode_note": "The only 'preview' profile. A website is not executed -- there is no process, no exit code and nothing for the process sandbox to confine, because the files are the thing. Open Nest opens the page itself with every non-file request refused (opennest/execution/web_preview.py), which is how section 17's 'works offline, no trackers, no CDN' becomes enforced rather than merely asked for.",
+      "run_mode": "preview",
+      "run_command": null,
+      "compile_command": null,
+      "run_label": "Preview Website",
+      "_tools_note": "Three, and deliberately no preview tool. Gary cannot see the rendered page any more than he can see a picture, so giving him a button that claims to look at it would be the section 13 honesty problem in a new costume. He edits the files; the child looks.",
+      "tools": [
+        "read_file",
+        "edit_file",
+        "write_file"
+      ],
+      "asset_types": [
+        "image",
+        "audio",
+        "document",
+        "data",
+        "code"
+      ],
+      "starter_ideas": [
+        "About Me",
+        "A Club Page",
+        "A Photo Page",
+        "A Fan Site",
+        "A Recipe Page"
+      ]
+    },
+    {
       "id": "raspberry_pi",
       "name": "Raspberry Pi / Robot",
-      "symbol": "\ud83e\udd16",
+      "symbol": "🤖",
       "tagline": "Build with Raspberry Pi",
       "prompt_file": "raspberry_pi.txt",
       "default_language": "python",
@@ -58,7 +103,10 @@
         "numpy",
         "pillow"
       ],
-      "starter_template": "raspberry_pi_basic",
+      "starters": [
+        "raspberry_pi_basic"
+      ],
+      "starter_default": "raspberry_pi_basic",
       "entrypoint": "main.py",
       "run_command": [
         "python",
@@ -90,13 +138,16 @@
     {
       "id": "arduino",
       "name": "Arduino",
-      "symbol": "\ud83d\udd0c",
+      "symbol": "🔌",
       "tagline": "Build a device",
       "prompt_file": "arduino.txt",
       "default_language": "arduino",
       "frameworks": [],
       "packages": [],
-      "starter_template": "arduino_basic",
+      "starters": [
+        "arduino_basic"
+      ],
+      "starter_default": "arduino_basic",
       "_entrypoint_note": "arduino-cli requires a sketch folder whose name matches its .ino, so the sketch is src/project/project.ino and not src/project.ino. Measured in SPIKES.md section 14: the flat layout fails with 'main file missing from sketch: src/src.ino'.",
       "entrypoint": "project/project.ino",
       "run_command": null,
@@ -127,7 +178,7 @@
     {
       "id": "research",
       "name": "Research Project",
-      "symbol": "\ud83d\udd2c",
+      "symbol": "🔬",
       "tagline": "Explore something",
       "prompt_file": "research.txt",
       "default_language": "python",
@@ -141,7 +192,10 @@
         "matplotlib",
         "pillow"
       ],
-      "starter_template": "research_basic",
+      "starters": [
+        "research_basic"
+      ],
+      "starter_default": "research_basic",
       "entrypoint": "analysis.py",
       "run_command": [
         "python",
@@ -179,7 +233,11 @@
       "default_language": "none",
       "frameworks": [],
       "packages": [],
-      "starter_template": "image_creation_basic",
+      "_starters_note": "prompts.md is not schema filler. prompts/image_creation.txt tells Gary to keep it current -- 'when a description works, write it down with the file it made' -- so the file is the one thing this profile's system prompt depends on existing.",
+      "starters": [
+        "image_creation_basic"
+      ],
+      "starter_default": "image_creation_basic",
       "entrypoint": "prompts.md",
       "run_command": null,
       "compile_command": null,
@@ -208,7 +266,7 @@
     {
       "id": "blank",
       "name": "Something Else",
-      "symbol": "\u2728",
+      "symbol": "✨",
       "tagline": "Start with an idea",
       "prompt_file": "blank.txt",
       "default_language": "python",
@@ -218,7 +276,9 @@
         "pillow",
         "requests"
       ],
-      "starter_template": "blank_basic",
+      "_starters_note": "None, and null. Section 7 of the Phase 11 work order: Blank stays genuinely blank. The Phase 0 blank_basic kit was withdrawn rather than left offered -- a profile whose whole purpose is an empty page should not have a starter to decline. entrypoint is still main.py because that is the path run_command targets once there is something to run.",
+      "starters": [],
+      "starter_default": null,
       "entrypoint": "main.py",
       "run_command": [
         "python",

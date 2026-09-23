@@ -49,7 +49,7 @@ from opennest.ai import router
 from opennest.ai.provider import ProviderError
 from opennest.projects.manager import list_projects
 from opennest.security import keychain, permissions
-from opennest.ui import consent
+from opennest.ui import brand, consent, theme
 from opennest.ui.common import horizontal_rule, mono_label, section_label
 
 #: WORKORDER_01 section 32's list, in its order.
@@ -145,9 +145,19 @@ class SettingsWindow(QDialog):
     # -- pages --------------------------------------------------------------
 
     def _general_page(self) -> QWidget:
+        """Settings' About surface, and the only page here carrying a mark.
+
+        Guide section 30 names "About Open Nest" as a place the wordmark belongs. The
+        version stands on its own line rather than repeating the product name, because
+        the mark already says it -- and the mark carries "Open Nest" as its accessible
+        name, so nothing is lost to a screen reader.
+        """
         widget, layout = _page()
         layout.addWidget(section_label("General"))
-        layout.addWidget(_body(f"{APP_NAME} {__version__}"))
+        layout.addWidget(brand.placed("settings_about", dark=theme.is_dark()))
+        layout.addSpacing(2)
+        layout.addWidget(mono_label(f"Version {__version__}"))
+        layout.addSpacing(4)
         layout.addWidget(_body(
             "Open Nest works entirely on this Mac. Cloud AI is an option a parent can "
             "turn on, and it is off until they do."
@@ -159,15 +169,198 @@ class SettingsWindow(QDialog):
         return widget
 
     def _local_ai_page(self) -> QWidget:
+        """The same machine-aware surface as setup, plus section 43's management.
+
+        Section 43 asks that changing a model afterwards does not mean rerunning the
+        whole wizard, and section 44 puts "Check for New Models" here. The presentation
+        follows the wizard deliberately: a parent who saw "Recommended for this Mac"
+        during setup should meet the same words here rather than a second vocabulary.
+        """
         widget, layout = _page()
         layout.addWidget(section_label("Local AI"))
         layout.addWidget(_body("These run on this Mac. They need no internet."))
-        for entry in router.local_models():
-            layout.addWidget(self._model_row(entry))
+
+        self._machine_line = mono_label("", wrap=True)
+        layout.addWidget(self._machine_line)
         layout.addWidget(horizontal_rule())
+
+        self._model_rows = QVBoxLayout()
+        self._model_rows.setSpacing(0)
+        layout.addLayout(self._model_rows)
+
+        layout.addWidget(horizontal_rule())
+        self._other_models_label = section_label("Other Installed Models")
+        layout.addWidget(self._other_models_label)
+        self._other_models = mono_label("", wrap=True)
+        layout.addWidget(self._other_models)
+
+        layout.addWidget(horizontal_rule())
+        refresh_row = QHBoxLayout()
+        check = QPushButton("Check for New Models")
+        check.setToolTip("Update the list of models. This does not download anything.")
+        check.clicked.connect(self._refresh_catalog)
+        refresh_row.addWidget(check)
+        refresh_row.addStretch(1)
+        layout.addLayout(refresh_row)
+        self._catalog_note = _body("")
+        layout.addWidget(self._catalog_note)
+
         layout.addWidget(mono_label(f"Models are stored in {paths.models_dir()}", wrap=True))
         layout.addStretch(1)
+        self._refresh_models()
         return widget
+
+    # -- the model list (Phase 11B) -----------------------------------------
+
+    def _refresh_models(self) -> None:
+        """Re-read the Mac and the catalogue, and rebuild the rows.
+
+        Section 50: the machine profile is not frozen at first installation. Free
+        storage in particular changes hourly, and this page is one of the moments the
+        work order names for re-evaluating it.
+        """
+        from opennest.models import compatibility, discovery
+        from opennest.models import machine as machine_service
+
+        machine = machine_service.detect()
+        self._machine_line.setText(machine.summary())
+
+        catalogue = router.load_catalogue()
+        try:
+            installed = discovery.installed(catalogue)
+            unknown = discovery.unknown_models(catalogue)
+        except Exception:
+            installed, unknown = (), ()
+        installed_ids = [item.model_id for item in installed]
+
+        while self._model_rows.count():
+            item = self._model_rows.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        entries = router.local_models()
+        verdicts = {
+            v.model_id: v
+            for v in compatibility.assess_all(entries, machine, installed_ids)
+        }
+        pairs = [(e, verdicts[e.info.id]) for e in entries if e.info.id in verdicts]
+        for entry, verdict in compatibility.sort_for_display(pairs):
+            self._model_rows.addWidget(self._local_model_row(entry, verdict))
+
+        # Section 32: shown so the disk space is accounted for and nobody thinks Open
+        # Nest lost a model they know they have. Never offered as a choice.
+        self._other_models_label.setVisible(bool(unknown))
+        self._other_models.setVisible(bool(unknown))
+        if unknown:
+            self._other_models.setText(
+                "\n".join(item.repo_id for item in unknown)
+                + "\n\nOpen Nest does not know these models and cannot use them."
+            )
+
+    def _local_model_row(self, entry, verdict) -> QWidget:
+        """One local model: what it is, how it fits, and what can be done about it."""
+        row = QWidget()
+        box = QVBoxLayout(row)
+        box.setContentsMargins(0, 6, 0, 6)
+        box.setSpacing(2)
+
+        title = QLabel(entry.info.name)
+        title.setProperty("role", "cardTitle")
+        box.addWidget(title)
+
+        detail = [entry.info.description]
+        if entry.download_gb:
+            detail.append(f"{entry.download_gb} GB")
+        if entry.license:
+            detail.append(entry.license)
+        box.addWidget(mono_label("   ".join(p for p in detail if p), wrap=True))
+
+        fit = _body(
+            f"{verdict.label}. {verdict.reason}" if not verdict.installed
+            else f"On this Mac. {verdict.label}."
+        )
+        box.addWidget(fit)
+
+        buttons = QHBoxLayout()
+        if verdict.installed:
+            remove = QPushButton("Remove Download")
+            remove.setToolTip("Delete the downloaded model. Your projects are not touched.")
+            remove.clicked.connect(lambda _=False, e=entry: self._remove_model(e))
+            buttons.addWidget(remove)
+        elif verdict.usable:
+            get = QPushButton("Download")
+            get.clicked.connect(lambda _=False, e=entry: self._download_model(e))
+            buttons.addWidget(get)
+        buttons.addStretch(1)
+        box.addLayout(buttons)
+        return row
+
+    def _refresh_catalog(self) -> None:
+        """Section 44. Metadata only -- this never downloads a model."""
+        from opennest.models import catalog, remote
+
+        result = remote.refresh()
+        self._catalog_note.setText(result.message)
+        if result.outcome == "updated":
+            catalog.reload()
+            self._refresh_models()
+
+    def _download_model(self, entry) -> None:
+        """Section 30: a model is downloaded because somebody asked, never because a
+        catalogue mentioned one."""
+        from opennest.setup import downloader
+
+        if not self._unlock():
+            return
+        proceed = QMessageBox.question(
+            self, APP_NAME,
+            f"Download {entry.info.name}?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if proceed != QMessageBox.StandardButton.Yes:
+            return
+        result = downloader.download(entry)
+        message = result.message
+        if result.ok:
+            # Section 48: a finished transfer is not a working model, and the same
+            # real-inference check the wizard uses decides which this was.
+            check = downloader.verify(entry)
+            message = (
+                f"{entry.info.name} is ready." if check.ok
+                else f"{entry.info.name} downloaded but did not answer.\n\n{check.message}"
+            )
+        QMessageBox.information(self, APP_NAME, message)
+        self._refresh_models()
+
+    def _remove_model(self, entry) -> None:
+        """Section 49, and the distinction it insists on."""
+        from opennest.setup import downloader
+
+        if not self._unlock():
+            return
+        question = (
+            f"Remove the downloaded {entry.info.name}?\n\n"
+            f"This deletes the AI model only. Every project, and everything in them, "
+            f"stays exactly where it is."
+        )
+        if entry.info.id == router.default_model_id():
+            # Said *before* the confirmation, not after it. Section 49 allows removing
+            # the active model only with another one selected or a plain explanation of
+            # what stops working, and an explanation that arrives once the model is
+            # already gone is not one.
+            question += (
+                "\n\nThis is the model Open Nest uses. Local AI will not work until "
+                "another one is downloaded."
+            )
+        proceed = QMessageBox.question(
+            self, APP_NAME, question,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if proceed != QMessageBox.StandardButton.Yes:
+            return
+        result = downloader.remove(entry)
+        QMessageBox.information(self, APP_NAME, result.message)
+        self._refresh_models()
 
     def _cloud_ai_page(self) -> QWidget:
         """What the child can see about cloud AI. Changing it is a parent's job."""
@@ -211,7 +404,12 @@ class SettingsWindow(QDialog):
             detail.append(entry.license)
         if entry.download_gb:
             detail.append(f"{entry.download_gb} GB")
-        box.addWidget(mono_label("   ".join(part for part in detail if part)))
+        # Wrapped, because this is the widest thing on the Local AI page and that page
+        # was the tightest of the six. Measured at 460 px for the recommended model's
+        # row inside a 520 px viewport, leaving the page 24 px from a horizontal
+        # scrollbar -- the same unwrapped-``mono_label`` fault Phase 10A found three
+        # times elsewhere, and the reason ``wrap`` exists.
+        box.addWidget(mono_label("   ".join(part for part in detail if part), wrap=True))
 
         reason = router.why_unavailable(
             entry,
@@ -328,6 +526,15 @@ class SettingsWindow(QDialog):
 
         self._github_status = _body("")
         layout.addWidget(self._github_status)
+
+        # The detailed backup state, for the one audience allowed to see it. A child's
+        # Flight Deck says only whether their work is safe -- section 29A's "no visible
+        # complexity" -- while a parent who turned backup on gets the queue depth and
+        # what it is waiting for, which is the part they can act on. Nothing pending was
+        # surfaced anywhere before now; HANDOFF section 6C-bis recorded that as an open
+        # question and this is the answer to it.
+        self._backup_detail = _body("")
+        layout.addWidget(self._backup_detail)
 
         row = QHBoxLayout()
         self._github_connect = QPushButton("Connect GitHub")
@@ -670,6 +877,7 @@ class SettingsWindow(QDialog):
         from opennest.github import auth as github_auth
         from opennest.setup.state import InstallationState
 
+        self._backup_detail.setVisible(False)
         if not github_auth.configured():
             self._github_status.setText(
                 "GitHub backup is not part of this version of Open Nest. Projects are "
@@ -696,6 +904,28 @@ class SettingsWindow(QDialog):
             + (f" as {account}" if account else "")
             + f".\nAutomatic private backup: {enabled}."
         )
+        self._show_backup_detail()
+
+    def _show_backup_detail(self) -> None:
+        """How many projects are waiting, and what they are waiting for.
+
+        Read from the queue on disk rather than from a running ``GitHubSync``: Settings
+        is a dialog that can be opened from the wizard as well as from the app, so it
+        cannot assume a live sync object exists. Local saving and Project History are
+        deliberately not mentioned -- they work whether or not GitHub does, and blurring
+        the two would make a waiting backup look like lost work.
+        """
+        from opennest.ui.github_sync import GitHubSync
+
+        try:
+            sync = GitHubSync(
+                self, credentials=self.credentials, controls=self.controls
+            )
+            self._backup_detail.setText(sync.status().parent)
+        except OSError:
+            # An unreadable queue is not worth a dialog on a settings page.
+            return
+        self._backup_detail.setVisible(True)
 
     def _add_key(self, provider: str) -> None:
         label = keychain.PROVIDER_LABELS.get(provider, provider)

@@ -234,6 +234,15 @@ class InstallationState:
 
     #: Model ids setup downloaded and verified, so a health check knows what to look for.
     installed_models: list = field(default_factory=list)
+
+    #: Model caches outside Open Nest's own store that a parent has explicitly allowed
+    #: it to load from. **Empty by default, and that default is the containment
+    #: promise**: everything Open Nest downloads lives under ``OPENNEST_HOME``, and it
+    #: reads models from nowhere else unless somebody said so. A family who already has
+    #: a model in the standard Hugging Face cache can adopt it here rather than
+    #: downloading a second copy (Phase 11 work order section 31), and the entry is
+    #: recorded rather than inferred so the exception is visible in Settings.
+    extra_model_paths: list = field(default_factory=list)
     #: Whether the parent chose the Arduino toolchain (D7: arduino-cli plus the AVR core).
     arduino_installed: bool = False
 

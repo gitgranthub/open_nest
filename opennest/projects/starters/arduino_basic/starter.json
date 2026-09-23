@@ -1,0 +1,14 @@
+{
+  "id": "arduino_basic",
+  "profile": "arduino",
+  "name": "Basic Arduino Sketch",
+  "description": "A sketch with setup() and loop() that compiles as it is.",
+  "_entry_point_note": "arduino-cli requires a sketch folder whose name matches its .ino file, so the entry point carries the subdirectory. Measured in SPIKES.md section 14; the flat layout fails with 'main file missing from sketch: src/src.ino'.",
+  "entry_point": "project/project.ino",
+  "version": 1,
+  "files": [
+    "project/project.ino",
+    "project/README.md",
+    "project/wiring.md"
+  ]
+}

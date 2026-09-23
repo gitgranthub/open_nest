@@ -4,8 +4,11 @@ Working plan derived from `WORKORDER_01.md` (functional scope) and `DESIGN_DOC.m
 (naming and visual direction). This document records phases, exit criteria, decisions,
 and open questions. It is expected to be amended as work proceeds.
 
-Status: **Phases 0-9 complete. Phase 10 (design and polish) is next.** Phase 9's GitHub
-backup is built but has made no real GitHub call — see its section and HANDOFF §6C-bis.
+Status: **Phases 0-10 complete.** Phase 9's GitHub backup *has* been verified against
+the real service since this line was first written — real device flow, real private
+repository, real push, real pull request, real disconnect (SPIKES.md §17C-E). What
+remains unverified there is organisation repositories, SSO and 2FA mid-flow; see
+HANDOFF §6C-bis.
 
 New developers should start with [HANDOFF.md](HANDOFF.md).
 
@@ -1170,17 +1173,72 @@ warning is answered by the **child**, never taking the parent PIN, and fires onc
 model switch rather than per cloud request. Recorded as a defect in `HANDOFF.md` §6B
 with decision **D12**; not Phase 10 work.
 
-#### 10C — Product identity and interaction states — **not started**
+#### 10C — Product identity and interaction states — **complete**
 
 Flight Deck identity (§56), compact mark in the Workbench (§57), setup/onboarding
 identity (§58), eagle processing states (§§34–37), sunglasses completion states
 (§§38–39), the waiting hierarchy (§53), the completion hierarchy (§54), motion restraint,
 light/dark consistency.
 
-#### 10D — Final brand and UI integration — **not started**
+**Exit criterion met.** 833 tests pass (786 at 10B), ruff clean, 11/11 screens rendered
+under cocoa at device pixel ratio 2.0. Every component 10A built now has a consumer.
 
-Wordmark and compact-logo placement, icon work, a consistency pass across app and setup,
-final cocoa screenshots at realistic window sizes.
+**The eagle ladder was rebuilt, and the reason is a measurement lesson.** Sizing the
+indicator to the macOS spinning indicator meant going below the delivery's smallest
+frame set, so `tools/prepare_brand_assets.py` (guide §50's script, which did not exist)
+now regenerates it. Three single-frame metrics rated nearest-neighbour the *most
+faithful* downscale; all three are averages over the twelve poses, and the defect was a
+**3.90 pp swing between** them — the bird pulsing as it flaps. Area-averaging holds it to
+0.36–0.65 pp, and registration improved to 0 px drift with 0.000% ink clipped. An earlier
+recorded finding was corrected in the process: `asset_manifest.json`'s
+`"nearest-neighbor"` is accurate, and the soft alpha that seemed to contradict it comes
+from the source art.
+
+**One generated size was withdrawn after looking at it.** A 40 px compact mark is
+illegible — §33's "do not reduce the artwork until it becomes illegible" — and 64 is
+exactly where the supplied ladder starts. The delivery's minimum sizes encode legibility
+thresholds, which is now recorded.
+
+**Two defects only rendering could find**: overlapping labels on the Flight Deck, from a
+nested layout breaking a `parentWidget().layout()` lookup while the whole suite passed;
+and the model download rendering macOS system blue, because `theme.py` had no
+`QProgressBar` rule. The window also had no minimum size at all.
+
+**About Gary** was added at the end of 10C by developer direction — a quiet `ⓘ` beside
+his name opening a popover, never surfaced automatically, no artwork, dry.
+
+#### 10D — Final brand and UI integration — **complete**
+
+Wordmark and compact-mark placement on the remaining surfaces, a consistency pass across
+app and setup, light/dark verification, final cocoa screenshots.
+
+**Scoped by a principle the developer set, and it made the stage smaller rather than
+larger:** *the closer a surface is to actual work, the less branding it needs.* Flight
+Deck carries the strongest identity, the Workbench compact identity, settings and dialogs
+are restrained, and functional modals prioritise the task over the logo. Branding is not
+added merely because a surface exists.
+
+Applied honestly, exactly **one** new placement survived: the wordmark on Settings →
+General, which is the product's About surface and which guide §30 names. The device-flow
+dialog, the migration dialog, the consent dialogs and the new-project dialog were each
+considered and **deliberately left clean** — they are task surfaces, and the code already
+says "Open Nest" in ordinary text, which is what §30 asks for.
+
+**Icon work is explicitly out of scope and that is a ruling, not an omission.** See
+`DESIGN_DOC.md` §23.
+
+**Exit criterion met.** 841 tests pass, ruff clean, 18 further surfaces rendered under
+cocoa in **both** colour schemes. The consistency pass is now mechanical rather than a
+read-through — `tests/test_design_consistency.py` enforces that every `role`/`state` a
+widget sets is actually styled (an unstyled one renders in the system appearance and is
+silent), that nothing outside the palette hard-codes a colour, that no module but
+`theme.py` calls `setStyleSheet`, that light and dark share no values, and that every
+dialog offering a choice marks its primary action. That last one found a real defect: the
+device-flow dialog's `Connect GitHub` and `Cancel` were visually identical.
+
+Two items are carried as final QA rather than as work, by developer direction: **watching
+the eagle loop**, and a **second display** for §44's external-Retina check. Both are
+"somebody has to look", and both are recorded in `PHASE_10_HANDOFF.md` §6A.
 
 **Exit:** a design checklist review against **both** `DESIGN_DOC.md` and
 `brand_design_guide.md`, with the newer guide taking precedence where it explicitly

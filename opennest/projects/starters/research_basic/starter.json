@@ -1,0 +1,18 @@
+{
+  "id": "research_basic",
+  "profile": "research",
+  "name": "Research Starter",
+  "description": "A place for a question, the data, the notes and what you found.",
+  "entry_point": "analysis.py",
+  "version": 1,
+  "files": [
+    "analysis.py",
+    "question.md",
+    "sources.md",
+    "findings.md"
+  ],
+  "_directories_note": "data/ and notes/ are where a research project puts things it collects. The project already has a top-level data/ directory for imported datasets; these sit beside the analysis so a child can keep working notes next to the code that reads them.",
+  "directories": [
+    "notes"
+  ]
+}

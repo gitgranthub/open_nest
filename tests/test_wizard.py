@@ -20,6 +20,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from opennest.models.machine import MachineProfile  # noqa: E402
 from opennest.security import keychain, permissions  # noqa: E402
 from opennest.setup import checks, downloader  # noqa: E402
 from opennest.setup.state import InstallationState  # noqa: E402
@@ -156,26 +157,69 @@ def test_setup_works_with_no_git_email(wizard) -> None:
 
 # --------------------------------------------------------------------- local AI
 
+#: A roomy Mac, named explicitly. Every test below hands in the machine it means: the
+#: target hardware is 8 GB, this was written on 48 GB, and a test that inherits whichever
+#: Mac it runs on is a test that passes for the wrong reason somewhere else.
+BIG_MAC = MachineProfile(
+    architecture="arm64", chip="Apple M4 Pro", macos_version="26.0",
+    memory_gb=48.0, free_disk_gb=400.0, cpu_cores=14, mlx_available=True,
+)
+
+#: The baseline WORKORDER_01 actually targets.
+SMALL_MAC = MachineProfile(
+    architecture="arm64", chip="Apple M1", macos_version="26.0",
+    memory_gb=8.0, free_disk_gb=120.0, cpu_cores=8, mlx_available=True,
+)
+
+
 def test_the_model_list_comes_from_the_catalogue(wizard) -> None:
     """Section 35A forbids hard-coding model ids or sizes into wizard logic."""
     from opennest.ai import router
 
     step = _step(wizard, "LocalAIStep")
-    step.enter()
+    step.inspect_now(BIG_MAC)
     offered = {step._picker.itemData(i) for i in range(step._picker.count())}
     assert offered == {entry.info.id for entry in router.local_models()}
 
 
-def test_the_recommended_model_is_marked_as_such(wizard) -> None:
+def test_a_small_mac_is_not_offered_a_model_it_cannot_hold(wizard) -> None:
+    """The whole reason the recommendation engine exists.
+
+    Before Phase 11B every local entry claimed ``recommended_ram_gb: 8``, so an 8 GB Air
+    and a 48 GB Studio were shown the same list and told the same thing.
+    """
     step = _step(wizard, "LocalAIStep")
-    step.enter()
-    labels = [step._picker.itemText(i) for i in range(step._picker.count())]
-    assert any(label.startswith("Recommended") for label in labels)
+    step.inspect_now(SMALL_MAC)
+    labels = {
+        step._picker.itemData(i): step._picker.itemText(i)
+        for i in range(step._picker.count())
+    }
+    assert "Recommended for this Mac" in labels["qwen3-4b-instruct"]
+    assert "Not recommended" in labels["qwen3-coder-30b-a3b"]
+
+
+def test_the_suggestion_is_phrased_as_a_fit_not_a_ranking(wizard) -> None:
+    """Section 26: "Recommended for this Mac", never "Best Model"."""
+    step = _step(wizard, "LocalAIStep")
+    step.inspect_now(SMALL_MAC)
+    headline = step._headline.text()
+    assert "suggests" in headline and "this Mac" in headline
+    assert "best" not in headline.lower()
+
+
+def test_the_options_are_folded_away_until_asked_for(wizard) -> None:
+    """Section 42: first-run setup shows a small choice, not a model marketplace."""
+    step = _step(wizard, "LocalAIStep")
+    step.inspect_now(BIG_MAC)
+    assert step._picker.isHidden(), "the full ladder is on screen before anyone asked"
+    step._toggle_options()
+    assert not step._picker.isHidden()
 
 
 def test_the_download_size_is_shown_before_anything_starts(wizard) -> None:
+    """Section 47, and calm is not a reason to stop saying how big a thing is."""
     step = _step(wizard, "LocalAIStep")
-    step.enter()
+    step.inspect_now(BIG_MAC)
     assert "GB" in step._detail.text()
 
 
@@ -519,3 +563,30 @@ def test_no_api_key_reaches_the_installation_record(wizard, tmp_path) -> None:
     written = (tmp_path / "installation.json").read_text()
     assert "sk-proj-" not in written
     assert "B" * 60 not in written
+
+
+def test_quitting_while_the_mac_is_being_checked_does_not_crash(wizard) -> None:
+    """The defect a real cocoa run found, and the crash it caused.
+
+    ``LocalAIStep.enter`` starts a worker the moment the step opens, so from Phase 11B
+    there is a live thread during a step a parent may press Quit Setup on. Destroying a
+    widget while one of its threads runs aborts the interpreter outright -- no
+    traceback, no failed test, just a dead process. ``set_busy`` disables Back and
+    Continue and deliberately does not disable quitting, so waiting is the fix.
+    """
+    step = _step(wizard, "LocalAIStep")
+    step.enter()
+
+    wizard.wait_for_workers()
+    thread = step._thread
+    assert thread is None or not thread.isRunning(), (
+        "the wizard would have been destroyed with a live worker thread"
+    )
+
+
+def test_every_route_out_of_the_wizard_waits(wizard, monkeypatch) -> None:
+    """Accept and Reject both funnel through ``done``, which is why the wait lives there."""
+    waited = []
+    monkeypatch.setattr(wizard, "wait_for_workers", lambda: waited.append(True))
+    wizard.done(0)
+    assert waited, "closing the wizard did not wait for its workers"

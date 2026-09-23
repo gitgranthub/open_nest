@@ -17,12 +17,12 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
 from opennest import paths
+from opennest.projects import starters as starter_kits
 from opennest.projects.profiles import Profile, get_profile
 from opennest.versioning.autosave import atomic_write_text
 
@@ -57,6 +57,14 @@ class Manifest:
     #: the child picks one: WORKORDER_01 section 8 forbids inventing hardware details,
     #: and guessing a board is guessing every pin on it.
     arduino_board: str | None = None
+    #: Which starter kit this project was created from, and at what version. ``None``
+    #: means nothing is recorded -- either the child started empty, or the project
+    #: predates Phase 11. The two are deliberately not distinguished: an old project's
+    #: files might be a Phase 0 template or might be entirely the child's by now, and
+    #: guessing which would be telling Gary something nobody measured. Silence is the
+    #: honest answer, and it is also exactly what he saw before Phase 11.
+    starter_id: str | None = None
+    starter_version: int | None = None
 
     @classmethod
     def from_dict(cls, raw: dict) -> Manifest:
@@ -118,8 +126,36 @@ def read_manifest(directory: Path) -> Manifest:
     return Manifest.from_dict(raw)
 
 
-def template_dir(profile: Profile) -> Path:
-    return paths.package_root() / "projects" / "templates" / profile.starter_template
+class _ProfileDefault:
+    """Sentinel: "whichever kit this profile begins with"."""
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return "PROFILE_DEFAULT"
+
+
+#: Passed as ``starter_id`` to mean the profile's own default. ``None`` means the
+#: opposite and is not the same thing: it is the child choosing to start empty.
+PROFILE_DEFAULT = _ProfileDefault()
+
+
+def resolve_starter(profile: Profile, starter_id) -> starter_kits.Starter | None:
+    """Turn a caller's choice into a kit, or None for empty.
+
+    Raises :class:`ProjectError` for a kit this profile does not offer, which is a
+    programming mistake rather than something a child can cause -- the pickers are built
+    from ``profile.starters``.
+    """
+    if starter_id is PROFILE_DEFAULT:
+        return starter_kits.default_starter(profile)
+    if starter_id is None:
+        return None
+    if starter_id not in profile.starters:
+        offered = ", ".join(profile.starters) or "none"
+        raise ProjectError(
+            f"A {profile.name} project has no starter called {starter_id!r}. "
+            f"It offers: {offered}."
+        )
+    return starter_kits.get_starter(starter_id)
 
 
 def create_project(
@@ -128,24 +164,28 @@ def create_project(
     *,
     model: str | None = None,
     build_style: str = "build",
+    starter_id=PROFILE_DEFAULT,
     root: Path | None = None,
 ) -> Project:
-    """Create a project directory, manifest and starter files."""
+    """Create a project directory, manifest and -- unless asked not to -- starter files.
+
+    ``starter_id`` is the profile's default when omitted, ``None`` to start empty, or
+    the id of one of the kits the profile offers.
+    """
     profile = get_profile(profile_id)
 
-    # Checked before anything is created. A profile naming a template that is not
-    # installed is a packaging fault, and it used to pass silently: four of the five
-    # profiles made a project containing nothing but project.json, with the manifest
-    # pointing at an entrypoint that was never copied in. Nothing noticed for seven
-    # phases, which is the argument for failing loudly -- and for failing here, before
-    # a half-made directory exists to block the child retrying the same name.
-    source = template_dir(profile)
-    if not source.is_dir():
-        raise ProjectError(
-            f"Open Nest is missing the starter files for a {profile.name} project "
-            f"({profile.starter_template}). This is a problem with the installation, "
-            f"not with anything you did."
-        )
+    # Resolved before anything is created. A profile naming a kit that is not installed
+    # is a packaging fault, and it used to pass silently: four of the five profiles made
+    # a project containing nothing but project.json, with the manifest pointing at an
+    # entrypoint that was never copied in. Nothing noticed for seven phases, which is
+    # the argument for failing loudly -- and for failing here, before a half-made
+    # directory exists to block the child retrying the same name.
+    try:
+        starter = resolve_starter(profile, starter_id)
+        if starter is not None:
+            starter_kits.source_files(starter)
+    except starter_kits.StarterError as exc:
+        raise ProjectError(str(exc)) from exc
 
     projects_root = Path(root) if root else paths.projects_root()
     projects_root.mkdir(parents=True, exist_ok=True)
@@ -159,7 +199,8 @@ def create_project(
         (directory / sub).mkdir()
     paths.project_internal_dir(directory).mkdir()
 
-    shutil.copytree(source, directory / "src", dirs_exist_ok=True)
+    if starter is not None:
+        starter_kits.apply(starter, directory / "src")
 
     manifest = Manifest(
         name=name,
@@ -168,9 +209,31 @@ def create_project(
         entrypoint=profile.entrypoint,
         model=model,
         build_style=build_style,
+        starter_id=starter.id if starter else None,
+        starter_version=starter.version if starter else None,
     )
     write_manifest(directory, manifest)
     return Project(directory=directory, manifest=manifest, _profile=profile)
+
+
+def add_starter(project: Project, starter_id: str) -> tuple[str, ...]:
+    """Add a kit to an existing project, and record that it is there.
+
+    The one-click offer behind an empty Workbench. It refuses rather than merges if any
+    of the kit's files already exist -- :func:`opennest.projects.starters.apply` is
+    where that is enforced, so no caller can skip it.
+    """
+    try:
+        starter = resolve_starter(project.profile, starter_id)
+        if starter is None:
+            raise ProjectError("There is no starter to add.")
+        written = starter_kits.apply(starter, project.directory / "src")
+    except starter_kits.StarterError as exc:
+        raise ProjectError(str(exc)) from exc
+    project.manifest.starter_id = starter.id
+    project.manifest.starter_version = starter.version
+    project.save()
+    return written
 
 
 def open_project(directory: Path) -> Project:

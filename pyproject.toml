@@ -20,7 +20,7 @@ include = ["opennest*"]
 opennest = [
     "config/*.json",
     "prompts/*.txt",
-    "projects/templates/**/*",
+    "projects/starters/**/*",
     "github/askpass.sh",
 ]
 
@@ -29,9 +29,9 @@ line-length = 100
 # bootstrap/ must stay Python 3.9-compatible (see PLAN.md 2.1), so the lint target is
 # the lowest interpreter any first-party code has to run under.
 target-version = "py39"
-# Starter templates are sample code a child reads and edits. Ruff collapsed a
-# two-branch if into one long line there, which is worse for that audience.
-extend-exclude = [".venv", "spikes", "opennest/projects/templates"]
+# Starter kits are sample code a child reads and edits. Ruff collapsed a two-branch if
+# into one long line there, which is worse for that audience.
+extend-exclude = [".venv", "spikes", "opennest/projects/starters"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM"]

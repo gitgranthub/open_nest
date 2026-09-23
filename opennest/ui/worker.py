@@ -99,11 +99,46 @@ class ModelLoader(QObject):
             self.ready.emit()
 
 
+#: How long to give a worker to stop before giving up on it. Generous, because the
+#: alternative to waiting is the crash this exists to prevent.
+SHUTDOWN_WAIT_MS = 5000
+
+
+def stop_thread(thread: QThread | None, timeout_ms: int = SHUTDOWN_WAIT_MS) -> None:
+    """Ask a worker thread to finish, and wait for it. Safe to call on None or a dead one.
+
+    **Destroying a widget while one of its worker threads is still running aborts the
+    interpreter**, with ``QThread: Destroyed while thread is still running`` and no
+    traceback. The test fixtures have quit-and-waited by hand since Phase 5 for exactly
+    this reason, which meant the hazard was understood and guarded everywhere except in
+    the application itself.
+
+    Phase 11B made that reachable rather than theoretical: the setup wizard now inspects
+    the Mac the moment the Local AI step opens, so there is a live thread during a step
+    a parent may well press Quit Setup on. Every window that starts a worker now waits
+    for it on the way out.
+    """
+    if thread is None:
+        return
+    try:
+        if not thread.isRunning():
+            return
+        thread.quit()
+        if not thread.wait(timeout_ms):
+            # Better a wedged worker than a hard abort: the thread is left alone and the
+            # window closes. Terminating a thread mid-call is its own kind of crash.
+            thread.requestInterruption()
+    except RuntimeError:
+        # The underlying QThread was already deleted by Qt. Nothing to wait for.
+        return
+
+
 def run_in_thread(parent: QObject, worker: QObject) -> QThread:
     """Move ``worker`` onto a new thread, start it, and clean up when it finishes.
 
     The thread is parented so Qt does not garbage-collect it mid-run -- a classic way to
-    make PySide6 crash with no traceback.
+    make PySide6 crash with no traceback. Whoever starts one is responsible for calling
+    :func:`stop_thread` before their widget is destroyed.
     """
     thread = QThread(parent)
     worker.setParent(None)

@@ -17,7 +17,6 @@ from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
-from opennest import paths
 from opennest.ai.provider import (
     Chunk,
     Message,
@@ -37,24 +36,27 @@ _FENCED_JSON = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 def resolve_local_model(model_id: str, revision: str | None = None) -> Path:
     """Find an installed model on disk without any network access.
 
+    Searches every cache Open Nest is willing to look in, not just its own. Until Phase
+    11B this looked in ``paths.models_dir()`` alone, which meant a model already sitting
+    in the standard Hugging Face cache was invisible -- so Open Nest would offer to
+    download a second copy of something already on the Mac, and a family who had run
+    anything else that uses that cache would pay for it twice in gigabytes. Section 31
+    of the Phase 11 work order names that case directly.
+
+    The list of places is fixed and short (``models.discovery.search_paths``): approved
+    caches, never a crawl of the disk.
+
     Raises :class:`ProviderError` with a plain-language message if it is not installed.
     """
-    from huggingface_hub import snapshot_download
-    from huggingface_hub.errors import LocalEntryNotFoundError
+    from opennest.models.discovery import locate
 
-    try:
-        located = snapshot_download(
-            model_id,
-            revision=revision,
-            cache_dir=str(paths.models_dir()),
-            local_files_only=True,
-        )
-    except (LocalEntryNotFoundError, FileNotFoundError, OSError) as exc:
+    located = locate(model_id, revision)
+    if located is None:
         raise ProviderError(
             f"The local AI model is not installed yet.\n\n{model_id}\n\n"
             f"Open Settings and download it, or run Setup again."
-        ) from exc
-    return Path(located)
+        )
+    return located
 
 
 class MLXProvider(ModelProvider):

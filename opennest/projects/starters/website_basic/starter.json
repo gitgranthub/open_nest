@@ -1,0 +1,17 @@
+{
+  "id": "website_basic",
+  "profile": "website",
+  "name": "Basic Website",
+  "description": "A page with HTML, CSS, and JavaScript. No frameworks, no internet.",
+  "_offline_note": "Section 17 of the Phase 11 work order: a starter website makes no network requests, loads no remote script, no CDN and no web font, and contains no third-party dependency. It works with the Wi-Fi off, and opennest/execution/web_preview.py refuses anything that is not a file inside the project, so a page that grew one would be stopped rather than quietly allowed.",
+  "entry_point": "index.html",
+  "version": 1,
+  "files": [
+    "index.html",
+    "styles.css",
+    "script.js"
+  ],
+  "directories": [
+    "assets"
+  ]
+}

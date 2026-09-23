@@ -1,8 +1,15 @@
 """Project profiles, loaded from configuration.
 
-WORKORDER_01 section 5: a profile defines the system prompt, starter template, allowed
+WORKORDER_01 section 5: a profile defines the system prompt, starter kits, allowed
 tools, package allowlist, run and compile commands, asset types and starter ideas. It is
 data. Adding a project type should not require changing Python.
+
+Phase 11 (config schema 2) replaced one field with two. ``starter_template`` named a
+single directory that was always copied in; ``starters`` is the list of kit ids a profile
+offers, and ``starter_default`` names which of them a new project begins with -- or
+``None`` for empty, which is how starting with nothing became possible. A profile may
+offer no kits at all: the schema allows a starter, it does not require one. See
+:mod:`opennest.projects.starters`.
 """
 
 from __future__ import annotations
@@ -23,13 +30,20 @@ class Profile:
     tagline: str
     prompt_file: str
     default_language: str
-    starter_template: str
+    #: Starter kit ids this profile offers, most useful first. May be empty.
+    starters: tuple[str, ...]
     entrypoint: str
     run_label: str
     tools: tuple[str, ...]
+    #: Which kit a new project begins with when nobody chooses. ``None`` means the
+    #: project begins empty, and Blank uses that deliberately. Kept as an explicit
+    #: ``null`` in the configuration rather than an empty string, so no consumer has to
+    #: remember that a falsy string is a sentinel.
+    starter_default: str | None = None
     #: "interactive" projects stay on screen until the child closes them (games, Pi
     #: loops); "batch" projects run to completion and are captured (analyses, compiles);
-    #: "generate" projects run nothing at all -- see :attr:`generates`.
+    #: "preview" projects are opened rather than executed (a website); "generate"
+    #: projects run nothing at all -- see :attr:`generates`.
     run_mode: str = "batch"
     packages: tuple[str, ...] = ()
     frameworks: tuple[str, ...] = ()
@@ -68,6 +82,18 @@ class Profile:
         """
         return self.run_mode == "generate"
 
+    @property
+    def previews(self) -> bool:
+        """Whether pressing the main button opens the project rather than running it.
+
+        A website is not executed: there is no process, no sandbox profile and no exit
+        code, because the files *are* the thing. Open Nest shows the page instead, with
+        network access refused at the request level -- see
+        :mod:`opennest.execution.web_preview`. Separate from ``generate`` because that
+        one calls a service and this one touches nothing outside the project.
+        """
+        return self.run_mode == "preview"
+
     def system_prompt(self) -> str:
         return (paths.prompts_dir() / self.prompt_file).read_text(encoding="utf-8").strip()
 
@@ -104,7 +130,8 @@ def _build(raw: dict) -> Profile:
         tagline=raw.get("tagline", ""),
         prompt_file=raw["prompt_file"],
         default_language=raw["default_language"],
-        starter_template=raw["starter_template"],
+        starters=_as_tuple(raw.get("starters")),
+        starter_default=raw.get("starter_default"),
         entrypoint=raw["entrypoint"],
         run_label=raw["run_label"],
         run_mode=raw.get("run_mode", "batch"),

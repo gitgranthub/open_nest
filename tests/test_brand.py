@@ -18,6 +18,10 @@ Three of these tests exist because measuring the delivery found defects in it:
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
+import textwrap
+from pathlib import Path
 
 import pytest
 
@@ -49,7 +53,7 @@ def test_every_declared_brand_asset_is_on_disk():
             path = brand.path_for(mark, size)
             if not path.is_file():
                 missing.append(str(path))
-    for size in (64, 96, 128, 256):
+    for size in brand._EAGLE_SIZES:
         for frame in range(1, brand.EAGLE_FRAMES + 1):
             path = brand.eagle_frame_path(size, frame)
             if not path.is_file():
@@ -64,7 +68,7 @@ def test_the_eagle_cycle_is_twelve_frames_at_every_runtime_size():
     delivery's manifest agrees. A size folder that disagreed would desynchronise the
     registration table.
     """
-    for size in (64, 96, 128, 256):
+    for size in brand._EAGLE_SIZES:
         frames = sorted((brand.EAGLE / f"frames_{size}").glob("eagle_*.png"))
         assert len(frames) == brand.EAGLE_FRAMES, f"frames_{size} has {len(frames)}"
 
@@ -92,6 +96,135 @@ def test_the_nearest_size_is_actually_the_nearest():
     assert brand.nearest_size(brand.Mark.GLASSES, 64) == 64
     # Ties resolve downward, so a tie never silently costs memory.
     assert brand.nearest_size(brand.Mark.GLASSES, 80) == 64
+
+
+# ------------------------------------------------------- HiDPI (guide section 44)
+
+def test_every_placement_size_has_an_exact_2x_file():
+    """The property that keeps a Retina Mac on a 1:1 blit, for every shipped placement.
+
+    ``device_size`` falls back to the *nearest* prepared file when the exact double is
+    missing, and Qt then softens it -- which is the blurring guide section 44 exists to
+    prevent. Rather than trusting whoever adds the next placement to check the ladder,
+    this fails at the moment a size whose double is absent is introduced.
+    """
+    missing = []
+    for name, (mark, logical) in brand.PLACEMENTS.items():
+        chosen = brand.device_size(mark, logical, 2.0)
+        if chosen != logical * 2:
+            missing.append(
+                f"{name}: {logical}pt at 2x wants {logical * 2}px, "
+                f"nearest prepared is {chosen}px"
+            )
+        elif not brand.path_for(mark, chosen).is_file():
+            missing.append(f"{name}: {brand.path_for(mark, chosen)} is not on disk")
+    assert not missing, "placements that cannot stay crisp at 2x: " + "; ".join(missing)
+
+
+@pytest.mark.parametrize("logical", [brand.EAGLE_INLINE, brand.EAGLE_SETUP])
+def test_every_eagle_size_is_one_to_one_at_both_scales(logical):
+    """Both indicator sizes draw a prepared frame set 1:1 at 1x and at 2x.
+
+    The delivery's ladder started at 64 px, so a 32 pt eagle -- the size of the macOS
+    spinning indicator, and the size an activity indicator should be -- would have been
+    a 2:1 downscale on a non-Retina display. ``tools/prepare_brand_assets.py`` generated
+    the 32 and 48 px sets rather than accepting that. This fails if a size loses either
+    half of its pair.
+    """
+    assert brand._nearest_eagle_size(logical) == logical
+    assert brand._nearest_eagle_size(logical * 2) == logical * 2
+    assert (brand.EAGLE / f"frames_{logical}").is_dir()
+    assert (brand.EAGLE / f"frames_{logical * 2}").is_dir()
+
+
+@pytest.mark.parametrize("name", sorted(brand.PLACEMENTS))
+def test_a_mark_keeps_its_logical_size_and_doubles_its_pixels_at_2x(qt_app, name):
+    """The defect this fixes: 10A asked for the 128 px file on a 2x display.
+
+    A mark must occupy the same space on screen whatever the scale factor, and carry
+    twice the pixels when there are twice the pixels to carry. ``ratio`` is injected so
+    this runs without a Retina display; ``test_the_default_ratio_really_comes_from_the
+    _display`` covers the part that cannot be injected.
+    """
+    mark, logical = brand.PLACEMENTS[name]
+    one = brand.pixmap(mark, logical, ratio=1.0)
+    two = brand.pixmap(mark, logical, ratio=2.0)
+
+    assert two.width() == one.width() * 2, "2x must load the double-resolution file"
+    assert two.devicePixelRatio() == 2.0, "without this Qt lays it out at twice the size"
+    # Device-independent size is what the layout sees, and it must not move.
+    assert two.deviceIndependentSize().width() == pytest.approx(
+        one.deviceIndependentSize().width(), abs=1.0
+    )
+
+
+def test_the_eagle_draws_double_resolution_frames_at_2x(qt_app):
+    """The indicator composites frames itself, so it needs the same treatment.
+
+    Asserted on the frames the indicator loaded and on the widget's own geometry, and
+    deliberately **not** on ``QLabel.pixmap()``: measured, that getter does not return
+    what was set. Handed a 128 px pixmap at ratio 2.0 it gives back a 64 px one at ratio
+    1.0. Painting is unaffected -- a 1 px stripe pattern survives a 2x ``grab()`` intact,
+    so Qt really does keep the high-resolution data -- but a test that believed the
+    getter would report a defect that is not there.
+    """
+    from PySide6.QtWidgets import QWidget
+
+    parent = QWidget()
+    try:
+        one = brand.EagleActivityIndicator(parent, size=brand.EAGLE_INLINE, ratio=1.0)
+        two = brand.EagleActivityIndicator(parent, size=brand.EAGLE_INLINE, ratio=2.0)
+        assert one.width() == two.width() == brand.EAGLE_INLINE, (
+            "the indicator must occupy the same space at either scale"
+        )
+        assert two._size == one._size * 2, "2x must use the double-resolution frames"
+        assert two._frames[0].width() == one._frames[0].width() * 2
+        assert two._ratio == 2.0
+        # The offsets must come from the table for the size actually drawn, or the
+        # registration that stops the bird hopping is applied at the wrong scale.
+        assert two._offsets == brand._EAGLE_REGISTRATION[two._size]
+    finally:
+        parent.deleteLater()
+
+
+def test_the_default_ratio_really_comes_from_the_display():
+    """The half that cannot be injected: does the default path ask the screen at all?
+
+    Every other HiDPI test here passes an explicit ``ratio``, which would keep passing if
+    :func:`brand.device_pixel_ratio` were hard-coded to 1.0 -- and a mark that is crisp in
+    the tests and blurry on the developer's actual Mac is the exact failure guide section
+    44 is about. ``QT_SCALE_FACTOR=2`` makes Qt report ``devicePixelRatio() == 2.0`` even
+    under the offscreen platform, so the real path is measurable; it has to be a
+    subprocess because the scale factor is read once when QGuiApplication starts.
+    """
+    root = Path(__file__).resolve().parent.parent
+    script = textwrap.dedent(
+        """
+        from PySide6.QtWidgets import QApplication
+        app = QApplication([])
+        from opennest.ui import brand
+        mark, logical = brand.PLACEMENTS["flight_deck_wordmark"]
+        pix = brand.pixmap(mark, logical)
+        print(brand.device_pixel_ratio(), pix.width(), pix.devicePixelRatio())
+        """
+    )
+    env = {
+        **os.environ,
+        "QT_QPA_PLATFORM": "offscreen",
+        "QT_SCALE_FACTOR": "2",
+        "PYTHONPATH": str(root),
+    }
+    done = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True, text=True, env=env, cwd=root, timeout=120,
+    )
+    assert done.returncode == 0, done.stderr
+    ratio, width, pix_ratio = done.stdout.strip().splitlines()[-1].split()
+    assert float(ratio) == 2.0, "the harness did not actually produce a 2x display"
+    assert int(width) == 512, (
+        f"a 256pt wordmark on a 2x display loaded the {width}px file, not the 512px one"
+    )
+    assert float(pix_ratio) == 2.0
 
 
 # ------------------------------------------------------- light and dark
@@ -346,6 +479,17 @@ def test_every_mark_carries_an_accessible_name(qt_app):
     for mark in brand.Mark:
         label = brand.mark_label(mark, 128)
         assert label.accessibleName(), f"{mark} has no accessible name"
+
+
+def test_a_decorative_mark_is_not_announced_twice(qt_app):
+    """Section 46: "do not announce decorative repeated artwork unnecessarily".
+
+    The wordmark and the nest beside it are one identity, not two things to read out.
+    """
+    announced = brand.placed("flight_deck_wordmark")
+    silent = brand.placed("flight_deck_nest", decorative=True)
+    assert announced.accessibleName() == "Open Nest"
+    assert not silent.accessibleName()
 
 
 def test_the_indicator_says_what_it_means(qt_app):

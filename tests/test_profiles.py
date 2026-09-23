@@ -14,6 +14,7 @@ only the second is worth anything to a child.
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -27,7 +28,12 @@ from opennest.security.process_sandbox import sandbox_available
 ALL_PROFILES = [profile.id for profile in load_profiles()]
 
 
-@pytest.mark.parametrize("profile_id", ALL_PROFILES)
+#: Profiles that begin from a kit, so a brand-new one has its entrypoint on disk. Blank
+#: is deliberately not among them (Phase 11 work order section 7).
+PROFILES_WITH_A_DEFAULT = [p.id for p in load_profiles() if p.starter_default is not None]
+
+
+@pytest.mark.parametrize("profile_id", PROFILES_WITH_A_DEFAULT)
 def test_a_new_project_contains_its_entrypoint(tmp_path: Path, profile_id: str) -> None:
     """The bug this phase existed to fix, per profile."""
     project = create_project("Test Project", profile_id, root=tmp_path)
@@ -37,19 +43,34 @@ def test_a_new_project_contains_its_entrypoint(tmp_path: Path, profile_id: str) 
     assert project.entrypoint_path.stat().st_size > 0
 
 
-def test_a_missing_template_is_a_loud_failure(tmp_path: Path, monkeypatch) -> None:
+@pytest.mark.parametrize("profile_id", ALL_PROFILES)
+def test_a_new_project_is_openable_whatever_its_profile_starts_with(
+    tmp_path: Path, profile_id: str
+) -> None:
+    """Every profile still creates a project, including the ones with no kit."""
+    project = create_project("Test Project", profile_id, root=tmp_path)
+    assert (project.directory / "project.json").is_file()
+    for sub in ("src", "assets", "data", "docs"):
+        assert (project.directory / sub).is_dir(), sub
+
+
+def test_a_missing_starter_is_a_loud_failure(tmp_path: Path, monkeypatch) -> None:
     """Silence here cost four broken profiles for seven phases.
 
     Also checks it fails *before* creating anything: a half-made directory would block
     the child retrying with the same name, which turns a packaging fault into a name
     they can never use again.
     """
-    from opennest.projects import manager
+    from opennest.projects import manager, starters
 
-    monkeypatch.setattr(manager, "template_dir", lambda profile: tmp_path / "nope")
+    broken = starters.get_starter("pygame_basic")
+    monkeypatch.setattr(
+        starters, "get_starter",
+        lambda _id: replace(broken, directory=tmp_path / "nope"),
+    )
     with pytest.raises(ProjectError) as caught:
         manager.create_project("Doomed", "games", root=tmp_path)
-    assert "starter files" in str(caught.value)
+    assert "missing" in str(caught.value)
     assert not (tmp_path / "Doomed").exists(), "left a half-made project behind"
 
 
@@ -83,10 +104,11 @@ def test_the_arduino_sketch_names_no_pin_number(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "profile_id", [p.id for p in load_profiles() if p.run_command]
+    "profile_id",
+    [p.id for p in load_profiles() if p.run_command and p.starter_default is not None],
 )
 @pytest.mark.skipif(not sandbox_available(), reason="macOS Seatbelt not available")
-def test_every_runnable_template_actually_runs(tmp_path: Path, profile_id: str) -> None:
+def test_every_runnable_starter_actually_runs(tmp_path: Path, profile_id: str) -> None:
     """Runs the starter code under the real sandbox, as a child would.
 
     Interactive profiles (a game, a Pi loop) are allowed to still be running: that is

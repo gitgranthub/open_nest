@@ -1,0 +1,11 @@
+{
+  "id": "pygame_basic",
+  "profile": "games",
+  "name": "Basic Game",
+  "description": "A window, a shape you can move, and a game loop to build on.",
+  "entry_point": "game.py",
+  "version": 1,
+  "files": [
+    "game.py"
+  ]
+}

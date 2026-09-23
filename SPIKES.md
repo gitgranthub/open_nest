@@ -1460,3 +1460,85 @@ watching for, and it was present before 10B rather than introduced by it.
   (`close(summarise=False)`), and the budget arithmetic is in `models.json`.
 - **Re-measure on 8 GB hardware** before V1.
 - Remaining models stay unverified until something actually needs them.
+
+---
+
+## 19. Phase 11 — what actually stops a web page, and where a model really lives
+
+Four measurements. Two contradicted what the code claimed at the time, which is the
+reason they are recorded rather than assumed.
+
+### 19A. Which layer refuses a remote request from a `file:` page
+
+A page was loaded from `file://` with an `<img src="https://…">`, a remote `<link>`, and a
+JavaScript `fetch()`. A `QWebEngineUrlRequestInterceptor` recorded every URL it was asked
+about. Run twice, once per setting.
+
+| `LocalContentCanAccessRemoteUrls` | https URLs the hook saw | hook blocked | JS `fetch()` |
+|---|---|---|---|
+| `False` (shipped) | **0** | 0 | refused |
+| `True` | 2 | 2 | refused |
+
+**Chromium refuses before the interceptor is consulted.** So the internet is genuinely
+unreachable from a preview, and `PreviewPolicy` is *not* what makes that true — the first
+draft of `execution/web_preview.py` said it was.
+
+The consequence matters more than the correction: with the shipped setting, **a blocked
+request is completely silent**. No hook, no message, a picture that is simply missing.
+That is the failure section 17 of the work order exists to prevent, so
+`web_preview.remote_references()` reads the project's own source before the render and
+says what will not load.
+
+### 19B. What the interceptor does do
+
+Same harness, with an `<iframe src="file:///…/secret.txt">` pointing outside the project
+and a canary string inside it.
+
+```
+urls the hook saw:  file:///…/project/src/index.html
+                    file:///…/secret.txt        <- blocked
+page title (what JS could read):  NO-ACCESS
+CANARY LEAKED: False
+```
+
+So the interceptor is load-bearing for containment on disk, which is what it is now
+documented as doing.
+
+### 19C. The Hugging Face cache has a shared blob store
+
+SPIKES §15C recorded that `du` understates a model and that two wrong conclusions came
+out of it. This is the other half of why.
+
+```
+models/blobs/                                   2.1 GB   <- .huggingface-shared-blobs
+models/models--…-Qwen3-4B-…/                    4.3 MB   (du, no -L)
+models/models--…-Qwen3-4B-…/  (du -L)           4.2 GB   (double counts)
+du -sh models/                                  2.1 GB   (the truth)
+scan_cache_dir().size_on_disk                   2.28 GB
+delete_revisions(...).expected_freed_size_str   2.3G
+```
+
+**Deleting `models--<repo>/` frees almost nothing**, because the weights are in the shared
+store and the repository directory holds links into it. `downloader.remove` therefore goes
+through `scan_cache_dir(...).delete_revisions(...)`, which is the only thing that owns
+that layout. The figures above are a dry run; nothing was deleted.
+
+### 19D. Model metadata, read without downloading a model
+
+Nine candidate `mlx-community` repositories were queried through the Hugging Face metadata
+API for their current commit SHA and summed blob size. **No weights were fetched** — the
+whole exercise is a few kilobytes of JSON, which is how a catalogue can carry real sizes
+and real pins without anyone downloading 90 GB to write it.
+
+| repo | size | note |
+|---|---|---|
+| Qwen3-4B-Instruct-2507-4bit | 2.28 GB | already the default, already verified |
+| Qwen3-8B-4bit | 4.62 GB | added |
+| Qwen3-14B-4bit | 8.32 GB | added |
+| Qwen3-Coder-30B-A3B-Instruct-4bit | 17.20 GB | added — MoE, ~3B active, newest |
+| Qwen3-32B-4bit | 18.45 GB | not added: dense, near-identical size, slower |
+| Qwen2.5-Coder-{7B,14B,32B} | 4.30–18.44 GB | not added: superseded by the Qwen3 line |
+
+Only the first is `verified`. The rest are pinned, sized and described, and **nothing has
+run an inference through any of them** — `compatibility.untested_note()` is how that is
+said on screen rather than hidden.

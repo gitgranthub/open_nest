@@ -102,6 +102,17 @@ def resolve_palette(app: QApplication | None = None) -> Palette:
     return LIGHT
 
 
+def is_dark(app: QApplication | None = None) -> bool:
+    """Whether the dark palette is in force.
+
+    Screens need this because the brand marks are not all legible on both surfaces:
+    three of them have to be inverted for a charcoal background and two have to be left
+    alone, and :mod:`opennest.ui.brand` decides which from a ``dark`` flag. This is the
+    one place that flag comes from, so a widget never reads a colour to infer a scheme.
+    """
+    return resolve_palette(app) is DARK
+
+
 def stylesheet(palette: Palette) -> str:
     """Build the application stylesheet for a palette."""
     return _TEMPLATE.format(p=palette, radius=RADIUS_PX, mono=MONO_FAMILY)
@@ -137,13 +148,6 @@ QLabel[role="section"] {{
     font-size: 10px;
     font-weight: 600;
     letter-spacing: 1.5px;
-}}
-
-QLabel[role="wordmark"] {{
-    color: {p.text};
-    font-size: 22px;
-    font-weight: 600;
-    letter-spacing: 6px;
 }}
 
 QLabel[role="greeting"] {{
@@ -190,6 +194,19 @@ QFrame#profileCard[hovered="true"], QFrame#recentRow[hovered="true"] {{
 QFrame#profileCard[pressed="true"], QFrame#recentRow[pressed="true"] {{
     background-color: {p.control_pressed};
     border-color: {p.text_muted};
+}}
+
+/* The card a child has actually picked, in the one place a card is a choice rather
+   than a doorway: how a new project starts (opennest/ui/new_project.py). Border and
+   weight only -- section 25 keeps the accent for activity and approval, and a selected
+   row is neither. */
+QFrame#profileCard[state="chosen"] {{
+    border: 2px solid {p.text};
+    background-color: {p.surface_alt};
+}}
+
+QFrame#profileCard[state="unchosen"] {{
+    border: 1px solid {p.border};
 }}
 
 QSplitter::handle {{
@@ -244,6 +261,33 @@ QFrame[role="rule"] {{
     max-height: 1px;
 }}
 
+/* A bare container that must not paint over the panel behind it. Qt gives every
+   QWidget the window colour, so a plain layout holder dropped inside a panel draws a
+   window-coloured band across it -- visible under the wizard's and the Workbench's
+   activity rows before this existed. QLabel already gets the same treatment above. */
+QWidget[role="bare"] {{
+    background: transparent;
+}}
+
+/* Progress. Left unstyled until Phase 10C, which meant the one place a parent watches
+   for two hundred seconds -- the model download -- rendered macOS's system blue in the
+   middle of a warm bone-and-charcoal page. Section 25 names restrained amber as the
+   accent for exactly this ("loading progress"), and section 41 lists conflicting
+   chrome as something to avoid. Think indicator lamp, not consumer app. */
+QProgressBar {{
+    background-color: {p.surface_alt};
+    border: 1px solid {p.border_strong};
+    border-radius: {radius}px;
+    max-height: 10px;
+    text-align: center;
+    color: {p.text};
+}}
+
+QProgressBar::chunk {{
+    background-color: {p.accent};
+    border-radius: {radius}px;
+}}
+
 /* Rectangular, modest radius, visible border, obvious pressed and disabled states. */
 QPushButton {{
     background-color: {p.control};
@@ -284,6 +328,32 @@ QPushButton[role="primary"]:disabled {{
     background-color: {p.control};
     color: {p.text_muted};
     border-color: {p.border};
+}}
+
+/* A quiet "tell me more" glyph. Borderless and muted so it reads as a hint beside a
+   section label rather than as a control competing with the panel's real buttons --
+   it should be findable by someone curious and invisible to everyone else. */
+QPushButton[role="info"] {{
+    background: transparent;
+    border: none;
+    color: {p.text_muted};
+    padding: 0px 2px;
+    min-height: 0px;
+    font-size: 13px;
+}}
+
+QPushButton[role="info"]:hover {{
+    background: transparent;
+    color: {p.text};
+}}
+
+/* A small floating card. Stronger border than a panel because it sits *over* the
+   interface rather than inside it, and there is no drop shadow doing that job --
+   section 28 rules out adding one merely to modernise. */
+QFrame[role="popover"] {{
+    background-color: {p.surface_alt};
+    border: 1px solid {p.border_strong};
+    border-radius: {radius}px;
 }}
 
 QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox {{

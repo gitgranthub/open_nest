@@ -41,6 +41,7 @@ from opennest.ai.provider import (
 from opennest.assets import manager as assets
 from opennest.execution.python_runner import RunResult
 from opennest.memory.manager import MemoryManager
+from opennest.projects import starters as starter_kits
 from opennest.projects.manager import Project
 from opennest.security.sandbox import visible_files
 from opennest.versioning.checkpoint import (
@@ -140,6 +141,38 @@ def build_system_prompt(
     return "\n\n".join(parts)
 
 
+def _starter_facts(project: Project) -> list[str]:
+    """What foundation this project was built on, when there is one recorded.
+
+    Section 13 of the Phase 11 work order: Gary should not ask "are you using HTML?"
+    about a project Open Nest knows began from the Basic Website kit. Deterministic
+    application knowledge, injected like the file list rather than guessed from
+    filenames -- which is the same argument SPIKES.md section 4 makes about tools.
+
+    Silence when nothing is recorded, and that covers two different cases on purpose: a
+    project started empty, and a project made before Phase 11 whose files might be a
+    shipped template or might by now be entirely the child's. Saying "started empty"
+    about the second would be asserting something nobody measured.
+    """
+    starter_id = project.manifest.starter_id
+    if not starter_id:
+        return []
+    try:
+        starter = starter_kits.get_starter(starter_id)
+    except starter_kits.StarterError:
+        # The kit was withdrawn from a later release. The project still has the files,
+        # so name what was recorded rather than dropping the fact.
+        return [f"Started from the {starter_id} starter."]
+    line = f"Started from the {starter.name} starter: {starter.description}"
+    if project.manifest.starter_version != starter.version:
+        return [line]
+    return [
+        line,
+        "Those files are the child's now. Change them, remove them or replace them as "
+        "the project needs -- they are a beginning, not something to preserve.",
+    ]
+
+
 def project_state(project: Project, last_run: RunResult | None = None) -> str:
     """Facts the application knows for certain. Never asked of the model.
 
@@ -155,8 +188,9 @@ def project_state(project: Project, last_run: RunResult | None = None) -> str:
         f"Type: {project.profile.name}",
         f"Entry point: src/{project.manifest.entrypoint}",
         f"Run action: {project.profile.run_label}",
-        f"Files in this project (you already know these):\n{listing}",
     ]
+    parts.extend(_starter_facts(project))
+    parts.append(f"Files in this project (you already know these):\n{listing}")
     # The base prompt tells the model to stop rather than install a missing package, so
     # it has to be told what it already has. Deterministic, from the profile.
     if project.profile.packages:

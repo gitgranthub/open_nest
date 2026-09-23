@@ -510,3 +510,241 @@ def test_a_generated_picture_is_shown_without_guessing_which_file_it_was(
         assert "Nothing has looked at the picture" in transcript
     finally:
         bench.close()
+
+
+# ------------------------------------------------- About Gary (the optional aside)
+
+def test_the_about_affordance_is_labelled_plainly(bench) -> None:
+    """It carries no text, so it needs an ordinary accessible name (guide section 46).
+
+    "About Gary" rather than anything clever: the glyph is a hint, and the label is how
+    it is reachable at all for someone not using a mouse and eyes.
+    """
+    from opennest.ui import about_gary
+
+    button = bench._about_gary
+    assert button.accessibleName() == about_gary.TITLE == "About Gary"
+    assert button.toolTip() == about_gary.TITLE
+    assert button.text() == about_gary.GLYPH
+
+
+def test_nothing_opens_the_bio_on_its_own(bench, qt_app) -> None:
+    """The developer's constraint: it appears only if someone gets curious.
+
+    Not onboarding, not a first-run card, not a tooltip that fires on hover. Building
+    the Workbench must leave no popover anywhere.
+    """
+    from opennest.ui.about_gary import AboutPopover
+
+    qt_app.processEvents()
+    assert not bench.findChildren(AboutPopover)
+    assert not [w for w in qt_app.topLevelWidgets() if isinstance(w, AboutPopover)]
+
+
+def test_clicking_it_opens_a_popover_and_not_a_dialog(bench, qt_app) -> None:
+    """A modal window would make reading a joke feel like a task.
+
+    ``Qt.Popup`` is the difference: it dismisses on the next click anywhere and blocks
+    nothing behind it, which is what an information glyph should do.
+    """
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QDialog
+
+    from opennest.ui.about_gary import AboutPopover
+
+    bench._about_gary.click()
+    qt_app.processEvents()
+    popovers = [w for w in qt_app.topLevelWidgets() if isinstance(w, AboutPopover)]
+    try:
+        assert len(popovers) == 1
+        popover = popovers[0]
+        assert not isinstance(popover, QDialog), "a dialog would block the interface"
+        assert popover.windowFlags() & Qt.WindowType.Popup
+        assert not popover.isModal()
+    finally:
+        for popover in popovers:
+            popover.close()
+            popover.deleteLater()
+
+
+def test_the_popover_actually_carries_the_bio(bench, qt_app) -> None:
+    """Including the last line, which is the reason the thing exists."""
+    from PySide6.QtWidgets import QLabel
+
+    from opennest.ui.about_gary import AboutPopover
+
+    bench._about_gary.click()
+    qt_app.processEvents()
+    popovers = [w for w in qt_app.topLevelWidgets() if isinstance(w, AboutPopover)]
+    try:
+        shown = " ".join(label.text() for label in popovers[0].findChildren(QLabel))
+        assert "About Gary" in shown
+        assert "expressive dance" in shown
+        assert "Gary wrote this bio." in shown
+        # No artwork was borrowed to illustrate him (guide section 47).
+        assert not [
+            label for label in popovers[0].findChildren(QLabel)
+            if label.pixmap() is not None and not label.pixmap().isNull()
+        ]
+    finally:
+        for popover in popovers:
+            popover.close()
+            popover.deleteLater()
+
+
+def test_the_popover_is_tall_enough_for_the_whole_bio(qt_app) -> None:
+    """A regression found by rendering it, not by any assertion.
+
+    A wrapped ``QLabel`` reports a single-line ``sizeHint`` until its width is
+    constrained, so ``adjustSize`` sized the popover for one line: the first paragraph
+    rendered behind the heading and the last one -- "Gary wrote this bio.", the entire
+    reason the popover exists -- was cut off below the border. Nothing failed; the
+    window was simply too short.
+    """
+    from opennest.ui.about_gary import AboutPopover
+
+    popover = AboutPopover()
+    try:
+        popover.adjustSize()
+        needed = popover.body.heightForWidth(popover.body.width())
+        assert popover.body.height() >= needed, (
+            f"the bio needs {needed}px and has {popover.body.height()}px -- the last "
+            "line is being clipped"
+        )
+        assert popover.height() >= needed, "the popover is shorter than its own text"
+    finally:
+        popover.deleteLater()
+
+
+# --------------------------------------------------- Phase 11: starters and the website
+
+@pytest.fixture
+def make_bench(qt_app, tmp_path):
+    """A Workbench for any profile and any starter choice, cleaned up afterwards."""
+    from opennest.projects.manager import create_project
+    from opennest.ui.workbench import Workbench
+
+    made = []
+
+    def build(profile_id: str, *, starter_id=..., name="Test Project"):
+        from opennest.projects.manager import PROFILE_DEFAULT
+
+        project = create_project(
+            name, profile_id,
+            starter_id=PROFILE_DEFAULT if starter_id is ... else starter_id,
+            root=tmp_path,
+        )
+        provider = ScriptedProvider([Reply(text="ok")] * 4)
+        widget = Workbench(project, AgentController(project, provider, Toolbox(project)))
+        widget.resize(1180, 760)
+        widget.show()
+        made.append(widget)
+        return widget
+
+    yield build
+    for widget in made:
+        if widget._thread is not None:
+            widget._thread.quit()
+            widget._thread.wait(5000)
+        # What MainWindow._close_project does, for the same reason: closing a parent
+        # does not call closeEvent on its children, and a live web page outliving its
+        # profile is a crash rather than a warning.
+        widget.release()
+        widget.close()
+
+
+def test_the_starter_offer_appears_only_in_an_empty_project(make_bench) -> None:
+    """Section 9. The offer is one click precisely because it cannot reach any work."""
+    empty = make_bench("website", starter_id=None)
+    assert empty._starter_buttons
+    assert all(not b.isHidden() for b in empty._starter_buttons)
+    assert not empty._empty_note.isHidden()
+
+    full = make_bench("website", name="Has Files")
+    assert all(b.isHidden() for b in full._starter_buttons)
+    assert full._empty_note.isHidden()
+
+
+def test_a_blank_project_is_told_it_is_empty_without_being_offered_a_starter(
+    make_bench,
+) -> None:
+    """Blank has no kit, so the empty state says what to do instead of offering one."""
+    bench = make_bench("blank")
+    assert bench._starter_buttons == []
+    assert not bench._empty_note.isHidden()
+    assert "Gary" in bench._empty_note.text()
+
+
+def test_adding_a_starter_fills_the_project_and_retires_the_offer(make_bench) -> None:
+    bench = make_bench("website", starter_id=None)
+    bench._add_starter("website_basic")
+
+    assert (bench.project.directory / "src" / "index.html").is_file()
+    assert bench.project.manifest.starter_id == "website_basic"
+    assert all(b.isHidden() for b in bench._starter_buttons)
+    # And the model was told, rather than finding out on its next turn.
+    assert "Basic Website" in bench.controller.history[0].content
+
+
+def test_pressing_run_on_an_empty_project_explains_itself(make_bench) -> None:
+    """Starting empty is supported, so its first press of Run is answered like it."""
+    bench = make_bench("blank")
+    bench._run()
+    said = bench._output.toPlainText()
+    assert "nothing to run yet" in said.lower()
+    assert "src/main.py" in said
+    # Never the interpreter's own message about a path the child did not choose.
+    assert "No such file or directory" not in said
+
+
+def test_a_website_workbench_has_a_page_and_a_game_does_not(make_bench) -> None:
+    assert make_bench("website")._web is not None
+    assert make_bench("games", name="A Game")._web is None
+
+
+def test_previewing_an_empty_website_explains_instead_of_rendering(make_bench) -> None:
+    bench = make_bench("website", starter_id=None)
+    bench._run()
+    assert "nothing to run yet" in bench._output.toPlainText().lower()
+
+
+def test_previewing_a_page_that_wants_the_internet_says_so_first(make_bench) -> None:
+    """Chromium drops the request silently, so the warning cannot wait for the render."""
+    bench = make_bench("website")
+    (bench.project.directory / "src" / "index.html").write_text(
+        '<img src="https://example.com/cat.gif" alt="">', encoding="utf-8"
+    )
+    from opennest.execution import web_preview
+
+    shown = []
+    bench._web.show_page = lambda url: shown.append(url) or True
+    bench._run()
+
+    assert shown, "the page was not shown"
+    assert "example.com" in bench._output.toPlainText()
+    assert web_preview.remote_references(bench.project)
+
+
+def test_the_file_panel_does_not_show_open_nests_own_bookkeeping(make_bench) -> None:
+    """Found by looking at the render, which is the only way it could have been.
+
+    A project started empty listed ``project.json`` directly above the words "Nothing
+    here yet." The manifest was always in that panel and always read as a file the child
+    had made; the empty state turned it into a contradiction on screen while every test
+    passed.
+    """
+    bench = make_bench("website", starter_id=None)
+    assert items(bench._files) == []
+
+    full = make_bench("website", name="Has Files")
+    listed = items(full._files)
+    assert "project.json" not in listed
+    assert "src/index.html" in listed, listed
+
+
+def test_the_model_is_still_told_what_is_really_in_the_project(make_bench) -> None:
+    """The panel hides the manifest from a child. The prompt must not hide it from Gary."""
+    from opennest.security.sandbox import visible_files
+
+    bench = make_bench("website", name="Real Files")
+    assert "project.json" in visible_files(bench.project.directory)

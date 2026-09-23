@@ -1,0 +1,11 @@
+{
+  "id": "raspberry_pi_basic",
+  "profile": "raspberry_pi",
+  "name": "Basic Pi Project",
+  "description": "Code that runs on this Mac now and on a Raspberry Pi later.",
+  "entry_point": "main.py",
+  "version": 1,
+  "files": [
+    "main.py"
+  ]
+}

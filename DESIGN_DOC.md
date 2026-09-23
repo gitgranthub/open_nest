@@ -713,9 +713,32 @@ White sunglasses rare approval / completion
 assistant's visual treatment still matches the rest of the application. §16's substance
 survives too: nothing swoops, bounces, or flies across anything.
 
-### The application icon
+### The application icon — deliberately unresolved
 
 §18's guidance still applies. Brand guide §31 mentions the nest for "future app icon
 development" permissively, while §18 argues concretely against a detailed nest at small
-macOS sizes. The legibility argument is the stronger one at 16 px, so icon work in 10D
-follows §18.
+macOS sizes. The legibility argument is the stronger one at 16 px.
+
+**Ruled by the developer in Phase 10D, and this closes the apparent conflict rather than
+leaving it looking forgotten:**
+
+> Native application icon remains intentionally unresolved. Creating it requires a
+> separately approved simplified Open Nest mark suitable for macOS icon sizes. Do not
+> derive or redraw that mark from the canonical nest artwork without design approval.
+
+Phase 10D therefore shipped **no icon work at all**, and that is the finished state of
+the phase rather than an omission from it. The reasoning, which is worth keeping if
+somebody reopens this:
+
+- §18 is right that the canonical nest does not survive 16 px. Phase 10C measured the
+  same effect one step up the ladder — the compact `ON + nest` lockup becomes illegible
+  below 64 px, and the supplied ladder starts there for that reason.
+- So an icon needs a *simplified* mark, and simplifying canonical artwork is a visual
+  design decision, not a scaling run. Phase 10C's asset work was deliberately technical
+  — resampling existing masters, nothing redrawn — and an icon cannot be done that way.
+- An engineering approximation would produce a mark nobody approved, shipped at the most
+  visible size the product has.
+
+When it is taken up: it is a design task first and a packaging task second, and the
+packaging half also needs the `MANIFEST.in` gap in `PHASE_10_HANDOFF.md` §8 closed,
+because an app bundle does not currently include the brand assets at all.

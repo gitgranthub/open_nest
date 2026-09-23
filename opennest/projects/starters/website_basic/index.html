@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!-- Without this line the page is zoomed out and unreadable on a phone. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My Website</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- header, nav, main, section and footer are "semantic" tags: they say what a part
+       of the page IS, not just how it looks. A screen reader uses them to move around. -->
+  <header class="site-header">
+    <h1 id="headline">My Website</h1>
+    <p class="tagline">I made this.</p>
+  </header>
+
+  <nav class="site-nav" aria-label="Sections of this page">
+    <a href="#about">About</a>
+    <a href="#things">Things</a>
+  </nav>
+
+  <main>
+    <section id="about">
+      <h2>About</h2>
+      <p>
+        This page is three files. <code>index.html</code> is what is on the page,
+        <code>styles.css</code> is how it looks, and <code>script.js</code> is what
+        happens when you click something.
+      </p>
+      <!-- Put a picture in the assets folder and swap this in:
+           <img src="assets/my-picture.png" alt="Say what the picture shows"> -->
+      <button id="surprise" type="button">Change the colour</button>
+    </section>
+
+    <section id="things">
+      <h2>Things</h2>
+      <ul class="cards">
+        <li class="card">
+          <h3>One</h3>
+          <p>Change this to something of yours.</p>
+        </li>
+        <li class="card">
+          <h3>Two</h3>
+          <p>Copy a card to add another.</p>
+        </li>
+        <li class="card">
+          <h3>Three</h3>
+          <p>Or delete the ones you do not want.</p>
+        </li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>Made with Open Nest.</p>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

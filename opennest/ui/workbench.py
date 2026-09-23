@@ -41,12 +41,20 @@ from opennest.ai import images
 from opennest.ai.router import models_for_project, models_that_can_read, why_unavailable
 from opennest.assets import kinds
 from opennest.assets import manager as assets
-from opennest.execution import arduino, outputs
+from opennest.execution import arduino, outputs, web_preview
 from opennest.execution.python_runner import stop_project
-from opennest.projects.manager import Project
+from opennest.projects import starters
+from opennest.projects.manager import (
+    MANIFEST_NAME,
+    Project,
+    ProjectError,
+    add_starter,
+)
 from opennest.security.sandbox import visible_files
+from opennest.ui import about_gary, brand, theme
+from opennest.ui import web_preview as web_preview_ui
 from opennest.ui.common import horizontal_rule, section_label, status_row
-from opennest.ui.worker import AgentWorker, ImageWorker, run_in_thread
+from opennest.ui.worker import AgentWorker, ImageWorker, run_in_thread, stop_thread
 from opennest.versioning.checkpoint import VersionHistory
 from opennest.versioning.git_manager import GitError, SecretsFound
 
@@ -100,13 +108,26 @@ def headline_failure(run) -> str:
     return last
 
 
-def panel(title: str) -> tuple[QFrame, QVBoxLayout]:
+def panel(title: str, *, trailing: QWidget | None = None) -> tuple[QFrame, QVBoxLayout]:
+    """A titled panel. ``trailing`` sits beside the title, for a small affordance.
+
+    Left-aligned next to the label rather than pushed to the right-hand edge, so it
+    reads as belonging to the heading instead of as a second control.
+    """
     frame = QFrame()
     frame.setProperty("role", "panel")
     layout = QVBoxLayout(frame)
     layout.setContentsMargins(12, 10, 12, 12)
     layout.setSpacing(8)
-    layout.addWidget(section_label(title))
+    if trailing is None:
+        layout.addWidget(section_label(title))
+    else:
+        heading = QHBoxLayout()
+        heading.setSpacing(4)
+        heading.addWidget(section_label(title))
+        heading.addWidget(trailing)
+        heading.addStretch(1)
+        layout.addLayout(heading)
     return frame, layout
 
 
@@ -157,6 +178,10 @@ class Workbench(QWidget):
         #: Pictures present before the current run, so its own output can be told apart
         #: from what the child imported earlier.
         self._images_before: outputs.Snapshot = {}
+        #: Whether this project had ever run successfully before the current attempt.
+        #: Seeded from the manifest so reopening a working project does not re-award the
+        #: milestone -- it is once per project, not once per session.
+        self._worked_before = bool(project.manifest.last_successful_run)
         self._build()
         # WORKORDER_01 section 12: a file can be dragged onto the chat, the file panel
         # or the asset panel. One handler covers all three; where it landed decides
@@ -205,17 +230,42 @@ class Workbench(QWidget):
         outer.addLayout(self._footer())
 
     def _header(self) -> QHBoxLayout:
+        """``[ON/NEST]  ASTEROID GAME`` -- guide section 57's own example.
+
+        The mark is the compact lockup in light mode and the nest alone in dark, because
+        the delivery has no dark compact variant and one cannot be built here: it is a
+        pre-composited black ON over a white-ish nest, so inverting it would blacken the
+        nest, and rebuilding the lockup would mean guessing at the approved ON-to-nest
+        proportions. Section 48 sanctions the nest-only mark "where the product identity
+        is already clear from surrounding text", and a header carrying the project name
+        and "Workbench" qualifies. The two are within a pixel of the same height, so the
+        header does not change shape between schemes.
+
+        The title and kind stack beside the mark rather than sitting next to it, so the
+        height the mark needs is spent on content instead of whitespace -- section 57 is
+        explicit that the Workbench must not give large areas to branding.
+        """
         row = QHBoxLayout()
         row.setSpacing(12)
 
         back = QPushButton("←  Flight Deck")
         back.clicked.connect(self.back_requested.emit)
 
+        dark = theme.is_dark()
+        mark = brand.placed("workbench_nest" if dark else "workbench_compact", dark=dark)
+
         title = QLabel(self.project.name)
         title.setProperty("role", "projectTitle")
 
         kind = QLabel(f"{self.project.profile.name} — Workbench")
         kind.setProperty("role", "mono")
+
+        names = QVBoxLayout()
+        names.setSpacing(0)
+        names.addStretch(1)
+        names.addWidget(title)
+        names.addWidget(kind)
+        names.addStretch(1)
 
         self._models = QComboBox()
         self._models.setToolTip("Which AI is helping")
@@ -224,15 +274,15 @@ class Workbench(QWidget):
 
         self._model_status = status_row(self._status_name(), "idle", "Loading")
 
-        row.addWidget(back)
+        row.addWidget(back, 0, Qt.AlignmentFlag.AlignVCenter)
         row.addSpacing(8)
-        row.addWidget(title)
-        row.addWidget(kind)
+        row.addWidget(mark, 0, Qt.AlignmentFlag.AlignVCenter)
+        row.addLayout(names)
         row.addStretch(1)
         row.addWidget(section_label("Model"))
-        row.addWidget(self._models)
+        row.addWidget(self._models, 0, Qt.AlignmentFlag.AlignVCenter)
         row.addSpacing(12)
-        row.addWidget(self._model_status)
+        row.addWidget(self._model_status, 0, Qt.AlignmentFlag.AlignVCenter)
         return row
 
     def refresh_models(self) -> None:
@@ -303,6 +353,25 @@ class Workbench(QWidget):
         self._assets.itemActivated.connect(self._describe_asset)
         layout.addWidget(self._assets, 1)
 
+        # The empty state, and the one-click offer behind it. Shown only while there is
+        # genuinely nothing in src/, so a starter can never appear over a child's work
+        # -- and ``starters.apply`` refuses anyway, because a rule enforced only by
+        # whichever button happens to call it is not a rule.
+        self._empty_note = QLabel()
+        self._empty_note.setProperty("role", "cardBody")
+        self._empty_note.setWordWrap(True)
+        self._empty_note.hide()
+        layout.addWidget(self._empty_note)
+
+        self._starter_buttons: list[QPushButton] = []
+        for starter in starters.starters_for(self.project.profile):
+            button = QPushButton(f"Add {starter.name}")
+            button.setToolTip(starter.description)
+            button.clicked.connect(lambda _=False, s=starter.id: self._add_starter(s))
+            button.hide()
+            layout.addWidget(button)
+            self._starter_buttons.append(button)
+
         add = QPushButton("+  Add to Project")
         add.setToolTip("Add a picture, a sound, a document or some data")
         add.clicked.connect(self._choose_files)
@@ -312,11 +381,24 @@ class Workbench(QWidget):
 
     def _output_panel(self) -> QFrame:
         frame, layout = panel("Build / Preview")
+
+        # A website has no build output to read -- no process, no exit code, no stderr
+        # -- so the panel holds the page itself instead of a transcript of a run that
+        # never happens. Everything below still exists for the profiles that do run.
+        self._web = None
+        if self.project.profile.previews:
+            self._web = web_preview_ui.WebPreview(self.project, self)
+            layout.addWidget(self._web, 3)
+
         self._output = QPlainTextEdit()
         self._output.setReadOnly(True)
         self._output.setProperty("role", "mono")
         self._output.setPlaceholderText("Nothing has run yet.")
-        layout.addWidget(self._output, 1)
+        # Small beside a rendered page, and the whole panel where there is no page.
+        layout.addWidget(self._output, 0 if self._web is not None else 1)
+        if self._web is not None:
+            self._output.setMaximumHeight(110)
+            self._web.blocked.connect(self._panel_text)
 
         # WORKORDER_01 section 30: "Errors should appear in child-friendly language
         # rather than raw tracebacks by default", with a Show technical details control
@@ -351,10 +433,48 @@ class Workbench(QWidget):
         return frame
 
     def _assistant_panel(self) -> QFrame:
-        frame, layout = panel(ASSISTANT_NAME)
+        # The panel is titled with his name, so this is where someone wonders who he is.
+        # Nothing opens it: it is a glyph beside the heading and it waits to be clicked.
+        self._about_gary = about_gary.info_button()
+        frame, layout = panel(ASSISTANT_NAME, trailing=self._about_gary)
         self._transcript = QPlainTextEdit()
         self._transcript.setReadOnly(True)
         layout.addWidget(self._transcript, 1)
+
+        # Guide sections 36, 37 and 53: a turn is a meaningful wait on a 4B local model,
+        # it already runs off the GUI thread so the wings can actually keep moving
+        # (section 52), and the bird sits inline beside real status text rather than
+        # replacing it. Hidden whenever nothing is happening.
+        self._activity = QWidget()
+        # Transparent, or the container paints the window colour over the panel.
+        self._activity.setProperty("role", "bare")
+        activity = QHBoxLayout(self._activity)
+        activity.setContentsMargins(0, 0, 0, 0)
+        activity.setSpacing(10)
+        self._eagle = brand.EagleActivityIndicator(
+            self._activity, size=brand.EAGLE_INLINE, dark=theme.is_dark()
+        )
+        self._activity_text = QLabel()
+        self._activity_text.setProperty("role", "cardBody")
+        activity.addWidget(self._eagle, 0, Qt.AlignmentFlag.AlignVCenter)
+        activity.addWidget(self._activity_text, 1, Qt.AlignmentFlag.AlignVCenter)
+        self._activity.hide()
+        layout.addWidget(self._activity)
+
+        # Sections 38, 39 and 54: reserved for a milestone that has actually been
+        # observed, so it stays rare enough to mean something. Never on a save.
+        self._completion = QWidget()
+        self._completion.setProperty("role", "bare")
+        completion = QHBoxLayout(self._completion)
+        completion.setContentsMargins(0, 0, 0, 0)
+        completion.setSpacing(10)
+        self._glasses = brand.placed("completion_glasses", dark=theme.is_dark())
+        self._completion_text = QLabel()
+        self._completion_text.setProperty("role", "cardTitle")
+        completion.addWidget(self._glasses, 0, Qt.AlignmentFlag.AlignVCenter)
+        completion.addWidget(self._completion_text, 1, Qt.AlignmentFlag.AlignVCenter)
+        self._completion.hide()
+        layout.addWidget(self._completion)
 
         # Shows what is going with the next message, so an attachment is never invisible.
         self._attached_label = QLabel()
@@ -498,8 +618,15 @@ class Workbench(QWidget):
 
         self._files.clear()
         for name in visible_files(self.project.directory):
-            if name not in added:
-                self._files.addItem(QListWidgetItem(name))
+            # ``project.json`` is Open Nest's own bookkeeping, not the child's work. It
+            # was always in this list and always looked like a file they had made; Phase
+            # 11 turned that into a visible contradiction, because a project started
+            # empty showed "project.json" directly above the words "Nothing here yet."
+            # It stays in ``visible_files`` -- the model is told what is really there --
+            # and comes out of the panel a child reads.
+            if name == MANIFEST_NAME or name in added:
+                continue
+            self._files.addItem(QListWidgetItem(name))
 
         self._assets.clear()
         for asset in imported:
@@ -507,6 +634,44 @@ class Workbench(QWidget):
             item.setData(Qt.ItemDataRole.UserRole, asset)
             item.setToolTip(asset.summary)
             self._assets.addItem(item)
+
+        self._refresh_starter_offer()
+
+    def _refresh_starter_offer(self) -> None:
+        """Show "nothing here yet" and the starter buttons, or neither.
+
+        The offer disappears the moment there is a file, which is the whole safety
+        argument for it being one click: it is only ever offered into an empty project.
+        """
+        empty = not starters.has_own_files(self.project.directory / "src")
+        offered = bool(self._starter_buttons) and empty
+        if empty:
+            self._empty_note.setText(
+                "Nothing here yet.\nStart empty, or add a starter."
+                if offered else
+                f"Nothing here yet.\nTell {ASSISTANT_NAME} what you want to make."
+            )
+        self._empty_note.setVisible(empty)
+        for button in self._starter_buttons:
+            button.setVisible(offered)
+
+    def _add_starter(self, starter_id: str) -> None:
+        """Put a starter kit into a project that was started empty."""
+        try:
+            written = add_starter(self.project, starter_id)
+        except ProjectError as exc:
+            self._panel_text(str(exc))
+            return
+        self.refresh_files()
+        # The model is told what it now has, the same way it is told after any other
+        # change to the project. Gary knowing which foundation exists is the point of
+        # recording the starter at all.
+        self.controller.refresh_state()
+        # Open Nest, not Gary: copying shipped files in is the application acting, and
+        # PHASE_10_HANDOFF section 1 keeps that split.
+        self._say(SYSTEM_NAME, f"Added {len(written)} files to the project.")
+        if self.project.profile.previews:
+            self._preview()
 
     # -- adding files (WORKORDER_01 sections 10-13) --------------------------
 
@@ -643,6 +808,32 @@ class Workbench(QWidget):
         self._input.setEnabled(not busy)
         self._run_button.setEnabled(not busy)
 
+    # -- the waiting and completion hierarchies (guide sections 53, 54) -----
+
+    def working(self, text: str = "") -> None:
+        """Show the activity indicator, or hide it when ``text`` is empty.
+
+        Guide section 46 is the reason this takes the status line rather than offering
+        a way to start the eagle on its own: the graphic is never the only signal, so
+        there is no call that produces a bird with nothing beside it.
+        """
+        self._activity_text.setText(text)
+        self._activity.setVisible(bool(text))
+        if text:
+            self._eagle.start()
+        else:
+            self._eagle.stop()
+
+    def completed(self, text: str = "") -> None:
+        """Mark a real milestone, or clear the last one.
+
+        Section 39 lists what this is *not* for -- every save, every model reply, every
+        successful button press, every checkpoint. The single caller is a project's
+        first working run, which happens once in a project's life.
+        """
+        self._completion_text.setText(text)
+        self._completion.setVisible(bool(text))
+
     def _send(self) -> None:
         text = self._input.text().strip()
         if not text or self._thread is not None:
@@ -654,9 +845,11 @@ class Workbench(QWidget):
         self._say("You", text + "".join(f"\n  [ {a.name} ]" for a in attachments))
         self._busy(True)
         self.set_model_status("working", "Thinking")
+        self.working(f"{ASSISTANT_NAME} is working on it.")
         # The model may run the project during the turn, so the chart it draws has to be
         # measured against the project as it was before the turn started.
         self._note_images()
+        self._note_milestone()
 
         # WORKORDER_01 section 29A's PR policy branches *before* the change, the way its
         # own diagram does. Off by default, so this is "" for a normal child session.
@@ -673,6 +866,7 @@ class Workbench(QWidget):
 
     def _turn_finished(self, turn) -> None:
         self._busy(False)
+        self.working("")
         self.set_model_status("ready", "Ready")
         for _name, result in turn.tool_results:
             if result.run is not None:
@@ -680,6 +874,11 @@ class Workbench(QWidget):
         if turn.text:
             self._say(ASSISTANT_NAME, turn.text)
         self.refresh_files()
+        # A page already on screen is stale the moment a file changes, and a child who
+        # has to press Preview again to find out whether the change worked will read the
+        # old page as the new one. Only reloads what is already showing.
+        if self._web is not None and turn.checkpoint is not None:
+            self._web.reload()
         self._refresh_undo()
         self._back_up(made_changes=turn.checkpoint is not None)
 
@@ -762,12 +961,14 @@ class Workbench(QWidget):
         pretending PHASE_10_HANDOFF.md section 1 rules out.
         """
         self._busy(False)
+        self.working("")
         self.set_model_status("attention", "Problem")
         self._say(SYSTEM_NAME, message)
 
     def _show_run(self, result) -> None:
         run = result.run
         self._clear_details()
+        self._mark_first_success(run)
         if run.still_running:
             # Not "close its window": a Raspberry Pi test loop is a console program and
             # has no window to close. Stop is true for both, and it is right there.
@@ -850,8 +1051,53 @@ class Workbench(QWidget):
         """Remember which pictures existed before something runs."""
         self._images_before = outputs.snapshot(self.project.directory)
 
+    #: What the approval mark says when a project works for the first time.
+    #:
+    #: Guide section 38 offers "It works." and "You built that." for this moment, and the
+    #: second is the one that is true in every case here. ``RunResult.ok`` means
+    #: different things per profile: a Research analysis ran to completion and exited 0,
+    #: an Arduino sketch was accepted by the compiler, and a *game* survived a
+    #: four-second startup grace and is on screen. That last one is not evidence the game
+    #: works, so putting "It works." under it would claim a state nothing verified.
+    #: "You built that." is about authorship rather than machine state, so it over-claims
+    #: nothing -- and what *was* verified is already in the Build / Preview panel beside
+    #: it, which is section 46's "never the only signal".
+    FIRST_SUCCESS = "You built that."
+
+    def _mark_first_success(self, run) -> None:
+        """The one thing in the Workbench that earns the approval mark.
+
+        Fires at most once in a project's life: the first run that worked. Not every
+        run, not every save, not every checkpoint -- section 39 lists those explicitly as
+        what the sunglasses are not for, and the graphic only keeps its meaning while it
+        stays rare. Reopening a project that already works shows nothing, because the
+        manifest remembers.
+        """
+        if not run.ok or self._worked_before:
+            return
+        self._worked_before = True
+        self.completed(self.FIRST_SUCCESS)
+
+    def _note_milestone(self) -> None:
+        """Remember whether this project had *ever* worked, before this run changes it.
+
+        ``Toolbox`` stamps ``manifest.last_successful_run`` the moment a run succeeds,
+        so by the time the result reaches the panel the field is already set and the
+        "was this the first time?" question can no longer be asked. Captured here for
+        the same reason the picture snapshot is: the answer only exists beforehand.
+
+        Monotonic on purpose. Re-reading the manifest each time would let the flag go
+        *back* to False, and then a second successful run would award the milestone
+        again -- ``_record_success`` saves under ``contextlib.suppress(OSError)``, so a
+        manifest that could not be written is a real path to exactly that. Once a
+        project has worked it has worked, and nothing here can un-learn it.
+        """
+        self._worked_before = self._worked_before or bool(
+            self.project.manifest.last_successful_run
+        )
+
     def _run(self) -> None:
-        """The main button: run, compile, or generate, depending on the profile.
+        """The main button: run, compile, preview or generate, depending on the profile.
 
         This used to always dispatch ``run_project``. On an Arduino project, which has no
         run command and no such tool, that showed the child a message written for the
@@ -861,8 +1107,14 @@ class Workbench(QWidget):
         if profile.generates:
             self._generate_image()
             return
+        if profile.previews:
+            self._preview()
+            return
+        if not self._something_to_run():
+            return
 
         self._note_images()
+        self._note_milestone()
         tool = "run_project" if profile.can_run else "compile_project"
         result = self.toolbox.dispatch(tool, {})
         if result.run is not None:
@@ -870,11 +1122,68 @@ class Workbench(QWidget):
         elif not result.ok:
             self._panel_text(result.content)
 
+    def _something_to_run(self) -> bool:
+        """Whether the entry point exists yet, said plainly when it does not.
+
+        A project started empty has no ``src/main.py``, and pressing Run would otherwise
+        show the interpreter's own "No such file or directory" -- a message about a path
+        a child never chose. Starting empty is a supported choice, so its first press of
+        Run has to be answered like one.
+        """
+        if self.project.entrypoint_path.is_file():
+            return True
+        offer = (
+            f" Add a starter from the Project panel, or tell {ASSISTANT_NAME} what to make."
+            if self._starter_buttons
+            else f" Tell {ASSISTANT_NAME} what you want to make and it will be written."
+        )
+        self._panel_text(
+            f"There is nothing to run yet -- this project has no "
+            f"src/{self.project.manifest.entrypoint}.{offer}"
+        )
+        return False
+
+    def _preview(self) -> None:
+        """Show the page. A website is opened, never executed.
+
+        No process starts, so there is nothing for the process sandbox to confine; the
+        boundary is :mod:`opennest.execution.web_preview`, which refuses every request
+        the page makes that is not a file inside this project.
+        """
+        if self._web is None:
+            return
+        if not web_preview.is_previewable(self.project):
+            self._something_to_run()
+            return
+        # Said before the render, not after. Chromium drops a remote request from a
+        # file: page before anything Open Nest installed is consulted (SPIKES.md section
+        # 19), so without this the only symptom is a picture that is not there.
+        self._panel_text(
+            web_preview.remote_warning(web_preview.remote_references(self.project))
+        )
+        self._web.show_page(web_preview.entry_url(self.project))
+
     def _stop(self) -> None:
         if self.toolbox.last_run is not None:
             stop_project(self.toolbox.last_run)
         self._stop_button.setEnabled(False)
         self._panel_text("Stopped.")
+
+    def release(self) -> None:
+        """Let go of anything that has to be torn down in a particular order.
+
+        Two things: the web engine, whose page has to be let go of before the profile
+        that owns it, and any worker thread still running. A widget destroyed while one
+        of its threads is alive aborts the interpreter rather than raising -- see
+        ``ui.worker.stop_thread``.
+
+        Closing a parent widget does not call ``closeEvent`` on its children, so this is
+        called explicitly when a project closes rather than left to Qt.
+        """
+        stop_thread(self._thread)
+        self._thread = None
+        if self._web is not None:
+            self._web.close()
 
     # -- hardware -----------------------------------------------------------
 
@@ -960,6 +1269,7 @@ class Workbench(QWidget):
         self._input.clear()
 
         self._busy(True)
+        self.working("Making your picture.")
         self._panel_text("Making your picture. This takes about fifteen seconds…")
         self._say("You", f"Make a picture: {description}")
 
@@ -971,6 +1281,7 @@ class Workbench(QWidget):
 
     def _image_ready(self, asset) -> None:
         self._busy(False)
+        self.working("")
         self._show_any_chart(asset.path)
         self.refresh_files()
         # Section 13's rule, kept at the point a picture appears: Open Nest asked for
@@ -985,4 +1296,5 @@ class Workbench(QWidget):
 
     def _image_failed(self, message: str) -> None:
         self._busy(False)
+        self.working("")
         self._panel_text(message)
