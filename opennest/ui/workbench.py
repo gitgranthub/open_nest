@@ -1080,16 +1080,47 @@ class Workbench(QWidget):
     def _mark_first_success(self, run) -> None:
         """The one thing in the Workbench that earns the approval mark.
 
-        Fires at most once in a project's life: the first run that worked. Not every
-        run, not every save, not every checkpoint -- section 39 lists those explicitly as
-        what the sunglasses are not for, and the graphic only keeps its meaning while it
-        stays rare. Reopening a project that already works shows nothing, because the
-        manifest remembers.
+        Fires at most once in a project's life: the first run that worked, **of a project
+        the child has actually changed**. Not every run, not every save, not every
+        checkpoint -- section 39 lists those explicitly as what the sunglasses are not
+        for, and the graphic only keeps its meaning while it stays rare. Reopening a
+        project that already works shows nothing, because the manifest remembers.
+
+        The "has actually changed" half was missing and the owner caught it watching a
+        Phase 12.2 walk. The chain was: the model calls ``run_project`` itself during its
+        first turn, the untouched starter launches, ``RunResult.ok`` is True for an
+        interactive project the moment it survives four seconds -- and Open Nest awarded
+        the approval mark and **"You built that."** for an orange square on a black
+        background that it had shipped itself. The child had built nothing and had not
+        even pressed Run.
+
+        The copy was already chosen to avoid claiming machine state (see
+        :attr:`FIRST_SUCCESS`), which is why this read as defensible. It is not: for a
+        starter that has never been edited, *authorship* is the part that is false. This
+        is the same over-claim Phase 12.1 removed from Gary's mouth, in the
+        application's own voice.
+
+        ``can_undo`` is the deterministic test, and it is exact rather than a proxy:
+        ``VersionHistory.start`` commits ``LABEL_CREATED`` when the project is made, and
+        ``save`` only commits when something actually changed, so a second checkpoint
+        existing *is* "this project has diverged from the kit it began as".
         """
-        if not run.ok or self._worked_before:
+        if not run.ok or self._worked_before or not self._child_has_changed_anything():
             return
         self._worked_before = True
         self.completed(self.FIRST_SUCCESS)
+
+    def _child_has_changed_anything(self) -> bool:
+        """Whether this project is still exactly the starter it was created from.
+
+        Without versioning there is nothing to compare against. That case keeps the old
+        behaviour rather than withdrawing the milestone from a machine with no git: a
+        mark shown slightly too eagerly is a smaller fault than a feature that silently
+        disappears, and every supported installation has git.
+        """
+        if self.versions is None or not self.versions.enabled:
+            return True
+        return self.versions.can_undo
 
     def _note_milestone(self) -> None:
         """Remember whether this project had *ever* worked, before this run changes it.

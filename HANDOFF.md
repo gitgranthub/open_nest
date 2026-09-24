@@ -1,8 +1,14 @@
 # Handoff — start here
 
-You are picking up Open Nest after **Phase 12 (the owner's test drive) and Phase 12.1
-(final acceptance), both complete**. This document is what you need before touching
-anything.
+You are picking up Open Nest during **Phase 12 (the owner's test drive)**, which is
+**still open**. This document is what you need before touching anything.
+
+**Read the top of [PHASE_12_HANDOFF.md](PHASE_12_HANDOFF.md) before you trust any claim
+that something is done.** Three rounds of defects are fixed — the runtime and threading
+faults, 12.1's truthfulness defect, 12.2's edit tool — and the phase still has not met its
+own definition of done: **a child asks for a game and does not get one.** An earlier
+version of both files said Phase 12 was complete. That was wrong, and confusing *the
+faults found* with *the outcome required* is the mistake to avoid repeating here.
 
 **Phase 12.1 closed the last acceptance defect: Gary narrating changes he had not
 made.** Driving the real interface with `Toolbox.dispatch` instrumented at the class
@@ -149,8 +155,9 @@ it belongs in section 4.
 | 9 — GitHub backup | complete, committed on `phase-9-github`. D1 resolved as OAuth device flow, **verified against the real GitHub**: real device flow, real private repo, real push, real PR, and a real Disconnect (SPIKES.md §17C-E). UI smoke-tested under cocoa: 21 checks, 21 passed (§17F). Five cosmetic defects recorded for Phase 10 |
 | **10 — Design and polish pass** | **complete**, on `phase-10-design` (10A committed; 10B–10D in the working tree). The brand system is wired into every screen and verified under real cocoa at 2x in both colour schemes. Two final-QA items remain, both "somebody has to look": watching the eagle loop, and a second display. See [PHASE_10_HANDOFF.md](PHASE_10_HANDOFF.md) |
 | **11 — Starter kits, Website, model registry** | **complete**, in the working tree on `phase-10-design`. Config schema 2 (`starters` + `starter_default`) and models schema 4 (per-machine memory metadata). A Website profile that previews offline; a catalogue that tiers from an 8 GB Air to a 64 GB Studio. 980 tests, ruff clean. Five surfaces rendered under real cocoa, three defects found and fixed — one of them an interpreter abort. See [PHASE_11_HANDOFF.md](PHASE_11_HANDOFF.md) |
-| **12 — Owner test drive and final acceptance** | **complete.** The first time anything clicked the application — and it did not work: `run_in_thread` was silently dropping every background worker, so the setup wizard hung on step 3 of 9, the model never loaded, and a child's message to Gary never ran, with 980 tests passing throughout. Seven defects fixed, three of them crashes or hangs. See [PHASE_12_HANDOFF.md](PHASE_12_HANDOFF.md) |
-| **12.1 — the acceptance defect** | **complete.** Gary narrating changes he had not made, reproduced through the real interface and closed. The filed diagnosis ("no tool call") was wrong — `Toolbox.dispatch` was entered every turn; every `edit_file` was refused and the claim was relayed anyway. Three holes in one guard, the third found only by rerunning the walk after fixing the first two. 1025 tests, ruff clean. §8 of PHASE_12_HANDOFF and SPIKES §21 |
+| **12 — Owner test drive and final acceptance** | **OPEN.** Defects fixed, outcome not met — no walk has yet produced a working game. The first time anything clicked the application — and it did not work: `run_in_thread` was silently dropping every background worker, so the setup wizard hung on step 3 of 9, the model never loaded, and a child's message to Gary never ran, with 980 tests passing throughout. Seven defects fixed, three of them crashes or hangs. See [PHASE_12_HANDOFF.md](PHASE_12_HANDOFF.md) |
+| 12.1 — the truthfulness defect | **closed.** Gary narrating changes he had not made, reproduced through the real interface and closed. The filed diagnosis ("no tool call") was wrong — `Toolbox.dispatch` was entered every turn; every `edit_file` was refused and the claim was relayed anyway. Three holes in one guard, the third found only by rerunning the walk after fixing the first two. 1025 tests, ruff clean. §8 of PHASE_12_HANDOFF and SPIKES §21 |
+| 12.2 — editing reliability | **closed.** 18 of 18 `edit_file` calls were refused; measured the distribution (47% the model editing code it imagined, 33% wrong indent, 20% a newline written as two characters) and added a bounded deterministic recovery that refuses ambiguity. 3 of 4 real edits now land. Also: one project runs one copy of itself, and the approval mark is no longer awarded for the starter launching. 1044 tests, ruff clean. SPIKES §22 |
 | 13 — The game preview in the workbench | **not started.** Specified in PHASE_12_HANDOFF §6; feasibility measured |
 | 14 — Getting work out of Open Nest (export / PDF / share) | **not started.** Specified in PHASE_12_HANDOFF §7. Nothing can currently leave the app |
 

@@ -3,16 +3,44 @@
 Read [HANDOFF.md](HANDOFF.md) first. This file is what Phase 12 measured, what it fixed,
 and what it deliberately left alone.
 
-**Phase 12 is complete.** The acceptance defect — Gary narrating changes he has not made
-— was reproduced through the real interface in Phase 12.1, traced to three separate holes
-in one existing guard, fixed in `agent/controller.py`, and re-measured by driving the
-same three turns again. **§8 has the investigation and what it found.**
+**Phase 12 is NOT complete, and an earlier version of this file said it was. That was
+wrong and the correction matters more than the claim did.**
 
-One thing §8 recorded turned out to be false, and it matters for anyone reading the old
-version: the tools *were* running. The failure was never "no tool call".
+Three rounds of defects are fixed and each is genuinely closed: the test drive itself
+(§1-§5), **12.1** the truthfulness defect (§8), **12.2** the edit tool (§9). What none of
+them delivered is the thing the phase exists to prove:
 
-**Phases 13 and 14 are specified at the bottom of this file.** Nothing in either has
-started.
+> **A child asks for a game and does not get one.** Every edit now lands, every claim
+> Gary makes is now true, and the window still shows an orange square on black — or, once
+> the model has had a go, a spaceship on an empty background with an asteroid that is
+> stationary and invisible. The owner has watched this happen on every walk and has never
+> once seen a working game.
+
+Phase 12's own definition of done is WORKORDER_01 §42, which is a child building
+something real. Marking it complete because the defects behind it are fixed confuses *the
+faults found* with *the outcome required*. **It stays open until a real conversation
+through the real interface produces a game that runs and does what Gary says it does.**
+
+What is genuinely settled, and should not be re-investigated:
+
+- the runtime and threading defects (§2), with tests
+- Gary never claims a mutation that did not happen (§8) — measured three times through
+  the real UI
+- `edit_file` lands 3 of 4 real edits instead of 0 of 5, with a bounded deterministic
+  recovery that refuses ambiguity (§9)
+- one project runs one copy of itself; the window pile-up is gone (§9)
+- the approval mark is no longer awarded for the starter template launching (§10)
+
+One thing §8 originally recorded turned out to be false, and it matters for anyone
+reading the old version: the tools *were* running. The failure was never "no tool call".
+
+**What is next, and it is not Phase 13 or 14.** The remaining gap is
+**capability / action-selection** — the model picks the right tool, the edit applies, and
+the code it writes is wrong in ordinary beginner ways (state initialised inside the loop,
+draw order inverted). That is a prompt-and-context problem. §9 has the exact failing
+code, and SPIKES §22F has the reasoning.
+
+**Phases 13 and 14 are specified in §6 and §7.** Nothing in either has started.
 
 ---
 
@@ -403,3 +431,176 @@ or the model needs the file's exact lines in front of it when it composes the ca
 |---|---|
 | `spikes/phase12/dispatch_walk.py` | the class-level `Toolbox.dispatch` probe, per-turn sha256 of the whole project, and the `Turn` the Workbench was handed — three independent sources printed side by side |
 | `spikes/phase12/replay_step22.py` | the real replies through a scripted provider: no inference, control flow the only variable |
+
+---
+
+## 9. CLOSED — an edit tool a small model can actually hit
+
+**Phase 12.2.** 12.1 made a failing edit honest; it did not make it rare. **18 of 18
+`edit_file` calls were refused** across the 12.1 walks. Full measurements in SPIKES.md
+§22.
+
+### Measured before anything was built
+
+15 refusals, from one real UI walk plus a wider headless sample:
+
+| category | n | share | verdict |
+|---|---|---|---|
+| `absent` — the model editing code it imagined writing | 7 | 47% | correctly refused |
+| `indent_shift` — right line, wrong column | 5 | 33% | **recoverable** |
+| `literal_backslash_n` — a newline written as two characters | 3 | 20% | **recoverable** |
+| `ambiguous`, `trailing_ws`, `crlf`, `broken_python` | 0 | — | — |
+
+**It was never a byte-perfection problem.** In every recoverable case the model
+reproduced the right lines and got the *encoding* wrong. Two beliefs going in were wrong:
+"18 of 18" is that one conversation, not the tool — ordinary Games requests succeed **8 of
+18** — and `"Make the player move faster."` failed **0 of 6**, every attempt sending
+`    PLAYER_SPEED = 5` against a starter that has it at column zero.
+
+### What was built, and the rules that keep it safe
+
+`tools.repair_edit` runs only when the exact text is absent, and **every rung must find
+the text exactly once or it does not fire**: `escaping` (repairing `old_text` and
+`new_text` as a pair), `whitespace` (trailing space and CRLF), `indentation` (moving the
+replacement by the measured delta rather than writing it as sent).
+
+No edit distance, no similarity score, nothing picks the "closest" text. Matching is
+line-aligned because a character span found in normalised space has to be mapped back
+onto the original bytes, and getting that wrong edits the wrong region silently.
+Ambiguity stays a refusal at every rung; a dedent deeper than the line allows aborts the
+repair; `_reject_broken_python` still gates the result. **No fifth tool** — SPIKES §4 and
+§8 priced that at 19 points of selection accuracy.
+
+`ToolResult.reason` carries the refusal as one machine-readable word; `ToolResult.recovered`
+carries how an edit landed, and is the only reason recovery usage can be reported at all.
+
+### Two things to know before touching it
+
+- **`repair_written_text` exists because of the nastiest version of the fault, and the
+  match-side repair does not reach it.** `old_text` can match *perfectly* while
+  `new_text` carries literal escapes — and then a whole block is written as **one
+  comment**, deleting real code, compiling cleanly, and reported as success. A refusal
+  would have been better. The discriminator is Python's own parser: an intended newline
+  unescapes into valid code, a `\n` inside a string literal does not.
+- **One project runs one copy of itself.** `Toolbox.last_run` holds one result and an
+  interactive run never ends by itself, so every extra `run_project` used to orphan the
+  previous process — unreachable by Stop, by closing the project, or by quitting. Five
+  were live on the owner's screen at once, all reparented to init. `stop_running()` is
+  called before starting another. §20I fixed the *last* window outliving the Workbench;
+  this is the same family, one copy deeper.
+
+### Verified through the real UI
+
+Same driver, same three turns, same model: **3 of 4 edits succeed, all three via the
+recovery path**, the one refusal correct (`absent`), **zero stray processes**, and the
+finished `src/game.py` parses, draws, and still moves the player.
+
+### And it still does not build a working game
+
+Worth stating plainly, because "3 of 4 edits succeeded" invites the wrong conclusion. The
+final walk's game contains two ordinary beginner faults:
+
+```python
+while running:
+    asteroid_x = 500          # re-initialised every frame
+    asteroid_x -= 5           # ...so it never actually moves
+    pygame.draw.circle(...)   # drawn BEFORE the background fill
+    ...
+    screen.fill(BACKGROUND)   # ...which paints over it
+```
+
+The asteroid is stationary and invisible. Gary says it moves left; the window shows a
+spaceship on an empty background. **Neither fault is something the edit tool can catch** —
+each individual edit did exactly what it said. This is the capability miss, and it is now
+the largest thing in the way.
+
+### The drivers
+
+| | |
+|---|---|
+| `spikes/phase12/edit_refusals.py` | the real UI walk: full tool arguments, the file at the moment of each call, per-turn diffs, recovery usage, and the finished game read back |
+| `spikes/phase12/edit_sample.py` | the wider headless sample; dumps every refusal verbatim to `refusals.json` |
+| `spikes/phase12/refusal_kinds.py` | the classifier, shared so both report the same categories |
+| `spikes/phase12/raw_toolcall.py` | whether the stray backslash is the model's or ours — it is the model's |
+
+**A measurement harness must persist what it measured, not just its conclusion.** The
+first classifier mislabelled all ten headless refusals (it asked `"appears" in reason`,
+which the *not-found* message also contains) and re-classifying cost a second ten-minute
+model run purely because the raw material had been thrown away. Hence `refusals.json`.
+
+---
+
+## 10. The approval mark was awarded for the starter template
+
+Found by the owner watching a 12.2 walk: *"the sunglasses show after the first model run
+and stay… they saw, you built this… seems premature to me."* They were right, and it is
+the **same over-claim Phase 12.1 removed from Gary's mouth, in the application's own
+voice.**
+
+The chain, confirmed in the code:
+
+1. The model calls `run_project` itself during its first turn. The child never pressed Run.
+2. The untouched starter launches — an orange square on black.
+3. `RunResult.ok` returns True whenever `still_running` is, and for an interactive project
+   that means only *"did not crash within four seconds"*.
+4. `_mark_first_success` fires → the sunglasses and **"You built that."**
+5. It is once-per-project-lifetime by design, so it never clears.
+
+The copy had already been chosen carefully to avoid claiming machine state — `FIRST_SUCCESS`
+is "You built that." precisely because "It works." would assert something one run does not
+establish. That reasoning is sound and it is why this looked defensible. It is not: for a
+starter nobody has edited, the part that is false is **authorship**. The child built
+nothing; Open Nest shipped it.
+
+`_mark_first_success` now also requires `_child_has_changed_anything()`, and `can_undo` is
+an exact test rather than a proxy — `VersionHistory.start` commits `LABEL_CREATED` at
+creation and `save` only commits when something really changed, so a second checkpoint
+existing *is* "this project has diverged from the kit it began as". Two tests, and they
+needed a Workbench with real versioning: the existing brand-placement fixture has
+`versions=None`, so it exercises the fallback and would have passed either way.
+
+**The general rule, which is the reusable part:** a brand state that asserts something
+about the child's work has to be gated on evidence of the child's work, not on a process
+exiting non-negative. Section 39 lists what the sunglasses are not for; "a template we
+shipped started up" belongs on that list.
+
+---
+
+## 11. Runs must leave the machine as they found it
+
+Also from watching: pygame windows appearing unbidden and never closing, and the sandbox
+quietly filling with artefacts.
+
+Two separate causes, both now closed:
+
+- **The orphaned processes** were a product defect — `Toolbox.last_run` holds one result
+  and every extra `run_project` abandoned the previous live process. §9 has it.
+- **The residue** was the drivers. Each cleaned up its own project on the happy path and
+  nothing cleaned up anything after a failure or a Ctrl-C, so a day's measuring left 6 MB
+  of stale screenshots, fixtures and dumps — and a run that died left its project on disk
+  where the next run would find it.
+
+`spikes/phase12/scratch.py` is the shared teardown: a run registers what it will create
+*before* creating it, and `atexit` plus SIGINT/SIGTERM handlers clear it on success,
+failure and interrupt alike.
+
+**Its safety property matters more than its cleaning, and this is the part to keep.** The
+sandbox holds **6.4 GB of model weights, a 430 MB toolchain and a 42 MB pip cache** — and
+a teardown that can delete those by accident is far worse than the residue it exists to
+remove. So removal is allowed only inside an explicit allowlist (`phase12`, `ui-smoke`,
+`cache/phase12`, `demo`), every path is resolved before it is checked so `..` and symlinks
+cannot escape, and anything else **raises** rather than being skipped quietly. Verified
+against 12 paths that must be refused — including `models/`, the containment root itself,
+a traversal through `phase12/../../`, and `/etc/passwd` — and 5 that must be allowed.
+
+`paths.opennest_home()` returns None when Open Nest runs against standard macOS locations
+rather than a sandbox, and `home()` **raises** in that case. A teardown that cannot say
+where its root is has no business deleting anything.
+
+**This is the prototype for the demo launcher's teardown**, which has the same job at
+higher stakes: real model calls, something really built, and the machine left exactly as
+it was found.
+
+**The pytest suite was measured and is already hermetic** — 94 files in the sandbox
+before a full run and the same 94 after, nothing added, nothing removed. The leak was
+never the tests.

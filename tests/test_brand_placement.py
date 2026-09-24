@@ -371,6 +371,59 @@ def test_reopening_a_project_that_already_works_shows_nothing(qt_app, project):
         widget.close()
 
 
+def _versioned_bench(project):
+    """A Workbench with real versioning, which is what the milestone gate consults."""
+    from opennest.ui.workbench import Workbench
+    from opennest.versioning.checkpoint import VersionHistory
+
+    versions = VersionHistory(project)
+    versions.start()
+    provider = ScriptedProvider([Reply(text="ok")] * 4)
+    controller = AgentController(project, provider, Toolbox(project), versions=versions)
+    return Workbench(project, controller, versions=versions), versions
+
+
+def test_the_untouched_starter_running_earns_nothing(qt_app, project):
+    """The owner caught this watching a Phase 12.2 walk, and it is an over-claim.
+
+    The model calls ``run_project`` during its first turn, the starter launches,
+    ``RunResult.ok`` is True the moment an interactive project survives four seconds --
+    and Open Nest awarded the approval mark and "You built that." for an orange square
+    on a black background that it had shipped itself. The child had built nothing and
+    had not pressed Run.
+    """
+    widget, versions = _versioned_bench(project)
+    try:
+        if not versions.enabled:
+            pytest.skip("versioning is what the gate reads, and git is not available")
+        assert not versions.can_undo, "fixture is wrong: the project already has history"
+        widget._note_milestone()
+        widget._show_run(_Result(_Run(ok=True)))
+        assert widget._completion.isHidden(), (
+            "the approval mark was awarded for the starter template running"
+        )
+    finally:
+        widget.close()
+
+
+def test_the_mark_is_earned_once_the_project_has_actually_changed(qt_app, project):
+    """And the milestone must still work -- the gate narrows it, it does not remove it."""
+    widget, versions = _versioned_bench(project)
+    try:
+        if not versions.enabled:
+            pytest.skip("versioning is what the gate reads, and git is not available")
+        (project.directory / "src" / "game.py").write_text("PLAYER_SPEED = 9\n")
+        versions.save("the child changed something")
+        assert versions.can_undo
+
+        widget._note_milestone()
+        widget._show_run(_Result(_Run(ok=True)))
+        assert not widget._completion.isHidden()
+        assert widget._completion_text.text() == widget.FIRST_SUCCESS
+    finally:
+        widget.close()
+
+
 def test_the_approval_line_claims_nothing_the_run_did_not_show(bench):
     """``RunResult.ok`` means different things per profile, and the copy must survive all.
 
