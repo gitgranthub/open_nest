@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from opennest.execution import arduino
-from opennest.execution.python_runner import RunResult, run_project
+from opennest.execution.python_runner import RunResult, run_project, stop_project
 from opennest.projects.manager import Project
 from opennest.security.sandbox import PathNotAllowed, resolve_in_project
 
@@ -31,7 +31,16 @@ MAX_READ_CHARS = 60_000
 
 
 class ToolError(Exception):
-    """A tool refused or failed. The message goes back to the model to react to."""
+    """A tool refused or failed. The message goes back to the model to react to.
+
+    ``reason`` is the same refusal in one machine-readable word. The prose is for the
+    model to read; the code is for Open Nest to count, test and branch on without
+    matching on English that is free to be reworded.
+    """
+
+    def __init__(self, message: str, reason: str = "") -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 @dataclass
@@ -42,6 +51,13 @@ class ToolResult:
     changed_files: tuple[str, ...] = ()
     #: Carried through so the repair loop can look at an actual failure.
     run: RunResult | None = None
+    #: Why a tool refused, in one word: ``not_found``, ``ambiguous``, ``missing_file``,
+    #: ``syntax_error``, ``exists``, ``not_text``, ``too_long``, ``missing_argument``,
+    #: ``outside_project``, ``unavailable``. Empty on success.
+    reason: str = ""
+    #: Which bounded repair made an edit land, empty when the text matched exactly.
+    #: Phase 12.2 measures the recovery path's usage through this.
+    recovered: str = ""
 
 
 def normalise_tool_name(name: str | None) -> str | None:
@@ -153,41 +169,46 @@ class Toolbox:
         """Run one tool call. Never raises for model error -- it returns a message."""
         tool = normalise_tool_name(name)
         if tool is None:
-            return ToolResult(False, "No tool name was given.")
+            return ToolResult(False, "No tool name was given.", reason="no_tool_name")
         if tool not in self.allowed:
             offered = ", ".join(self.allowed)
-            return ToolResult(False, f"{tool!r} is not available here. You can use: {offered}.")
+            return ToolResult(False, f"{tool!r} is not available here. You can use: {offered}.",
+                              reason="not_available")
 
         args = _coerce_arguments(arguments)
         if args is None:
-            return ToolResult(False, "The tool arguments were not valid JSON.")
+            return ToolResult(False, "The tool arguments were not valid JSON.",
+                              reason="bad_arguments")
 
         handler: Callable[[dict], ToolResult] = getattr(self, f"_{tool}")
         try:
             return handler(args)
         except PathNotAllowed as exc:
-            return ToolResult(False, str(exc))
+            return ToolResult(False, str(exc), reason="outside_project")
         except ToolError as exc:
-            return ToolResult(False, str(exc))
+            return ToolResult(False, str(exc), reason=exc.reason)
         except OSError as exc:
-            return ToolResult(False, f"That did not work: {exc}")
+            return ToolResult(False, f"That did not work: {exc}", reason="os_error")
 
     # -- individual tools ---------------------------------------------------
 
     def _read_file(self, args: dict) -> ToolResult:
         path = resolve_in_project(self.project.directory, _require(args, "path"))
         if not path.is_file():
-            raise ToolError(f"There is no file called {args['path']!r} in this project.")
+            raise ToolError(f"There is no file called {args['path']!r} in this project.",
+                            reason="missing_file")
         try:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
             raise ToolError(
-                f"{args['path']!r} is not a text file, so it cannot be read as code."
+                f"{args['path']!r} is not a text file, so it cannot be read as code.",
+                reason="not_text",
             ) from exc
         if len(text) > MAX_READ_CHARS:
             raise ToolError(
                 f"{args['path']!r} is too long to read in one go "
-                f"({len(text)} characters). Ask for a smaller file."
+                f"({len(text)} characters). Ask for a smaller file.",
+                reason="too_long",
             )
         return ToolResult(True, text)
 
@@ -201,70 +222,119 @@ class Toolbox:
         relative = _require(args, "path")
         content = args.get("content")
         if content is None:
-            raise ToolError("write_file needs both a path and the content to write.")
+            raise ToolError("write_file needs both a path and the content to write.",
+                            reason="missing_argument")
         if not isinstance(content, str):
             content = str(content)
         path = resolve_in_project(self.project.directory, relative, for_write=True)
         if path.exists():
             raise ToolError(
                 f"{relative!r} already exists. Use edit_file to change part of it, "
-                f"giving the exact text to replace."
+                f"giving the exact text to replace.",
+                reason="exists",
             )
+        # Same hazard as edit_file's new_text, and worse here: a whole new file written
+        # as one commented line looks created and does nothing.
+        content, unescaped = repair_written_text(relative, content)
         _reject_broken_python(relative, content)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         rel = str(path.relative_to(self.project.directory.resolve()))
-        return ToolResult(True, f"Wrote {rel} ({len(content)} characters).", changed_files=(rel,))
+        return ToolResult(True, f"Wrote {rel} ({len(content)} characters).",
+                          changed_files=(rel,),
+                          recovered="escaping" if unescaped else "")
 
     def _edit_file(self, args: dict) -> ToolResult:
-        """Replace one exact snippet. Far more reliable than whole-file rewrites.
+        """Replace one exact snippet, with a bounded repair when the match is near.
 
         Phase 2 measured a 4B model emitting Python triple-quotes inside the JSON string
         when asked to reproduce a whole file, which makes the call unparseable. A single
-        line survives JSON escaping intact.
+        line survives JSON escaping intact, so targeted replacement is the right shape
+        and stays the first path here.
+
+        Phase 12.2 measured what it costs when the model gets that single line *nearly*
+        right. Asked "make the player move faster", the model sent
+        ``    PLAYER_SPEED = 5`` six times against a starter that has it at column zero,
+        and the tool refused six times. Exact reproduction is not something a
+        probabilistic model does reliably, and it will be a different model next year, so
+        :func:`repair_edit` absorbs the near misses instead -- deterministically, and
+        only ever when the text is found in exactly one place.
         """
         relative = _require(args, "path")
         old = args.get("old_text")
         new = args.get("new_text")
         if old is None or new is None:
-            raise ToolError("edit_file needs a path, the exact old_text, and the new_text.")
+            raise ToolError("edit_file needs a path, the exact old_text, and the new_text.",
+                            reason="missing_argument")
         old, new = str(old), str(new)
         if not old:
             raise ToolError("edit_file needs the exact text to replace. To make a new "
-                            "file, use write_file.")
+                            "file, use write_file.", reason="missing_argument")
 
         path = resolve_in_project(self.project.directory, relative, for_write=True)
         if not path.is_file():
             raise ToolError(
-                f"There is no file called {relative!r} yet. Use write_file to create it."
+                f"There is no file called {relative!r} yet. Use write_file to create it.",
+                reason="missing_file",
             )
         try:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
-            raise ToolError(f"{relative!r} is not a text file.") from exc
+            raise ToolError(f"{relative!r} is not a text file.", reason="not_text") from exc
 
         occurrences = text.count(old)
-        if occurrences == 0:
-            raise ToolError(
-                f"That exact text is not in {relative!r}. Read the file again and copy "
-                f"the line you want to change exactly as it appears."
-            )
         if occurrences > 1:
             raise ToolError(
                 f"That text appears {occurrences} times in {relative!r}. Include a bit "
-                f"more of the surrounding line so it matches only once."
+                f"more of the surrounding line so it matches only once.",
+                reason="ambiguous",
             )
 
-        updated = text.replace(old, new, 1)
+        recovered = ""
+        if occurrences == 1:
+            # The exact path still has to look at what is being written: old_text can
+            # match perfectly while new_text carries literal escapes, and that writes a
+            # whole block into the file as one comment.
+            new, unescaped = repair_written_text(relative, new)
+            if unescaped:
+                recovered = "escaping"
+            updated = text.replace(old, new, 1)
+        else:
+            repair = repair_edit(text, old, new)
+            if repair is None:
+                raise ToolError(
+                    f"That exact text is not in {relative!r}. Read the file again and "
+                    f"copy the line you want to change exactly as it appears.",
+                    reason="not_found",
+                )
+            updated, recovered = repair
+
         _reject_broken_python(relative, updated)
         path.write_text(updated, encoding="utf-8")
         rel = str(path.relative_to(self.project.directory.resolve()))
-        return ToolResult(True, f"Changed {rel}.", changed_files=(rel,))
+        return ToolResult(True, f"Changed {rel}.", changed_files=(rel,), recovered=recovered)
+
+    def stop_running(self) -> None:
+        """Stop the project if it is still running. Safe to call when it is not.
+
+        ``last_run`` holds one result, and an interactive profile's run does not finish
+        on its own -- so every extra ``run_project`` used to overwrite the only reference
+        to a live process and orphan it. Nothing could reach it afterwards: Stop reads
+        ``last_run``, so does ``Workbench.release``, so the window stayed on screen until
+        the child killed it themselves, and a conversation where Gary tested the game
+        three times left three of them. Phase 12.2 measured five stacked up across two
+        walks, all reparented to init.
+
+        One project runs one copy of itself. Starting again stops the last one first.
+        """
+        if self.last_run is not None and self.last_run.still_running:
+            stop_project(self.last_run)
 
     def _run_project(self, args: dict) -> ToolResult:
         command = self.project.profile.run_command
         if not command:
-            raise ToolError("This kind of project cannot be run.")
+            raise ToolError("This kind of project cannot be run.", reason="unavailable")
+        self.stop_running()
         result = run_project(
             self.project.directory,
             command,
@@ -306,9 +376,10 @@ class Toolbox:
         """
         command = self.project.profile.compile_command
         if not command:
-            raise ToolError("This kind of project cannot be compiled.")
+            raise ToolError("This kind of project cannot be compiled.", reason="unavailable")
         if command[0] != arduino.EXECUTABLE:
-            raise ToolError(f"Open Nest does not know how to compile with {command[0]!r}.")
+            raise ToolError(f"Open Nest does not know how to compile with {command[0]!r}.",
+                            reason="unavailable")
 
         if not arduino.available():
             return ToolResult(False, arduino.missing_message())
@@ -342,6 +413,180 @@ class Toolbox:
         return ToolResult(True, self.last_run.failure_text, run=self.last_run)
 
 
+# ------------------------------------------------------- the bounded edit recovery
+
+def _unescape(text: str) -> str:
+    r"""Undo a model that wrote ``\n`` as two characters where a newline belonged."""
+    return text.replace("\\n", "\n").replace("\\t", "\t")
+
+
+def _indent_of(line: str) -> str:
+    return line[: len(line) - len(line.lstrip())]
+
+
+def _unique_window(text: str, old: str, *, ignore_indent: bool) -> tuple[int, int] | None:
+    """The one line window matching ``old``, or None if there is not exactly one.
+
+    Line-aligned on purpose. A character-span match in normalised space would have to be
+    mapped back onto the original bytes to be applied, and getting that wrong edits the
+    wrong region silently -- which is the whole failure this tool refuses to risk.
+    """
+    normalise = (lambda s: s.strip()) if ignore_indent else (lambda s: s.rstrip())
+    wanted = [normalise(line) for line in old.replace("\r\n", "\n").split("\n")]
+    while wanted and not wanted[-1]:
+        wanted.pop()
+    if not wanted:
+        return None
+
+    haystack = [normalise(line) for line in text.split("\n")]
+    hits = [
+        index
+        for index in range(len(haystack) - len(wanted) + 1)
+        if haystack[index:index + len(wanted)] == wanted
+    ]
+    if len(hits) != 1:
+        return None
+    return hits[0], hits[0] + len(wanted)
+
+
+def _shift_indent(lines: list[str], columns: int) -> list[str] | None:
+    """Move every non-blank line by ``columns``. None when it cannot be done safely."""
+    if columns == 0:
+        return lines
+    shifted = []
+    for line in lines:
+        if not line.strip():
+            shifted.append(line)
+        elif columns > 0:
+            shifted.append(" " * columns + line)
+        else:
+            available = len(line) - len(line.lstrip(" "))
+            if available < -columns:
+                # Dedenting further than the line is indented would join it to the
+                # previous block. Refuse the whole repair rather than guess.
+                return None
+            shifted.append(line[-columns:])
+    return shifted
+
+
+def _splice(text: str, window: tuple[int, int], new: str,
+            *, shift: int = 0) -> str | None:
+    start, end = window
+    lines = text.split("\n")
+    replacement = new.replace("\r\n", "\n").split("\n")
+    while replacement and not replacement[-1]:
+        replacement.pop()
+    if shift:
+        replacement = _shift_indent(replacement, shift)
+        if replacement is None:
+            return None
+    return "\n".join(lines[:start] + replacement + lines[end:])
+
+
+def repair_edit(text: str, old: str, new: str) -> tuple[str, str] | None:
+    r"""Try the bounded repairs in order; return ``(updated_text, which)`` or None.
+
+    Phase 12.2 measured why every ``edit_file`` in a real Games conversation was refused
+    (SPIKES.md section 22). The model was not failing to understand the file -- it was
+    reproducing the right lines and getting the *encoding* wrong: writing ``\\n`` for a
+    newline, or carrying an indentation the line does not have. Demanding byte-perfect
+    reproduction from a probabilistic model is a requirement it cannot meet reliably, and
+    the tool has to be the thing that changes.
+
+    Every rung obeys the same two rules, and they are what keeps this from being fuzzy
+    matching:
+
+    - **Exactly one match, or no repair.** Two candidates is ambiguity and stays a
+      refusal. Nothing here ever picks the "closest" text.
+    - **Line-aligned and deterministic.** No edit distance, no similarity score, no
+      partial-line guessing. Each rung is a normalisation anyone can reproduce by hand.
+
+    ``_reject_broken_python`` still runs on whatever comes back, so a repair that would
+    leave the child's file unparseable is refused like any other.
+    """
+    attempts: list[tuple[str, str, str]] = [(old, new, "")]
+    if "\\n" in old or "\\t" in old:
+        attempts.append((_unescape(old), _unescape(new), "escaping"))
+
+    for candidate_old, candidate_new, label in attempts:
+        # The escaping repair alone may be all that was wrong.
+        if label and text.count(candidate_old) == 1:
+            return text.replace(candidate_old, candidate_new, 1), label
+
+        # Trailing whitespace and line endings. Neither can change what Python means.
+        window = _unique_window(text, candidate_old, ignore_indent=False)
+        if window is not None:
+            updated = _splice(text, window, candidate_new)
+            if updated is not None:
+                return updated, _label(label, "whitespace")
+
+        # Leading whitespace. In Python this IS the block structure, so the replacement
+        # is moved by the same amount the model was out by rather than written as sent.
+        window = _unique_window(text, candidate_old, ignore_indent=True)
+        if window is not None:
+            first_old = candidate_old.replace("\r\n", "\n").split("\n")[0]
+            actual = _indent_of(text.split("\n")[window[0]])
+            sent = _indent_of(first_old)
+            if "\t" not in actual and "\t" not in sent:
+                updated = _splice(text, window, candidate_new,
+                                  shift=len(actual) - len(sent))
+                if updated is not None:
+                    return updated, _label(label, "indentation")
+    return None
+
+
+def _label(*parts: str) -> str:
+    return "+".join(part for part in parts if part)
+
+
+def repair_written_text(relative: str, new: str) -> tuple[str, bool]:
+    r"""Undo a literal ``\n`` in text about to be written, when it cannot be intended.
+
+    Phase 12.2's verification walk found the nastiest version of the escaping fault, and
+    the recovery above does not reach it. The model matched ``old_text`` **exactly** and
+    then sent a ``new_text`` whose newlines were the two characters ``\`` and ``n``::
+
+        # Draw spaceship with image\n    try:\n        spaceship_surface = ...
+
+    Written verbatim that is a single comment line. It compiles, so the syntax gate
+    passes, the tool reports success -- and the child's game silently loses the code that
+    drew the player. A refusal would have been better than that.
+
+    The discriminator is Python's own parser rather than a guess about intent, which is
+    what keeps this from being the fuzzy editing the design forbids:
+
+    - A ``\n`` the model meant as **newline** unescapes into valid code.
+    - A ``\n`` the model meant as **string content** (``print("a\nb")``) unescapes into a
+      broken string literal, fails to compile, and is left exactly as sent.
+
+    Only considered when the text has literal escapes and no real newline at all. Mixed
+    text is ambiguous about which the model meant, so it is left alone.
+    """
+    if not relative.endswith(".py"):
+        return new, False
+    if "\n" in new or "\\n" not in new:
+        return new, False
+    candidate = _unescape(new)
+    try:
+        compile(candidate, relative, "exec")
+    except (SyntaxError, ValueError):
+        try:
+            # A fragment is usually indented and will not compile on its own; judge the
+            # dedented form rather than refusing every in-block edit.
+            compile(_dedent_for_check(candidate), relative, "exec")
+        except (SyntaxError, ValueError):
+            return new, False
+    return candidate, True
+
+
+def _dedent_for_check(text: str) -> str:
+    lines = [line for line in text.split("\n") if line.strip()]
+    if not lines:
+        return text
+    common = min(len(line) - len(line.lstrip()) for line in lines)
+    return "\n".join(line[common:] if line.strip() else line for line in text.split("\n"))
+
+
 def _reject_broken_python(relative: str, content: str) -> None:
     """Never let the AI leave a child's Python file unparseable.
 
@@ -355,16 +600,18 @@ def _reject_broken_python(relative: str, content: str) -> None:
     except SyntaxError as exc:
         raise ToolError(
             f"That change would break {relative}: {exc.msg} on line {exc.lineno}. "
-            f"Nothing was saved. Fix the code and try again."
+            f"Nothing was saved. Fix the code and try again.",
+            reason="syntax_error",
         ) from exc
     except ValueError as exc:  # e.g. NUL bytes
-        raise ToolError(f"That content cannot be saved to {relative}: {exc}") from exc
+        raise ToolError(f"That content cannot be saved to {relative}: {exc}",
+                        reason="bad_content") from exc
 
 
 def _require(args: dict, key: str) -> str:
     value = args.get(key)
     if value is None or not str(value).strip():
-        raise ToolError(f"That tool needs a {key}.")
+        raise ToolError(f"That tool needs a {key}.", reason="missing_argument")
     return str(value)
 
 

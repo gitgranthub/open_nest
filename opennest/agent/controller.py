@@ -656,13 +656,12 @@ class AgentController:
         }
         if refused & {"edit_file", "write_file"}:
             return (
-                "I haven't changed anything yet. The change I tried did not go through, "
-                "so the file is still as it was. Tell me again what you want different "
-                "and I will look at the file first."
+                "I haven't changed that yet. My edit didn't match the file cleanly, so "
+                "I left it alone. Say it again and I'll take another look."
             )
         if refused:
             return (
-                "I haven't changed anything yet. What I tried did not work. "
+                "I haven't changed that yet. What I tried didn't work. "
                 "Tell me again what you want different."
             )
         return (

@@ -2064,3 +2064,200 @@ then wrongly corrected.
 - **A whitespace-only reply still reaches the child as a blank message.** `_finish_turn`
   tests `if not turn.text`, which is False for `"   \n "`. Not reachable through
   `mlx_provider`, which strips, and not a false claim — noted, not fixed.
+
+---
+
+## 22. Phase 12.2 — an edit tool a small model can actually hit
+
+Phase 12.1 made a failing edit *honest*. It did not make it rare: **18 of 18 `edit_file`
+calls were refused** across three real UI walks, every one because the model's `old_text`
+did not match `src/game.py` byte for byte. Honest and useless is still useless — the
+child asks for a spaceship game and does not get one.
+
+The instruction for 12.2 was explicit: measure why each call was refused *before*
+choosing an implementation, and do not make the model better at byte-perfect
+reproduction — make the tool appropriate for a probabilistic model, because the model
+will be a different one next year.
+
+### 22A. The distribution
+
+Two samples. `spikes/phase12/edit_refusals.py` drives the real interface and captures the
+full arguments (the Phase 12.1 probe truncated them at 38 characters) together with the
+file exactly as it stood at the moment of the call. `spikes/phase12/edit_sample.py` widens
+it headless across six conversations, because one walk is not a distribution.
+
+**15 refusals:**
+
+| category | n | share | verdict |
+|---|---|---|---|
+| `absent` — not in the file at any normalisation | 7 | 47% | correctly refused |
+| `indent_shift` — right line, wrong indentation | 5 | 33% | **recoverable, exactly one match** |
+| `literal_backslash_n` — `\` and `n` sent for a newline | 3 | 20% | **recoverable, exactly one match** |
+| `ambiguous`, `trailing_ws`, `crlf`, `broken_python` | 0 | — | — |
+
+So: **not** whitespace, **not** duplicate matches, **not** line endings, **not** a
+precondition. Two causes, and both are encoding rather than comprehension — the model
+reproduced the right lines and got the *spelling of a newline* or the *column* wrong.
+
+Two corrections to what was believed going in:
+
+- **"18 of 18" is that conversation, not the tool.** Across ordinary Games requests
+  `edit_file` succeeds **8 of 18**. But `"Make the player move faster."` failed **0 of 6**,
+  every attempt sending `    PLAYER_SPEED = 5` against a starter that has it at column
+  zero. The simplest request in the product, and the tool refused six times.
+- **Phase 12.1 guessed the model was adding a spurious four-space indent and that guess
+  was wrong in the case it was made about.** In the UI walk `indent_shift` scored **0** —
+  the code really is indented inside the game loop. The indent fault is real, but it lives
+  on the top-level constants, and only the wider sample showed it. Third instance in this
+  project of an eyeballed pattern surviving until somebody counted.
+
+### 22B. The classifier had the bug it was looking for
+
+The first headless run reported **10 of 10 refusals `ambiguous`**, which was false. The
+classifier asked `"appears" in reason` to catch the ambiguity message *"That text appears
+2 times"* — and the **not-found** message ends *"copy the line you want to change exactly
+as it appears"*. One substring, both messages, and a whole `indent_shift` population
+hidden behind a category that implied the opposite fix.
+
+Two things came out of it, and the second is the reusable one:
+
+- Match a structured message with a pattern (`appears \d+ times`), never a bare word from
+  it.
+- **The refusals are now dumped verbatim to `refusals.json`.** Re-classifying cost a
+  second ten-minute model run purely because the raw material had been thrown away. A
+  measurement harness should persist what it measured, not just its conclusion.
+
+### 22C. What was built
+
+Exact replacement stays the first path. When it finds nothing, `tools.repair_edit` tries
+three rungs and **every one of them must locate the text exactly once or it does not
+fire**:
+
+| rung | what it forgives | why it is safe |
+|---|---|---|
+| `escaping` | `\n` / `\t` written as two characters, in `old_text` **and** `new_text` together | the pair is repaired as a unit, so the replacement never carries escapes the match did not |
+| `whitespace` | trailing whitespace, CRLF | cannot change what Python means |
+| `indentation` | a leading indent the line does not have | the replacement is **moved by the measured delta**, not written as sent |
+
+There is no edit distance, no similarity score, no partial-line guessing, and nothing ever
+picks the "closest" text. Matching is line-aligned on purpose: a character span found in
+normalised space has to be mapped back onto the original bytes to be applied, and getting
+that mapping wrong edits the wrong region silently. Ambiguity stays a refusal at every
+rung, a dedent deeper than the line allows aborts the whole repair, and
+`_reject_broken_python` gates the result exactly as before.
+
+**No fifth tool.** SPIKES §4 measured a nineteen-point selection-accuracy cost for
+widening the set and §8 measured that offering whole-file and targeted writes together is
+worse than either alone, so the recovery had to live inside `edit_file` rather than beside
+it.
+
+Also added, both asked for: `ToolResult.reason` — the refusal in one machine-readable word
+(`not_found`, `ambiguous`, `missing_file`, `syntax_error`, `exists`, …) so Open Nest can
+count and branch without matching on English that is free to be reworded — and
+`ToolResult.recovered`, which is how the walk below reports recovery usage at all.
+
+### 22D. The verification walk found a worse fault than the one being fixed
+
+Rerunning the real UI walk took the same three turns from **0 of 5** to **3 of 4**, two of
+them through the recovery path. It also exposed this, reported as a success:
+
+```
+- pygame.draw.rect(screen, PLAYER_COLOUR, player)
++ # Draw spaceship with image\n    try:\n        spaceship_surface = pygame.image.load(...)
+```
+
+`old_text` matched **exactly**, so the match-side repair never ran, and `new_text` carried
+literal escapes. Written verbatim the entire block is **one comment line**. It compiles,
+so the syntax gate passed; the tool said "Changed src/game.py"; and the child's game
+silently lost the code that drew the player. **A refusal would have been better than
+that** — it is the silent-wrong-edit outcome the whole design refuses to risk, arriving
+through the one path nobody was watching.
+
+`tools.repair_written_text` closes it, and the discriminator is Python's own parser rather
+than a guess about intent:
+
+- a `\n` the model meant as a **newline** unescapes into valid code → unescaped
+- a `\n` the model meant as **string content** (`print("a\nb")`) unescapes into a broken
+  string literal, fails to compile → written exactly as sent
+
+Only considered when the text has literal escapes and **no real newline at all**; mixed
+text is ambiguous about which was meant and is left alone. It applies to `write_file`'s
+content too, where the same fault would create a whole new file that is one comment.
+
+The lesson is Phase 12.1's, again and at a cost: **the verification run is not a
+formality.** Both phases found their most dangerous defect in the walk that was supposed
+to confirm the fix.
+
+### 22E. One project, one running copy — the windows nobody could close
+
+Not an editing defect, and found the way the good ones are: the owner watched the
+verification walks and said the pygame windows were piling up on his screen, showing
+nothing like what Gary was describing, and never closing. Five were live at once,
+**every one reparented to init** — 41, 28, 14, 14 and 2 minutes old.
+
+`Toolbox.last_run` holds exactly one `RunResult`, and an interactive profile's run never
+finishes by itself. So the second `run_project` overwrote the only reference to a live
+process:
+
+```python
+self.last_run = result      # the previous one is now unreachable
+```
+
+Everything that can stop a game reads `last_run` — `Workbench._stop`, and
+`Workbench.release`. So the first window could not be closed from inside Open Nest at
+all: not by Stop, not by closing the project, not by quitting. The only way out was to
+kill the game yourself. §20I fixed the *last* window outliving the Workbench and this is
+the same family, one copy deeper, which is why it survived that pass.
+
+`Toolbox.stop_running()` now stops a still-running copy before starting another, and both
+routes go through it — the Run button dispatches `run_project` like the model does. Two
+tests: a live run is stopped before the next starts, and a finished batch run is not
+touched.
+
+**Why the windows showed nothing like the described game**, which was the other half of
+the report, had three causes and two were defects:
+
+1. **The comment-swallowing write in §22D** deleted `pygame.draw.rect(...)` outright, so
+   the player stopped being drawn. Fixed.
+2. **The stacked windows were intermediate states.** The model calls `run_project` during
+   a turn, before and between its edits, so most of what was on screen was the untouched
+   starter — an orange square. Fixed by the above.
+3. **Model edit quality**, which is not a tool defect and is still open. See §22E.
+
+### 22F. What this does not establish
+
+- **The 47% that stays refused is not an editing problem.** Those are turns where the
+  model edits code it imagined writing earlier — `# Move asteroid` against a starter with
+  no asteroid. No matching rule should rescue them and none does. What would help is the
+  model seeing the file's current lines when it composes the call, which is a context
+  question, not a tool question.
+- **The edits land and the game still does not do what Gary says.** This is the honest
+  headline and it is worth being exact about, because "3 of 4 edits succeeded" invites the
+  wrong conclusion. The final walk's `src/game.py` parses, draws, moves the player with
+  bounds checks, loads the PNG and blits it, and has collision detection — and it contains
+  two logic faults a child would see immediately:
+
+  ```python
+  while running:
+      asteroid_x = 500          # re-initialised every frame
+      asteroid_x -= 5           # ...so it never actually moves
+      pygame.draw.circle(...)   # drawn BEFORE the background fill
+      ...
+      screen.fill(BACKGROUND)   # ...which paints over it
+  ```
+
+  The asteroid is **stationary and invisible**. Gary says "the asteroid moves left"; the
+  window shows a spaceship on an empty background. Both faults are ordinary beginner
+  mistakes — state initialised inside the loop, and draw order — and neither is something
+  the edit tool can or should catch: each individual edit did exactly what it said.
+
+  So the tool reliability work is done and the *product* still does not build a working
+  game on the first try. That is the capability / action-selection miss, it is now the
+  largest thing standing between Open Nest and a child getting what they asked for, and it
+  is a prompt-and-context problem rather than a tool one.
+- **One model, one profile.** Qwen3 4B on Games. The ladder is model-independent by
+  construction — it normalises text, and knows nothing about who produced it — but the
+  *distribution* that justified each rung is this model's.
+- **Non-Python files get the match repairs but not the write repair.** `repair_written_text`
+  needs a parser to tell an intended newline from string content, and there is one for
+  Python. A Markdown or HTML file written with literal escapes would still be wrong.

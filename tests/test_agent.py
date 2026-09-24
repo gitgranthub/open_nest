@@ -222,10 +222,10 @@ def test_a_repeated_false_claim_is_not_relayed_to_the_child(project) -> None:
 
     assert not any(result.changed_files for _, result in turn.tool_results)
     assert "spaceship" not in turn.text.lower()
-    assert "haven't changed anything yet" in turn.text
+    assert "haven't changed that yet" in turn.text
     # What is blocking is named, the tool's own model-facing wording is not, and no
     # cause is asserted that the application did not actually check.
-    assert "did not go through" in turn.text
+    assert "didn't match the file cleanly" in turn.text
     assert "copy the line you want to change" not in turn.text
     # Still exactly one correction: the fix is about what happens after it, not about
     # spending more provider calls arguing.
@@ -252,7 +252,7 @@ def test_an_empty_reply_after_the_correction_does_not_let_the_claim_through(proj
     ])
     turn = controller.send("Make a game where a spaceship moves around and avoids asteroids.")
     assert "spaceship" not in turn.text.lower()
-    assert "haven't changed anything yet" in turn.text
+    assert "haven't changed that yet" in turn.text
 
 
 def test_the_correction_is_still_allowed_to_work(project) -> None:

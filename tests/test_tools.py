@@ -208,3 +208,274 @@ def test_edit_file_refuses_a_change_that_breaks_python(box: Toolbox) -> None:
 
 def test_non_python_files_are_not_syntax_checked(box: Toolbox) -> None:
     assert box.dispatch("write_file", {"path": "docs/notes.md", "content": "# not python ((("}).ok
+
+
+# ------------------------------------ Phase 12.2: the bounded edit recovery
+#
+# Measured in SPIKES.md section 22. Across two samples 15 edit_file calls were refused:
+# 7 because the model invented text that is in the file at no normalisation (correctly
+# refused), 5 because it sent an indentation the line does not have, and 3 because it
+# wrote a literal backslash-n where a newline belonged. The fixtures below are those
+# three shapes, taken from the real calls rather than imagined.
+
+#: The starter the measurements were taken against, near enough. PLAYER_SPEED sits at
+#: column zero, inside no block -- which is what the model kept getting wrong.
+_STARTER = (
+    "import pygame\n"
+    "\n"
+    "# Things you can change\n"
+    "PLAYER_SPEED = 5\n"
+    "PLAYER_SIZE = 40\n"
+    "\n"
+    "while True:\n"
+    "    keys = pygame.key.get_pressed()\n"
+    "    if keys[pygame.K_LEFT]:\n"
+    "        player.x -= PLAYER_SPEED\n"
+)
+
+
+def _game(box: Toolbox, text: str = _STARTER) -> Path:
+    path = box.project.directory / "src" / "game.py"
+    path.write_text(text)
+    return path
+
+
+def test_an_indent_the_line_does_not_have_is_repaired(box: Toolbox) -> None:
+    """The measured majority of recoverable refusals, and the six-in-a-row failure.
+
+    Asked "make the player move faster", the model sent ``    PLAYER_SPEED = 5`` six
+    times against a starter that has it at column zero, and the tool refused six times.
+    """
+    path = _game(box)
+    result = box.dispatch("edit_file", {
+        "path": "src/game.py",
+        "old_text": "    PLAYER_SPEED = 5",
+        "new_text": "    PLAYER_SPEED = 9",
+    })
+    assert result.ok and result.recovered == "indentation"
+    # Re-indented to the file's own column, not written as the model sent it.
+    assert "\nPLAYER_SPEED = 9\n" in path.read_text()
+    assert "    PLAYER_SPEED" not in path.read_text()
+
+
+def test_a_literal_backslash_n_is_repaired(box: Toolbox) -> None:
+    r"""The model escaped the backslash as well as the n.
+
+    ``spikes/phase12/raw_toolcall.py`` established this is the model double-escaping and
+    not Open Nest mis-decoding: the raw completion is well-formed JSON and json.loads
+    produces real newlines when the model writes them properly.
+    """
+    path = _game(box)
+    result = box.dispatch("edit_file", {
+        "path": "src/game.py",
+        "old_text": "    if keys[pygame.K_LEFT]:\\n        player.x -= PLAYER_SPEED",
+        "new_text": "    if keys[pygame.K_LEFT]:\\n        player.x -= 99",
+    })
+    assert result.ok and result.recovered == "escaping"
+    assert "player.x -= 99" in path.read_text()
+    # The repair must not leave the two characters in the child's file.
+    assert "\\n" not in path.read_text()
+
+
+def test_trailing_whitespace_and_line_endings_are_repaired(box: Toolbox) -> None:
+    path = _game(box)
+    result = box.dispatch("edit_file", {
+        "path": "src/game.py",
+        "old_text": "PLAYER_SPEED = 5   \r\nPLAYER_SIZE = 40",
+        "new_text": "PLAYER_SPEED = 7\nPLAYER_SIZE = 40",
+    })
+    assert result.ok and result.recovered == "whitespace"
+    assert "PLAYER_SPEED = 7" in path.read_text()
+
+
+def test_an_exact_match_does_not_go_near_the_repair_path(box: Toolbox) -> None:
+    """Exact replacement stays the first path, and says so."""
+    path = _game(box)
+    result = box.dispatch("edit_file", {"path": "src/game.py",
+                                        "old_text": "PLAYER_SPEED = 5",
+                                        "new_text": "PLAYER_SPEED = 8"})
+    assert result.ok and result.recovered == ""
+    assert "PLAYER_SPEED = 8" in path.read_text()
+
+
+def test_text_that_is_in_the_file_nowhere_is_still_refused(box: Toolbox) -> None:
+    """Seven of fifteen measured refusals, and no rule should rescue them.
+
+    The model was editing code it had imagined writing earlier. There is no correct
+    match at any normalisation, and picking the closest line is exactly the fuzzy
+    editing this must not do.
+    """
+    original = _STARTER
+    path = _game(box, original)
+    for invented in ("player_size = 20",
+                     "background = (255, 255, 255)",
+                     "    # Move asteroid\n    asteroid_x -= 2"):
+        result = box.dispatch("edit_file", {"path": "src/game.py",
+                                            "old_text": invented, "new_text": "x = 1"})
+        assert not result.ok, invented
+        assert result.reason == "not_found"
+    assert path.read_text() == original
+
+
+def test_two_exact_matches_are_refused_before_any_repair_is_tried(box: Toolbox) -> None:
+    original = "if a:\n    value = 1\nif b:\n        value = 1\n"
+    path = _game(box, original)
+    result = box.dispatch("edit_file", {"path": "src/game.py",
+                                        "old_text": "  value = 1", "new_text": "  value = 2"})
+    assert not result.ok and result.reason == "ambiguous"
+    assert path.read_text() == original
+
+
+def test_a_match_that_is_only_ambiguous_after_normalising_is_refused(box: Toolbox) -> None:
+    """The safety rule the whole ladder rests on: exactly one match, or no repair.
+
+    A tab indent puts the exact count at zero, so this reaches the repair path -- and
+    the repair must still decline, because ignoring indentation makes it match two
+    different lines and nothing here may pick one.
+    """
+    original = "if a:\n    value = 1\nif b:\n        value = 1\n"
+    path = _game(box, original)
+    result = box.dispatch("edit_file", {"path": "src/game.py",
+                                        "old_text": "\tvalue = 1", "new_text": "\tvalue = 2"})
+    assert not result.ok and result.reason == "not_found"
+    assert path.read_text() == original
+
+
+def test_a_repair_that_would_break_python_is_refused(box: Toolbox) -> None:
+    """The syntax gate runs on a repaired edit exactly as on an exact one."""
+    original = _STARTER
+    path = _game(box, original)
+    result = box.dispatch("edit_file", {"path": "src/game.py",
+                                        "old_text": "    PLAYER_SPEED = 5",
+                                        "new_text": "    PLAYER_SPEED = ((("})
+    assert not result.ok and result.reason == "syntax_error"
+    assert path.read_text() == original
+
+
+def test_a_repair_never_dedents_further_than_the_line_allows(box: Toolbox) -> None:
+    """Shifting a replacement out of its block would change what the code means."""
+    from opennest.agent.tools import repair_edit
+
+    text = "def f():\n        deeply = 1\n"
+    # The model sends it far more indented than it is; the replacement cannot be moved
+    # back by that much without leaving the function body.
+    assert repair_edit(text, "                deeply = 1", "deeply = 2") is None
+
+
+def test_an_exact_match_with_escaped_newlines_in_new_text_is_repaired(box: Toolbox) -> None:
+    r"""The worst shape of the escaping fault, found by the verification walk.
+
+    ``old_text`` matched perfectly, so the match-side repair never ran, and ``new_text``
+    carried the two characters ``\`` and ``n``. Written verbatim the whole block became
+    one comment line -- it compiled, the tool reported success, and the child's game
+    silently lost the code that drew the player.
+    """
+    path = _game(box)
+    result = box.dispatch("edit_file", {
+        "path": "src/game.py",
+        "old_text": "PLAYER_SIZE = 40",
+        "new_text": "PLAYER_SIZE = 40\\nPLAYER_COLOUR = (1, 2, 3)",
+    })
+    assert result.ok and result.recovered == "escaping"
+    written = path.read_text()
+    assert "\\n" not in written
+    assert "\nPLAYER_COLOUR = (1, 2, 3)\n" in written
+
+
+def test_a_newline_inside_a_string_literal_is_left_alone(box: Toolbox) -> None:
+    r"""The discriminator is the parser, not a guess about what the model meant.
+
+    ``print("a\nb")`` is a legitimate use of the escape. Unescaping it would produce an
+    unterminated string, so it does not compile and the text is written as sent.
+    """
+    path = _game(box)
+    result = box.dispatch("edit_file", {
+        "path": "src/game.py",
+        "old_text": "PLAYER_SIZE = 40",
+        "new_text": 'print("a\\nb")',
+    })
+    assert result.ok and result.recovered == ""
+    assert 'print("a\\nb")' in path.read_text()
+
+
+def test_a_whole_new_file_is_not_written_as_one_comment(box: Toolbox) -> None:
+    result = box.dispatch("write_file", {
+        "path": "src/helper.py",
+        "content": "# helper\\nimport pygame\\n\\nSPEED = 3",
+    })
+    assert result.ok and result.recovered == "escaping"
+    written = (box.project.directory / "src" / "helper.py").read_text()
+    assert "\\n" not in written
+    assert written.split("\n")[1] == "import pygame"
+
+
+def test_text_that_already_has_real_newlines_is_never_touched(box: Toolbox) -> None:
+    """Mixed text is ambiguous about which the model meant, so it is left as sent."""
+    path = _game(box)
+    result = box.dispatch("edit_file", {
+        "path": "src/game.py",
+        "old_text": "PLAYER_SIZE = 40",
+        "new_text": 'PLAYER_SIZE = 40\nMESSAGE = "a\\nb"',
+    })
+    assert result.ok and result.recovered == ""
+    assert 'MESSAGE = "a\\nb"' in path.read_text()
+
+
+# ------------------------------------- Phase 12.2: one project runs one copy of itself
+
+def test_running_again_stops_the_copy_that_is_still_running(box: Toolbox, monkeypatch) -> None:
+    """Otherwise every extra run orphans a window nothing can ever reach.
+
+    ``last_run`` holds one result and an interactive profile's run never finishes on its
+    own, so a second ``run_project`` used to overwrite the only reference to a live
+    process. Stop reads ``last_run`` and so does ``Workbench.release``, which meant the
+    first window could not be closed from inside Open Nest at all. Phase 12.2 found five
+    stacked up on the owner's screen across two walks, all reparented to init.
+    """
+    from opennest.execution.python_runner import RunResult
+
+    stopped: list = []
+    monkeypatch.setattr("opennest.agent.tools.stop_project", lambda run: stopped.append(run))
+    monkeypatch.setattr(
+        "opennest.agent.tools.run_project",
+        lambda *a, **k: RunResult(None, "", "", 0.1, False, still_running=True),
+    )
+    box.dispatch("run_project", {})
+    first = box.last_run
+    box.dispatch("run_project", {})
+
+    assert stopped == [first], "the first game was left running with nothing owning it"
+
+
+def test_running_again_does_not_stop_a_run_that_already_finished(box: Toolbox, monkeypatch) -> None:
+    """A batch run is over; there is nothing to terminate and nothing to report."""
+    from opennest.execution.python_runner import RunResult
+
+    stopped: list = []
+    monkeypatch.setattr("opennest.agent.tools.stop_project", lambda run: stopped.append(run))
+    monkeypatch.setattr(
+        "opennest.agent.tools.run_project",
+        lambda *a, **k: RunResult(None, "done", "", 0.1, False, still_running=False),
+    )
+    box.dispatch("run_project", {})
+    box.dispatch("run_project", {})
+    assert stopped == []
+
+
+def test_stop_running_is_safe_before_anything_has_run(box: Toolbox) -> None:
+    box.stop_running()
+
+
+def test_every_refusal_carries_a_machine_readable_reason(box: Toolbox) -> None:
+    """The prose is for the model; the code is for Open Nest to count and branch on."""
+    _game(box)
+    cases = {
+        "missing_file": {"path": "src/nope.py", "old_text": "a", "new_text": "b"},
+        "not_found": {"path": "src/game.py", "old_text": "zzz", "new_text": "b"},
+        "missing_argument": {"path": "src/game.py", "old_text": "", "new_text": "b"},
+        "outside_project": {"path": "../../x.py", "old_text": "a", "new_text": "b"},
+    }
+    for expected, args in cases.items():
+        result = box.dispatch("edit_file", args)
+        assert not result.ok, args
+        assert result.reason == expected, f"{args} gave {result.reason!r}"
