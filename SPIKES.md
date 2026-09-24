@@ -2408,7 +2408,7 @@ against the original starter, with one sentence added about keeping indentation:
 
 | variant | MOVING | INPUT_ONLY | STATIC | DEAD |
 |---|---|---|---|---|
-| baseline | **1/6** | 1/6 | 4/6 | 1/6 |
+| baseline | **1/6** | 4/6 | 0/6 | 1/6 |
 | starter markers + prompt | 0/6 | 0/6 | 1/6 | **5/6** |
 | prompt only | 0/6 | 4/6 | **0/6** | 2/6 |
 
@@ -2417,6 +2417,13 @@ At n=6 against a model that is not deterministic in prose, 1/6 against 0/6 is no
 difference anyone can stand behind, so the prompt is not claimed to help. It is kept
 because what it says is *true*, not because it worked — and STATIC going 4/6 → 0/6 is
 suggestive rather than significant.
+
+> **Corrected in Phase 12.4.** The baseline row above, and the one in §23G, originally
+> read `1/6 | 1/6 | 4/6 | 1/6` -- seven out of six. It mixed the first, single-pass
+> grader's STATIC (which §23A explains was wrong about the starter) with the corrected
+> two-pass grades. §23B's own per-build table, and a regrade of the same six files in
+> §24C, both give INPUT_ONLY 4/6 and STATIC 0/6. So "STATIC going 4/6 → 0/6" was never a
+> measurement at all; nothing else in §23 changes.
 
 One result says more than the totals. `build_6` died on
 `NameError: name 'random' is not defined. Did you forget to import 'random'?` — the prompt
@@ -2437,7 +2444,7 @@ Qwen3 8B, same six conversations, everything else held constant:
 
 | arm | MOVING | INPUT_ONLY | STATIC | DEAD | `edit_file` landed |
 |---|---|---|---|---|---|
-| 4B baseline | **1/6** | 1/6 | 4/6 | 1/6 | 8/12 (67%) |
+| 4B baseline | **1/6** | 4/6 | 0/6 | 1/6 | 8/12 (67%) |
 | 4B + starter markers | 0/6 | 0/6 | 1/6 | 5/6 | 19/32 (59%) |
 | 4B + prompt only | 0/6 | 4/6 | 0/6 | 2/6 | 10/16 (63%) |
 | **8B** | **0/6** | 4/6 | 0/6 | 2/6 | **6/20 (30%)** |
@@ -2485,3 +2492,230 @@ sandbox and the latency that implies — and it is now justified by twenty-four
 conversations rather than by argument, which is the bar PHASE_12_HANDOFF §8 set. It is
 written up here as the proposal it is, and deliberately not built at the end of the
 session that measured the need for it.
+
+---
+
+## 24. Phase 12.4 — telling a game that runs from a game that works
+
+§23H left one sentence: Open Nest can tell that a game crashed, and cannot tell whether a
+game that launched does anything. This section is what it took to close that loop, and
+most of it is about the grader, because **the spike that proved the technique could not
+be trusted to decide anything.**
+
+### 24A. What `does_it_play.py` actually measures — and what it gets wrong
+
+It runs the game twice under `SDL_VIDEODRIVER=dummy`, 40 frames each, hashing the display
+surface after every `flip`/`update`: once hands-off, once with a fake `key.get_pressed`
+holding one arrow key. The verdict is the count of distinct hashes. Its AST checks are
+printed and never used.
+
+Measured before anything was built on it:
+
+| question | answer |
+|---|---|
+| Inside the product's sandbox? | The spike runs unsandboxed, but the technique works through `python_runner` + Seatbelt unchanged: **0.86 s per 40-frame pass**, and a write outside the project from the same path is still refused |
+| Time | 1.7 s for both passes. **30 s** for a game that never draws — it waits for its subprocess timeout |
+| Rendering | None. The dummy driver draws into an offscreen surface and only a hash is kept. No window, no pixels stored |
+
+Then ten small **working** games, each a first-game idiom, and seven broken ones:
+
+| working game | spike verdict | why |
+|---|---|---|
+| moves on KEYDOWN | **STATIC** | `pygame.event.get = lambda: []` swallows every key event |
+| spawns on its own `set_timer` | **STATIC** | the same line swallows the game's *own* timer events |
+| quiz answered with 1/2/3 | **STATIC** | no digits, and no events |
+| title screen, press SPACE | **STATIC** | no space, and no events |
+| W A S D | **STATIC** | arrows only |
+| click to place a dot | **STATIC** | no mouse |
+| paddle follows the mouse | **STATIC** | no mouse |
+| dt-based motion, splash wait, collide-and-quit | MOVING | |
+
+**Seven of ten working games graded as broken.** Used as a repair trigger, that is Gary
+being told to "fix" seven working games. On the broken side, a crash at frame 20 was
+reported as **STATIC with its traceback thrown away** (errors surface only when zero
+frames were drawn), and a crash on SPACE **passed**, because space is never pressed. The
+12.3 corpus exposed none of this, because every one of its 24 games descended from the
+arrow-key starter — the fourth instance in this project of a harness measuring itself
+(§17F, §22B, §23A).
+
+### 24B. The corrected harness
+
+`opennest/execution/playtest_harness.py` runs inside the child's process; it records and
+never judges. `opennest/execution/playtest.py` runs it through `run_project` — same
+interpreter, same sandbox, never the network — and classifies. What changed, each
+because a fixture failed without it:
+
+- **Input is posted into the game's own event queue**, never substituted for it. Timers,
+  filtered gets and `event.poll` behave as they would at a real window.
+- **Broad input**: idle, then arrows, W A S D, space, enter, a digit, letters (p x z e f r),
+  five clicks, mouse movement, and one long hold for anything with momentum. Never
+  Escape or Q.
+- **Phases end on frames or seconds, whichever first**, so a 5 fps quiz still gets every
+  input inside the wall clock.
+- **`event.wait()` with nothing queued jumps to the next input**, so a game that redraws
+  only when something happens does not wait forever. `time.wait` is left alone — a title
+  card held for three seconds is the game's own pacing.
+- **`runpy` runs the file in place**, so the traceback says `File "src/game.py", line 9`.
+  The spike copied the game elsewhere, shifting every line and breaking `__file__` paths.
+- **A watchdog** ends a run that has drawn nothing in 4 s, or anything at 10 s.
+
+Measured on the same fixtures plus seven more idioms (event-driven redraw, 5 fps quiz,
+"press P", thrust, a 3 s splash, a `__file__`-relative sprite):
+
+| | result | time |
+|---|---|---|
+| **working games** | **17 / 17 pass** | 2.0 s at 60 fps; 3.3 s at 30; 5.7 s at 5 |
+| crash on frame 20 | crashed, real line, "while pressing right" | 0.5 s |
+| crash on SPACE | crashed, `line 13`, "while pressing space" | 0.9 s |
+| frozen | frozen, 103 identical frames | 2.0 s |
+| never draws | no picture | 4.1 s (watchdog, not a 30 s timeout) |
+| ends at once | closed itself | 0.1 s |
+| asteroid drawn before the fill | **passed** — the player still moves; see 24D | 2.0 s |
+
+One false failure survived into the first production run and was fixed: the event-driven
+game drew three frames, all different, and discarding two as warm-up left one — "frozen".
+Warm-up now discounts frames as evidence of *movement*, never of *response to input*.
+
+### 24C. The 24 games from §23, regraded
+
+All four arms, same files, under the real sandbox, each run twice to check determinism
+(every one identical both times; the starter identical across three runs):
+
+| | n | |
+|---|---|---|
+| **crashed** | **10** | every one **on the first frame** — `NameError` ×8, `pygame.random`, a missing `import random` |
+| frozen | 1 | the one §23 called STATIC |
+| passed, still the untouched starter | 5 | no edit landed; nothing to test |
+| passed, source changed, **pixels identical to the starter** | 3 | moved-but-never-drawn: `build_5` and 8B's `build_4`/`build_5` |
+| passed, visibly changed | 5 | including the one working game |
+
+**The ten crashes are the finding.** A first-frame crash is exactly what the existing
+repair loop handles — `RunResult.ok` is False inside the four-second grace — and it never
+fired for any of them, because nothing ran them. The model often ends a turn without
+calling `run_project`: `TOOL_USE_RULES` only asks it to "if they ask to run or play it".
+So the trigger has to be the application's, not the model's.
+
+This regrade also corrected §23F/§23G's baseline row, which summed to seven out of six.
+
+### 24D. What is evidence for repair, and what is not
+
+Repair fires only on what is broken **whatever the child asked for**:
+
+| verdict | the evidence |
+|---|---|
+| `crashed` | a traceback, at any frame, with the input being given at the time |
+| `no_picture` | a window opened and nothing was drawn in 4 s |
+| `closed_itself` | ended on its own within two frames |
+| `frozen` | every frame after the first two identical, left alone **and** through every input |
+
+No verdict, no repair: not a pygame window; ended itself after input began while still;
+sandbox or pygame unavailable; the harness never reached the game (a traceback with no
+record is the harness's own, never the child's).
+
+**Two tempting signals were measured and rejected:**
+
+- **"It only moves when a key is held."** The starter is exactly that, correctly, and so
+  is every correct answer to "make the player bigger".
+- **"The change made no visible difference."** Deterministic and cheap — the starter's
+  frames are bit-identical run to run with `random` seeded — and it would catch the three
+  pixel-identical games in 24C. It would also fire on every window title, quit key, sound
+  and anything set to happen after a few seconds. Deciding which of those the child meant
+  is the semantic judgement this phase was told not to make.
+
+So the asteroid drawn before `screen.fill` still passes. That is the honest limit of a
+deterministic check, and it is recorded rather than papered over.
+
+### 24E. The loop
+
+`AgentController._playtest_wants_repair`, at the two places a turn would otherwise
+finish, whenever the turn changed a file since the last test:
+
+```
+model stops -> playtest -> passed / no verdict            -> finish
+                        -> failed, attempts left          -> feedback -> tool loop -> model stops -> ...
+                        -> failed, none left              -> give up, in the application's words
+model stops, nothing changed since a failed test          -> reminder (no re-test)  -> ...
+```
+
+- **One repair budget per turn**: `MAX_REPAIR_ATTEMPTS = 3`, shared with the crash repair
+  (`_repair` now counts from the turn's attempts instead of resetting to one).
+- **One call budget per turn**, spent like everything else.
+- **Unchanged code is never re-tested** — but an answer that changes nothing is pulled up,
+  and that spends an attempt. Measured, not assumed: handed the exact `NameError`, the
+  4B model replied *"I added the import for random at the top of the file."* and called
+  no tool. The 12.1 claim guard cannot see it, because the turn changed a file earlier.
+  Pulled up once, it made the edit and the re-test passed (24F, `controlled 4`).
+- **Not a tool.** `Toolbox.playtest()` is in no schema and `dispatch` refuses it; the four
+  tools are unchanged. It never touches `last_run`, so the game on the child's screen is
+  untouched, and it opens no window.
+- **Opt-in as data**: `"playtest": "pygame"` on the Games profile, nowhere else.
+- **Cost**: ~2 s per test on a turn that changed the game, against 15-30 s of 4B
+  generation; nothing at all on a turn that changed nothing.
+
+### 24F. Acceptance — the real model, through the real loop
+
+`spikes/phase12/playability_loop.py`: Qwen3 4B, the real controller and Toolbox, a fresh
+Games project each time. §23's six conversations verbatim, four more asks for a new
+moving thing (the category that crashed most), and four **probes** whose correct answer
+only moves when a key is held — the false-failure measurement. Run unwrapped with
+`HF_HUB_OFFLINE=1` (24E: Seatbelt does not nest). Every tested source, verdict and
+message is persisted beside the totals.
+
+| conversation | model ran it | tests | repairs | Gary at the end | final |
+|---|---|---|---|---|---|
+| c1 spaceship + asteroids | yes | passed | 0 | describes a still asteroid | passed, input only |
+| c2 … then faster | yes, crashed | passed · passed | 3 (crash loop) | "it works now" | passed, input only |
+| c3 bouncing ball | no | passed | 0 | "It bounces off walls" | passed, **input only** |
+| **c4 falling square** | **no** | **crashed › passed** | **2** | describes the fix | passed, moves |
+| c5 second square | no | — | 0 | raw `<tool_call>` text | the starter |
+| c6 catch blocks | no | — | 0 | "I haven't changed that yet" | the starter |
+| e1 enemy chases | no | passed | 0 | "chasing the player" | passed, **input only** |
+| e2 coin | no | passed | 0 | "moving horizontally" | passed, **input only** |
+| **e3 drifting stars** | **no** | **crashed › crashed › crashed** | **3** | **the application: it stopped with an error** | crashed |
+| e4 score per second | no | passed | 0 | | passed, input only |
+| p1 bigger · p2 blue · p3 title · p4 faster | no | passed ×4 | 0 | | passed ×4 |
+
+**Against what was asked:**
+
+| | |
+|---|---|
+| launched (the pre-12.4 `RunResult.ok`) | 13 / 14 final games |
+| turns where the model ran the game itself | **3 of 15** — before 12.4, nothing tested the other twelve |
+| playtests run | 16, each ~2.0 s passing, 0.13 s crashing |
+| behavioural check **failed** | 4, in 2 conversations — all first-frame `NameError`s |
+| repair triggered by the playtest | 2 conversations, 5 attempts |
+| repaired to passing | **1 of 2** (c4); e3 stopped at three attempts and said so |
+| crash loop (unchanged) | 1 (c2), 3 attempts, then **confirmed passing by the playtest** |
+| crashes reaching the child silently | **0** — c4 was fixed; e3 was reported as broken, not as drifting stars |
+| **false behavioural failures** | **0** — probes 4 / 4, and all four failures are real module-level crashes |
+| wall clock per turn | 15–76 s, dominated by generation |
+
+Every final game was regraded afterwards with the committed harness: identical verdicts.
+An earlier full run, on the code before the reminder in 24E existed, gave the same
+probe result (4 / 4) and is where c4's narrated fix was first seen.
+
+**What "passed" is worth, read straight from the persisted sources.** p1, p2 and p4 are
+exactly right (`PLAYER_SIZE` 40→60, the background, `PLAYER_SPEED` 5→8). p3 is not: the
+model added a comment, `# Set background`, and Gary said *"Look for 'Space Rocks' in the
+top corner."* c4's square passes by *moving* — because its position is reset to a random
+`x` every frame, so it jitters instead of falling. And in c3, e1 and e2 Gary describes a
+thing moving while the test measured `moved_by_itself = False`. None of those is a
+false failure: each game is not broken. They are the half of the problem a
+deterministic check was told not to judge.
+
+### 24G. What this does not establish
+
+- **n = 14, one model, one Mac.** Four failures in two conversations is enough to see the
+  loop work and the bound hold, not enough to put a rate on repair. MLX at temperature 0
+  is not bit-repeatable across runs (c2 differed between the two runs), so a rerun is a
+  new sample rather than a replay.
+- **The playtest cannot see intent.** It stops a crash, a blank window, a window that
+  shuts, and a frozen picture from reaching the child as "done". It does not make the
+  child's game the one they asked for, and 1 of 24 in §23 is not made 13 of 14 by this —
+  13 of 14 are *not clearly broken*.
+- **The next lever is visible in this data and deliberately not pulled.** Three replies
+  claim motion the test measured as absent. Comparing a claim with `moved_by_itself` is
+  claim-to-artifact attribution (§21C-bis), which the owner deferred; it is a data-shape
+  question for `Turn`, not a reason to widen this check.
+- **Games only, pygame only.** The Pi test loop is interactive too and has no playtest:
+  it is a console program the harness cannot watch.

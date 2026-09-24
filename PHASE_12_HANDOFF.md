@@ -6,9 +6,11 @@ and what it deliberately left alone.
 **Phase 12 is NOT complete, and an earlier version of this file said it was. That was
 wrong and the correction matters more than the claim did.**
 
-Three rounds of defects are fixed and each is genuinely closed: the test drive itself
-(§1-§5), **12.1** the truthfulness defect (§8), **12.2** the edit tool (§9). What none of
-them delivered is the thing the phase exists to prove:
+Four rounds of work are genuinely closed: the test drive itself (§1-§5), **12.1** the
+truthfulness defect (§8), **12.2** the edit tool (§9), and **12.4** the playability
+feedback loop (§12) — Open Nest now tests a game after every change and sends a crash, a
+blank window or a frozen picture back for repair. What none of them delivered is the
+thing the phase exists to prove:
 
 > **A child asks for a game and does not get one.** Every edit now lands, every claim
 > Gary makes is now true, and the window still shows an orange square on black — or, once
@@ -30,6 +32,9 @@ What is genuinely settled, and should not be re-investigated:
   recovery that refuses ambiguity (§9)
 - one project runs one copy of itself; the window pile-up is gone (§9)
 - the approval mark is no longer awarded for the starter template launching (§10)
+- a game that crashes, never draws, closes itself or shows a frozen picture is caught
+  after every change — whether or not the model ran it — and sent back for repair,
+  bounded, with **zero false failures** in the acceptance run (§12)
 
 One thing §8 originally recorded turned out to be false, and it matters for anyone
 reading the old version: the tools *were* running. The failure was never "no tool call".
@@ -38,14 +43,19 @@ reading the old version: the tools *were* running. The failure was never "no too
 
 ## THE CONCLUSION — why Phase 12 is still open
 
-> **Open Nest can detect that a game crashed. It cannot yet determine whether an
-> interactive game that successfully launches actually behaves as requested.**
+> **Open Nest can now tell a game that is clearly broken from one that is not — after
+> every change, whether or not the model ran it. It still cannot tell whether a game
+> that is not broken does what the child asked, and a deterministic check was
+> deliberately not made to try.**
 
-That sentence is the whole of it. Phase 12.3 measured the remaining gap properly and it
-is **not** what §9 guessed — a prompt-and-context problem was the hypothesis, and
-twenty-four conversations say otherwise.
+That was one sentence shorter before Phase 12.4: *"Open Nest can detect that a game
+crashed. It cannot yet determine whether an interactive game that successfully launches
+actually behaves as requested."* 12.4 closed the half of it that deterministic evidence
+can close (§12). Phase 12.3 measured the remaining gap properly and it is **not** what
+§9 guessed — a prompt-and-context problem was the hypothesis, and twenty-four
+conversations say otherwise.
 
-**The established evidence. None of this needs re-measuring; all of it is in SPIKES §23.**
+**The established evidence. None of this needs re-measuring; all of it is in SPIKES §23 and §24.**
 
 | | |
 |---|---|
@@ -56,7 +66,9 @@ twenty-four conversations say otherwise.
 | **Tool execution alone is not the dominant remaining problem** — edits land and the game still does not work | §23C |
 | **`RunResult.ok == True` means the process launched and stayed alive, not that the game works** | §23H |
 | **The repair loop therefore cannot react to the dominant "runs but does not work" case** — a crash gets three attempts, a frozen picture gets none | §23H |
-| **`does_it_play.py` shows deterministic behavioural inspection is feasible** — 40 frames under `SDL_VIDEODRIVER=dummy`, no model involved. **Integrating it into the product is proposed, not implemented** | §23A, §23H |
+| **`does_it_play.py` shows deterministic behavioural inspection is feasible** — but graded **7 of 10 working games frozen** and could not be wired in as it was | §23A, §24A |
+| **Built in 12.4:** a headless playtest after every change, feeding crash / no picture / closed itself / frozen to the repair loop. **0 false failures** in 14 real conversations; of the 2 games it caught, 1 was repaired and the other stopped at three attempts and said so | §24B–§24F |
+| **All 10 crashes in the 12.3 sample were first-frame crashes nothing ran** — the model called `run_project` in only 3 of 15 turns in the 12.4 acceptance | §24C, §24F |
 
 **Two things left open on purpose, and neither should be guessed at:**
 
@@ -68,12 +80,22 @@ twenty-four conversations say otherwise.
 - **Claim-to-artifact attribution** (§9, SPIKES §21C-bis), deferred by the owner. Do not
   let it grow into a semantic claim-analysis subsystem.
 
-### Next: Phase 12.4 — Playability Feedback Loop
+### 12.4 is closed. What the measurements point at next
 
-Pick this up from the pushed branch. The lever is closing the feedback loop so the
-application can react to a game that runs and does nothing; the detection half is already
-proven cheap and deterministic. It is **written up rather than built** — it is real new
-machinery, and the session that measured the need for it was not the one to add it in.
+Not started, and each needs a decision rather than a guess:
+
+- **Claims of motion the test measured as absent.** In three of fourteen acceptance
+  conversations Gary described a bouncing ball, a chasing enemy or a moving coin while
+  the playtest had measured `moved_by_itself = False`. That comparison is deterministic,
+  and it is exactly claim-to-artifact attribution, which the owner deferred. It is the
+  cheapest next lever the data shows; it is the owner's call whether to take it.
+- **Turns where nothing landed.** Two of the six controlled conversations ended as the
+  untouched starter: one with every edit refused, one with the model looping inside its
+  own tool call until the output cap — which put raw `<tool_call>` JSON on screen as
+  Gary's reply. The second is a real defect, filed separately and not fixed here.
+- **"Not broken" is not "what was asked".** The falling square that jitters, the title
+  that is a comment. None of the six controlled game requests produced the game that was
+  asked for in the 12.4 acceptance either, and that is why Phase 12 stays open.
 
 **Phase 13 stays reserved for the frame-streamed / embedded game preview** (§6, feasibility
 measured). It shares the frame-capture technique with `does_it_play.py` and is otherwise a
@@ -653,3 +675,88 @@ it was found.
 **The pytest suite was measured and is already hermetic** — 94 files in the sandbox
 before a full run and the same 94 after, nothing added, nothing removed. The leak was
 never the tests.
+
+---
+
+## 12. CLOSED — Phase 12.4, the playability feedback loop
+
+**Open Nest now tests a game after every change and reacts when it is clearly broken.**
+Before this, `RunResult.ok` was True for any interactive game that survived four seconds,
+so a frozen picture got no repair at all, and a crash got one only if the model happened
+to run the game. Full measurements in SPIKES.md §24; this is what a reader needs.
+
+### The spike could not be wired in, and why that mattered most
+
+`does_it_play.py` proved the technique and was not a grader anyone could act on. Measured
+against ten small **working** games, it called **seven frozen** — it replaces
+`pygame.event.get` with a function returning nothing, which swallows every KEYDOWN and
+the game's own `set_timer` events, and it only ever fakes arrow keys. It also discarded
+any traceback after the first frame. As a repair trigger it would have had Gary
+"fixing" seven working games. The 12.3 corpus never showed this because all 24 of its
+games came from the arrow-key starter.
+
+### What was built
+
+| | |
+|---|---|
+| `execution/playtest_harness.py` | runs inside the child's process under the same Seatbelt profile, no network, no window. **Records only**: window, per-frame hash, the input being given, how it ended. Posts input into the game's own queue; `runpy` keeps real line numbers; a watchdog ends it by 10 s |
+| `execution/playtest.py` | runs it through `python_runner.run_project` and classifies. Pure, tested without a game |
+| `Toolbox.playtest()` | an application method, **not a tool** — in no schema, refused by `dispatch`. Never touches `last_run` |
+| `AgentController._playtest_wants_repair` | whenever the model stops and the turn changed a file since the last test |
+| `profiles.json` | `"playtest": "pygame"` on Games, and nowhere else |
+
+**Failures, the only things that trigger repair**: `crashed` (a traceback, any frame),
+`no_picture` (a window, nothing drawn in 4 s), `closed_itself` (ended within two frames),
+`frozen` (every frame identical, left alone and through every scripted input). Anything
+else is a pass or no verdict. **Rejected on measurement**, because telling them apart
+needs to know what the child meant: "only moves when a key is held" (the starter is
+exactly that) and "the change made no visible difference" (it would fire on every window
+title, quit key and sound).
+
+**The bounds**: one repair budget per turn — `MAX_REPAIR_ATTEMPTS = 3`, now shared with
+the crash repair — and the turn's twelve-call budget. Unchanged code is never tested
+twice, but an answer that changes nothing is pulled up and spends an attempt, because
+that was measured: handed the exact `NameError`, the model said *"I added the import for
+random at the top of the file"* and called no tool. Whichever bound ends it, the child is
+told what the test saw, in the application's words.
+
+### Acceptance — 14 real conversations, Qwen3 4B
+
+| | |
+|---|---|
+| launched (old `RunResult.ok`) | 13 / 14 |
+| model ran the game itself | 3 of 15 turns |
+| behavioural check failed | 4 tests, 2 conversations, all real first-frame crashes |
+| repair triggered · attempts | 2 conversations · 5 |
+| repaired to passing | 1 (the falling square) — the other gave up at three and said so |
+| crashes that reached the child as "done" | **0** |
+| **false behavioural failures** | **0** — 4 / 4 probes passed, and passed correctly |
+| cost | ~2 s per test on a changed game; nothing on a turn that changed nothing |
+
+### Three things to know before touching it
+
+- **"Passed" is "not clearly broken".** The falling square passes because its position is
+  reset to a random `x` every frame — it jitters. That is the honest limit, and the reason
+  Phase 12 stays open.
+- **It cannot fire under `scripts/offline.sh`.** Seatbelt does not nest; every test there
+  is UNAVAILABLE. The acceptance driver runs unwrapped with `HF_HUB_OFFLINE=1`, as the
+  product does.
+- **The suite is slower: 55 s → ~100 s.** About thirteen existing tests change a Games
+  project and now pay a real ~2 s playtest of the starter, plus ~15 s of new playtest
+  tests. Kept on purpose: the profile says Games are tested, and a test-only switch would
+  make every one of those tests describe a configuration the product never runs.
+
+### What was deliberately left
+
+- **`_describe_what_happened` still says "It works."** when the model said nothing and the
+  last run was merely still running. It is Gary's voice and 12.1's territory, which 12.4
+  was told not to reopen. Small, and worth a decision.
+- **Claims of motion the test measured as absent** — see the conclusion section.
+- **The raw `<tool_call>` reply**: filed as a separate task, not fixed here.
+
+### The drivers
+
+| | |
+|---|---|
+| `spikes/phase12/playability_loop.py` | the acceptance run: controlled / extended / probe conversations, `--only kind:index` to re-drive one, everything persisted including the full message history |
+| `spikes/phase12/does_it_play.py` | kept as the 12.3 record. **Do not use it to grade anything new** |

@@ -58,6 +58,12 @@ class Profile:
     #: (PLAN.md D6): a catalogue entry is something that answers a conversation.
     image_provider: str | None = None
     image_model: str | None = None
+    #: How the application checks, after a change, that the project does anything at
+    #: all -- ``"pygame"`` or None. Games only: an interactive run that survives startup
+    #: says nothing about whether the game moves (SPIKES.md section 23H), and pygame is
+    #: the one kind of program the headless test knows how to watch. See
+    #: :mod:`opennest.execution.playtest`.
+    playtest: str | None = None
 
     @property
     def can_run(self) -> bool:
@@ -147,6 +153,7 @@ def _build(raw: dict) -> Profile:
         requires_cloud_provider=raw.get("requires_cloud_provider"),
         image_provider=raw.get("image_provider"),
         image_model=raw.get("image_model"),
+        playtest=raw.get("playtest"),
     )
 
 

@@ -21,7 +21,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from opennest.execution import arduino
+from opennest.execution import arduino, playtest
 from opennest.execution.python_runner import RunResult, run_project, stop_project
 from opennest.projects.manager import Project
 from opennest.security.sandbox import PathNotAllowed, resolve_in_project
@@ -351,6 +351,29 @@ class Toolbox:
             body = result.stdout.strip() or "(the project produced no output)"
             return ToolResult(True, f"It ran successfully.\n\n{body}", run=result)
         return ToolResult(False, result.failure_text or "It failed with no output.", run=result)
+
+    def playtest(self) -> playtest.Playtest | None:
+        """Run the game once without a window and report what it did, or None.
+
+        **Not a tool.** It is in no schema and ``dispatch`` cannot reach it: the
+        application decides when a game gets tested, the way it already decides what
+        the file list is. Offering the model a fifth tool costs selection accuracy
+        (SPIKES.md section 4), and a check the model can choose to skip is not a check.
+
+        None when the profile has no headless test or there is nothing to run yet.
+        Deliberately leaves ``last_run`` alone: that is the game on the child's screen,
+        which Stop and closing the project have to be able to reach.
+        """
+        profile = self.project.profile
+        if profile.playtest != "pygame" or not profile.run_command:
+            return None
+        if not self.project.entrypoint_path.is_file():
+            return None
+        return playtest.run(
+            self.project.directory,
+            profile.run_command,
+            python_executable=self.python_executable,
+        )
 
     def _record_success(self) -> None:
         """Remember that the project worked, so memory can say so after a restart.

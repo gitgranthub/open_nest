@@ -39,6 +39,7 @@ from opennest.ai.provider import (
     TruncatedReply,
 )
 from opennest.assets import manager as assets
+from opennest.execution import playtest
 from opennest.execution.python_runner import RunResult
 from opennest.memory.manager import MemoryManager
 from opennest.projects import starters as starter_kits
@@ -50,8 +51,19 @@ from opennest.versioning.checkpoint import (
     VersionHistory,
 )
 
-#: WORKORDER_01 section 28: "Maximum automatic repair attempts: 3".
+#: WORKORDER_01 section 28: "Maximum automatic repair attempts: 3". Per turn, and shared
+#: between a run that crashed and a game that failed its headless test -- one repair
+#: budget, for the same reason there is one call budget.
 MAX_REPAIR_ATTEMPTS = 3
+
+#: What the child is told when the game still fails its test and the repairs are spent.
+#: Each is the measured result in plain words, never a guess at the cause.
+_PLAYTEST_GAVE_UP = {
+    playtest.CRASHED: "it stopped with an error",
+    playtest.NO_PICTURE: "the window stayed empty",
+    playtest.CLOSED_ITSELF: "the window closed by itself straight away",
+    playtest.FROZEN: "nothing on screen moved, even when I pressed keys",
+}
 
 #: The tool loop used to have its own iteration cap here. It no longer needs one: the
 #: loop runs until the model stops asking for tools or the turn's shared call budget is
@@ -163,6 +175,10 @@ class Turn:
     #: Whether the model was pulled up for describing a file it has not seen. For tests
     #: and for measuring how often the prompt is not enough (SPIKES.md section 10).
     corrected_invention: bool = False
+    #: Every headless test of the game this turn, in order. Empty when nothing changed or
+    #: the profile has no test. For tests and for measuring the loop (SPIKES.md
+    #: section 24).
+    playtests: list[playtest.Playtest] = field(default_factory=list)
 
 
 def build_system_prompt(
@@ -388,6 +404,8 @@ class AgentController:
         self._budget = CallBudget()
         turn.usage = self._budget.usage
         self._metered = MeteredProvider(self.provider, self._budget)
+        #: How many of this turn's tool results the last headless test already covers.
+        self._tested_through = 0
 
         try:
             return self._exchange(turn, text, on_text, challenged, corrected)
@@ -468,11 +486,17 @@ class AgentController:
                             f"do not know what the picture shows."
                         )))
                         continue
+                if self._playtest_wants_repair(turn):
+                    continue
                 return self._finish_turn(turn)
 
             self._metered.kind = PRIMARY
             should_continue = self._run_tools(reply.tool_calls, turn)
             if not should_continue:
+                # The crash repair has had its go. A game it got running still has to
+                # pass the same test as any other.
+                if self._playtest_wants_repair(turn):
+                    continue
                 return self._finish_turn(turn)
 
     def _finish_turn(self, turn: Turn, *, allow_rollover: bool = True) -> Turn:
@@ -747,9 +771,13 @@ class AgentController:
         like everything else -- so a turn that already used its calls getting here has
         fewer repairs available, or none. That is deliberate: the alternative is each
         subsystem holding its own reserve and the total being nobody's problem.
+
+        The attempt count is the turn's, not this method's: a game that failed its
+        headless test and was sent back for repair has already spent some of the three,
+        and a crash that repair then causes gets what is left rather than three more.
         """
-        for attempt in range(1, MAX_REPAIR_ATTEMPTS + 1):
-            turn.repair_attempts = attempt
+        while turn.repair_attempts < MAX_REPAIR_ATTEMPTS:
+            turn.repair_attempts += 1
             if isinstance(getattr(self, "_metered", None), MeteredProvider):
                 self._metered.kind = REPAIR
             self.history.append(
@@ -794,6 +822,81 @@ class AgentController:
             "I tried three times and could not get this working. "
             "Tell me what you want to try next, or we can go back to the last version "
             "that worked."
+        )
+
+    def _playtest_wants_repair(self, turn: Turn) -> bool:
+        """Test the game after a change; hand a failure back for repair. True to go on.
+
+        Phase 12.4. ``RunResult.ok`` means only that an interactive game outlived its
+        four-second startup, so the crash repair above could never react to a game that
+        runs and does nothing -- and that was most of what Phase 12.3 measured. Worse,
+        all ten of the games in that sample that *did* crash crashed on their first
+        frame, where the existing repair would have caught them, had anything run them:
+        the model often ends a turn without calling ``run_project``. So the application
+        runs the test itself, whenever the turn has changed something since the last one
+        (SPIKES.md section 24).
+
+        What counts as failing, and why the list is short, is in
+        :mod:`opennest.execution.playtest`. A failure goes back to the model once per
+        attempt as the measured result, and the ordinary tool loop carries the fix; the
+        next time the model stops, this tests again. Three things bound it:
+
+        - **The turn's repair attempts**, shared with the crash repair: three in all.
+        - **The turn's call budget**, which every attempt spends from like everything
+          else, so this can never be the thing that runs a turn away.
+        - **Unchanged code is never tested twice.** An answer that changes no file has
+          fixed nothing, and a second run would only say so again. It still spends an
+          attempt, and the model is pulled up rather than let off: measured, handed the
+          exact traceback, it replied *"I added the import for random at the top of the
+          file"* and called no tool -- the Phase 12.1 fault, which the claim guard cannot
+          see here because the turn changed a file earlier on.
+
+        Whichever ends it, the child is told what the test saw, in the application's
+        words -- the model's own reply will usually be describing a working game.
+        """
+        if turn.gave_up:
+            return False
+        fresh = turn.tool_results[self._tested_through:]
+        if not any(result.changed_files for _, result in fresh):
+            last = turn.playtests[-1] if turn.playtests else None
+            if last is None or not last.failed:
+                return False
+            return self._send_back(turn, last, last.reminder())
+
+        self._tested_through = len(turn.tool_results)
+        result = self.toolbox.playtest()
+        if result is None:
+            return False
+        turn.playtests.append(result)
+        if not result.failed:
+            return False
+        return self._send_back(turn, result, result.feedback())
+
+    def _send_back(self, turn: Turn, result: playtest.Playtest, message: str) -> bool:
+        """Spend one repair attempt on ``message``, or give up if none are left."""
+        if turn.repair_attempts >= MAX_REPAIR_ATTEMPTS:
+            self._gave_up_on_playtest(turn, result)
+            return False
+        turn.repair_attempts += 1
+        self._metered.kind = REPAIR
+        self.history.append(Message(role="user", content=message))
+        return True
+
+    @staticmethod
+    def _gave_up_on_playtest(turn: Turn, result: playtest.Playtest) -> None:
+        """Stop, and say what the test saw rather than what the model hoped.
+
+        Same shape as the crash repair's giving up, and it replaces the model's text for
+        the same reason ``_nothing_changed_text`` does: the application knows the game
+        failed its test, and the reply it would otherwise relay is usually announcing a
+        game that works. Only the measured result is named, never a cause.
+        """
+        turn.gave_up = True
+        turn.text = (
+            f"I made the change, but when I tested the game "
+            f"{_PLAYTEST_GAVE_UP[result.verdict]}, and I couldn't fix that yet. "
+            f"Tell me what you want to try next, or we can go back to the last version "
+            f"that worked."
         )
 
     def _repair_actually_worked(self, turn: Turn) -> bool:

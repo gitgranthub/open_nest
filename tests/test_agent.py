@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 
+from opennest.agent import budget as budget_mod
 from opennest.agent.controller import (
     MAX_REPAIR_ATTEMPTS,
     AgentController,
@@ -20,6 +21,7 @@ from opennest.agent.controller import (
 )
 from opennest.agent.tools import Toolbox
 from opennest.ai.provider import Reply, ToolCall
+from opennest.execution import playtest
 from opennest.security.process_sandbox import sandbox_available
 from tests.conftest import ScriptedProvider
 
@@ -404,3 +406,205 @@ def test_the_agent_works_without_versioning(project) -> None:
     turn = controller.send("faster")
     assert turn.checkpoint is None
     assert "PLAYER_SPEED = 7" in project.entrypoint_path.read_text()
+
+
+# ------------------------------------------- the headless playtest after a change
+#
+# Phase 12.4. The loop is driven here with a stubbed playtest, so every branch is fast
+# and deterministic; tests/test_playtest.py runs the real harness, and the last test
+# below runs both together.
+
+def _write(n: int) -> Reply:
+    """A reply that changes the project: a new file each time, so write_file accepts it."""
+    return Reply(tool_calls=(ToolCall("write_file", {"path": f"src/part_{n}.py",
+                                                     "content": f"PART = {n}\n"}),))
+
+
+def _verdicts(controller, *verdicts):
+    """Make the playtest answer these verdicts in order; returns the list of calls."""
+    remaining = iter(verdicts)
+    calls: list[str] = []
+
+    def fake():
+        verdict = next(remaining)
+        calls.append(verdict)
+        return playtest.Playtest(
+            verdict, entry="src/game.py", frames=90, during="space",
+            error="NameError: name 'rock' is not defined" if verdict == playtest.CRASHED
+            else "",
+        )
+
+    controller.toolbox.playtest = fake
+    return calls
+
+
+def _last_instruction(provider, call: int) -> str:
+    return [m for m in provider.calls[call] if m.role == "user"][-1].content
+
+
+def test_a_frozen_game_is_sent_back_and_the_fix_is_accepted(project) -> None:
+    controller, provider = make(project, [
+        _write(1), Reply(text="The asteroids fall now."),
+        _write(2), Reply(text="Fixed it -- they really fall now."),
+    ])
+    calls = _verdicts(controller, playtest.FROZEN, playtest.PASSED)
+
+    turn = controller.send("make the asteroids fall")
+
+    assert calls == [playtest.FROZEN, playtest.PASSED]
+    assert [t.verdict for t in turn.playtests] == calls
+    assert turn.repair_attempts == 1 and not turn.gave_up
+    assert turn.text == "Fixed it -- they really fall now."
+    feedback = _last_instruction(provider, 2)
+    assert "every one was exactly the same picture" in feedback
+    assert "Open Nest will test it again" in feedback
+
+
+def test_a_crash_the_model_never_ran_is_caught_and_its_error_handed_over(project) -> None:
+    """All ten crashes in the Phase 12.3 sample were in games nobody ran."""
+    controller, provider = make(project, [
+        _write(1), Reply(text="Added rocks."), _write(2), Reply(text="Fixed."),
+    ])
+    _verdicts(controller, playtest.CRASHED, playtest.PASSED)
+    turn = controller.send("add rocks")
+    assert not any(name == "run_project" for name, _ in turn.tool_results)
+    assert "NameError: name 'rock' is not defined" in _last_instruction(provider, 2)
+    assert turn.repair_attempts == 1 and not turn.gave_up
+
+
+def test_a_game_that_keeps_failing_is_sent_back_at_most_three_times(project) -> None:
+    replies = [_write(0), Reply(text="Done!")]
+    for n in range(1, MAX_REPAIR_ATTEMPTS + 3):
+        replies += [_write(n), Reply(text="Fixed!")]
+    controller, _ = make(project, replies)
+    _verdicts(controller, *[playtest.FROZEN] * 10)
+
+    turn = controller.send("make it move")
+
+    assert turn.repair_attempts == MAX_REPAIR_ATTEMPTS
+    assert len(turn.playtests) == MAX_REPAIR_ATTEMPTS + 1
+    assert turn.gave_up
+    assert "nothing on screen moved" in turn.text and "Fixed!" not in turn.text
+
+
+def test_an_answer_that_changes_nothing_is_pulled_up_not_tested_again(project) -> None:
+    """Measured: handed the traceback, the model said it had fixed it and called no tool.
+
+    Nothing is fixed, so the same code is never run again -- but the model is told so,
+    and that spends an attempt, so a model that keeps narrating runs out like any other.
+    """
+    claim = Reply(text="I added the import for random at the top of the file.")
+    controller, provider = make(project, [_write(1), Reply(text="Done!"), claim, claim, claim])
+    _verdicts(controller, playtest.CRASHED)
+
+    turn = controller.send("make it move")
+
+    assert len(turn.playtests) == 1
+    assert turn.repair_attempts == MAX_REPAIR_ATTEMPTS and turn.gave_up
+    assert len(provider.calls) == 2 + MAX_REPAIR_ATTEMPTS
+    assert "You did not change any file" in _last_instruction(provider, 3)
+    assert "stops with the error above" in _last_instruction(provider, 3)
+    assert "stopped with an error" in turn.text
+    assert "import for random" not in turn.text
+
+
+def test_pulled_up_the_model_can_still_make_the_fix(project) -> None:
+    controller, _ = make(project, [
+        _write(1), Reply(text="Done!"),
+        Reply(text="I added the import."),
+        _write(2), Reply(text="Now it really is imported."),
+    ])
+    _verdicts(controller, playtest.CRASHED, playtest.PASSED)
+
+    turn = controller.send("make it move")
+
+    assert [t.verdict for t in turn.playtests] == [playtest.CRASHED, playtest.PASSED]
+    assert turn.repair_attempts == 2 and not turn.gave_up
+    assert turn.text == "Now it really is imported."
+
+
+def test_a_passing_game_costs_no_extra_call(project) -> None:
+    controller, provider = make(project, [_write(1), Reply(text="Done.")])
+    _verdicts(controller, playtest.PASSED)
+    turn = controller.send("add a part")
+    assert len(provider.calls) == 2 and turn.repair_attempts == 0
+    assert turn.text == "Done." and not turn.gave_up
+
+
+def test_a_turn_that_changes_nothing_is_not_tested(project) -> None:
+    controller, _ = make(project, [
+        Reply(tool_calls=(ToolCall("read_file", {"path": "src/game.py"}),)),
+        Reply(text="It has a square you can move."),
+    ])
+    calls = _verdicts(controller)
+    controller.send("what does my game do?")
+    assert calls == []
+
+
+@pytest.mark.parametrize("verdict", [playtest.NO_WINDOW, playtest.INCONCLUSIVE,
+                                     playtest.UNAVAILABLE])
+def test_a_result_that_is_not_a_failure_is_never_repaired(project, verdict) -> None:
+    controller, provider = make(project, [_write(1), Reply(text="Done.")])
+    _verdicts(controller, verdict)
+    turn = controller.send("change it")
+    assert turn.repair_attempts == 0 and not turn.gave_up and len(provider.calls) == 2
+
+
+def test_playtest_repairs_spend_from_the_turn_budget(project) -> None:
+    controller, _ = make(project, [
+        _write(1), Reply(text="Done."), _write(2), Reply(text="Fixed."),
+    ])
+    _verdicts(controller, playtest.FROZEN, playtest.PASSED)
+    turn = controller.send("make it move")
+    assert turn.usage.calls == 4
+    assert turn.usage.calls_of(budget_mod.REPAIR) == 1
+
+
+def test_every_failure_has_something_to_tell_the_child() -> None:
+    from opennest.agent.controller import _PLAYTEST_GAVE_UP
+    assert set(_PLAYTEST_GAVE_UP) == playtest.FAILURES
+
+
+@needs_sandbox
+def test_a_crash_after_a_playtest_repair_gets_only_what_is_left(project) -> None:
+    """One repair budget per turn: the crash repair does not start again at three."""
+    crash = ToolCall("edit_file", {
+        "path": "src/game.py",
+        "old_text": '"""A tiny game to build on. Change the numbers and see what happens."""',
+        "new_text": "raise ValueError('boom')",
+    })
+    run = Reply(tool_calls=(ToolCall("run_project", {}),))
+    controller, _ = make(project, [
+        _write(1), Reply(text="Done."),
+        Reply(tool_calls=(crash, ToolCall("run_project", {}))),
+        run, run, run, run,
+    ])
+    _verdicts(controller, playtest.FROZEN)
+
+    turn = controller.send("make it move")
+
+    assert turn.repair_attempts == MAX_REPAIR_ATTEMPTS
+    assert turn.gave_up
+
+
+@needs_sandbox
+def test_the_real_playtest_catches_a_frozen_game_and_accepts_the_fix(project) -> None:
+    """End to end: a real edit freezes the starter, the real harness sees it, and the
+    real harness passes the repair."""
+    def speed(old: str, new: str) -> Reply:
+        return Reply(tool_calls=(ToolCall("edit_file", {
+            "path": "src/game.py", "old_text": f"PLAYER_SPEED = {old}",
+            "new_text": f"PLAYER_SPEED = {new}",
+        }),))
+
+    controller, provider = make(project, [
+        speed("5", "0"), Reply(text="Done."),
+        speed("0", "5"), Reply(text="It moves again."),
+    ])
+    turn = controller.send("make the player slower")
+
+    assert [t.verdict for t in turn.playtests] == [playtest.FROZEN, playtest.PASSED]
+    assert turn.repair_attempts == 1 and turn.text == "It moves again."
+    assert "same picture" in _last_instruction(provider, 2)
+    # The headless test never touches the game on the child's screen.
+    assert controller.toolbox.last_run is None

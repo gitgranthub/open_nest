@@ -48,7 +48,9 @@
         "Racing Game",
         "Quiz Game"
       ],
-      "run_mode": "interactive"
+      "run_mode": "interactive",
+      "_playtest_note": "After a turn changes the game, Open Nest runs it once more without a window and watches the frames (opennest/execution/playtest.py). An interactive run only proves the game did not crash in four seconds; this is what tells a frozen picture from a game, and feeds a crash, a blank window or a frozen picture back to the repair loop. Phase 12.4, SPIKES.md section 24.",
+      "playtest": "pygame"
     },
     {
       "id": "website",

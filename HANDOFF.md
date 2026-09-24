@@ -4,9 +4,10 @@ You are picking up Open Nest during **Phase 12 (the owner's test drive)**, which
 **still open**. This document is what you need before touching anything.
 
 **Read the top of [PHASE_12_HANDOFF.md](PHASE_12_HANDOFF.md) before you trust any claim
-that something is done.** Three rounds of defects are fixed — the runtime and threading
-faults, 12.1's truthfulness defect, 12.2's edit tool — and the phase still has not met its
-own definition of done: **a child asks for a game and does not get one.** An earlier
+that something is done.** Four rounds are closed — the runtime and threading faults,
+12.1's truthfulness defect, 12.2's edit tool, 12.4's playability feedback loop — and the
+phase still has not met its own definition of done: **a child asks for a game and does not
+get one.** An earlier
 version of both files said Phase 12 was complete. That was wrong, and confusing *the
 faults found* with *the outcome required* is the mistake to avoid repeating here.
 
@@ -29,16 +30,16 @@ the threading was the one part nothing exercised. Seven defects, three of them c
 or hangs, all fixed. If you add a worker, or a Qt driver, that file tells you what not
 to do.
 
-**Next is Phase 12.4 — Playability Feedback Loop, and the conclusion it rests on is one
-sentence: Open Nest can detect that a game crashed, but cannot yet determine whether an
-interactive game that successfully launches actually behaves as requested.** Phase 12.3
-measured 24 conversations: **1 produced the game that was asked for**. A bigger model did
-not help (8B scored 0/6 and edits worse), prompt tuning did not help, and naming the
-starter's sections made it markedly worse. `RunResult.ok` is True whenever a game is
-merely still running, so the repair loop cannot react to the dominant failure at all.
-`spikes/phase12/does_it_play.py` shows the detection is cheap and deterministic;
-**integrating it is proposed, not implemented** — PHASE_12_HANDOFF's conclusion section
-and SPIKES §23 have all of it.
+**Phase 12.4 — the playability feedback loop — is closed, and Phase 12 is still open.**
+Open Nest now runs a game headless after every change the model makes, whether or not
+the model ran it, and sends a crash, a blank window, a window that shuts itself or a
+frozen picture back to the repair loop — bounded by the same three attempts and twelve
+calls as everything else. Fourteen real conversations: **zero false failures**, no crash
+reached the child as "done", and one crash the model never ran was caught and repaired.
+The spike it grew from could not be used as it was: it graded **7 of 10 working games
+frozen**. What remains is the half no deterministic check should try: a game that is
+not broken is not therefore the game that was asked for. PHASE_12_HANDOFF §12 and SPIKES
+§24 have all of it, including the next lever the data shows and whose call it is.
 
 **`edit_file` was the previous suspect and is now measured NOT to be the dominant problem.** Across
 the three Phase 12.1 walks **18 of 18 `edit_file` calls the 4B model produced were
@@ -170,7 +171,7 @@ it belongs in section 4.
 | 12.1 — the truthfulness defect | **closed.** Gary narrating changes he had not made, reproduced through the real interface and closed. The filed diagnosis ("no tool call") was wrong — `Toolbox.dispatch` was entered every turn; every `edit_file` was refused and the claim was relayed anyway. Three holes in one guard, the third found only by rerunning the walk after fixing the first two. 1025 tests, ruff clean. §8 of PHASE_12_HANDOFF and SPIKES §21 |
 | 12.2 — editing reliability | **closed.** 18 of 18 `edit_file` calls were refused; measured the distribution (47% the model editing code it imagined, 33% wrong indent, 20% a newline written as two characters) and added a bounded deterministic recovery that refuses ambiguity. 3 of 4 real edits now land. Also: one project runs one copy of itself, and the approval mark is no longer awarded for the starter launching. 1044 tests, ruff clean. SPIKES §22 |
 | 12.3 — does the child get a game? | **measured, and the answer is no.** 1 of 24 conversations produced the game that was asked for. 4B vs 8B did not solve it, prompt tuning did not solve it, starter markers made it worse, and tool execution is no longer the dominant problem. `RunResult.ok` is True for any game that merely launched, so the repair loop cannot react to "runs but does not work". SPIKES §23 |
-| **12.4 — Playability Feedback Loop** | **next, not started.** Let the application tell a working game from a frozen one and feed that back. Detection proven in `spikes/phase12/does_it_play.py`; integration proposed, not implemented. PHASE_12_HANDOFF conclusion section |
+| 12.4 — Playability Feedback Loop | **closed.** A headless playtest after every change feeds crashed / no picture / closed itself / frozen to the repair loop, sharing its three attempts and the call budget. The 12.3 spike graded 7 of 10 working games frozen and was rebuilt, not wired in. 14 real conversations: 0 false failures, 0 crashes reaching the child as "done". 1095 tests, ruff clean. PHASE_12_HANDOFF §12, SPIKES §24 |
 | 13 — The game preview in the workbench | **not started.** Specified in PHASE_12_HANDOFF §6; feasibility measured |
 | 14 — Getting work out of Open Nest (export / PDF / share) | **not started.** Specified in PHASE_12_HANDOFF §7. Nothing can currently leave the app |
 
@@ -192,7 +193,7 @@ turn cloud on, and the child can switch to Claude or OpenAI after a warning, or 
 pictures with an image model. Everything except Image Creation still works with cloud off,
 which is the default.
 
-1025 tests pass, ruff is clean.
+1095 tests pass, ruff is clean.
 
 **The application icon is deliberately unresolved, and that is a ruling rather than a
 gap.** Phase 10D was told not to design or simplify one: it needs a separately approved
@@ -225,10 +226,13 @@ privileged-action pattern in §5, not a new mechanism.
 ## 2. Get running in five minutes
 
 ```bash
-.venv/bin/python -m pytest -q      # 1025 passing, about 55 seconds
+.venv/bin/python -m pytest -q      # 1095 passing, about 100 seconds
 ```
 
-It is slower than it was (7 s at Phase 6). Phase 7 added tests that actually run each
+It is slower than it was (7 s at Phase 6, 55 s at Phase 12.2). Phase 12.4 made every Games
+turn that changes a file run a real ~2 s headless playtest, and about thirteen existing
+tests do exactly that — deliberately, since a test-only switch would have them describe a
+configuration the product never runs. Phase 7 added tests that actually run each
 profile's starter template under the real sandbox, which is the only way to tell "the file
 was copied in" from "the file works" — and the distinction was the whole bug. The Arduino
 and image tests are hermetic and fast; the profile runs are not.
@@ -324,6 +328,8 @@ opennest/
 │   └── migration.py        carrying an existing installation into the registry
 ├── execution/
 │   ├── python_runner.py    out-of-process running, batch vs interactive
+│   ├── playtest.py         after a change: does the game do anything? Decides, pure
+│   ├── playtest_harness.py ...the half that runs inside the child's process. Records only
 │   ├── arduino.py          arduino-cli: is it here, boards, ports, compile, upload
 │   └── outputs.py          which pictures a run produced. Deterministic, not a tool.
 ├── setup/                  installation lifecycle -- WORKORDER_01 section 35A
@@ -619,6 +625,33 @@ does.** Do not "clean up" these without re-measuring:
 - **A defect found by clicking has to be re-checked by clicking.** Two of the three holes
   were found by measuring; the third existed *only because the first two were fixed*, and
   would have shipped if the fix had been trusted instead of re-driven. SPIKES §21.
+
+**Phase 12.4 traps — the playtest, and the harness it replaced:**
+
+- **`spikes/phase12/does_it_play.py` is not a grader you can act on.** It replaces
+  `pygame.event.get` with a function returning nothing, which swallows every KEYDOWN and
+  every `set_timer` event, and it only ever fakes arrow keys: **7 of 10 working games
+  graded frozen** (SPIKES §24A). The 12.3 corpus never showed it because all 24 games
+  came from the arrow-key starter. The product harness *posts into* the game's queue;
+  never substitute for it.
+- **The application runs the test, not the model.** All ten crashes in the 12.3 corpus
+  were first-frame crashes the existing repair loop would have caught — nothing ran
+  them. Hooking the check onto `run_project` would have missed every one.
+- **Warm-up frames discount *movement*, never *response*.** A game that redraws only on
+  input draws three frames in the whole test; discarding two graded it frozen.
+- **No record at all is the harness failing, never the child's game.** The harness writes
+  an end record however the game finishes, a first-line crash included, so a traceback
+  with no record is the harness's own and must not trigger a repair.
+- **The playtest cannot fire inside `scripts/offline.sh`.** It runs under the product's
+  Seatbelt profile, and Seatbelt does not nest, so there every test is UNAVAILABLE.
+  `spikes/phase12/playability_loop.py` therefore runs unwrapped with `HF_HUB_OFFLINE=1`,
+  which is how the product runs: model in-process, every game confined.
+- **"Passed" means "not clearly broken", not "does what was asked".** A square whose
+  position is reset every frame jitters, passes, and does not fall. The deterministic
+  check stops there on purpose (SPIKES §24D) — do not grow it into judging intent.
+- **Temperature 0 on MLX is not bit-for-bit repeatable across runs.** The same
+  conversation crash-repaired and gave up in one run and passed cleanly in the next.
+  Report per-run results; do not average a single rerun into a claim.
 
 **Phase 11 traps:**
 
