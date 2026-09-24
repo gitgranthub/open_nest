@@ -2261,3 +2261,227 @@ the report, had three causes and two were defects:
 - **Non-Python files get the match repairs but not the write repair.** `repair_written_text`
   needs a parser to tell an intended newline from string content, and there is one for
   Python. A Markdown or HTML file written with literal escapes would still be wrong.
+
+---
+
+## 23. Phase 12.3 — does the child get a game?
+
+Every measurement up to here answered a question one step short of the one that matters.
+"The edit landed" is not "the file is right"; "it parses" is not "it runs"; "it runs" is
+not "anything happens on screen". Each layer reported success while the owner watched
+walk after walk and never once saw a working game.
+
+So this grades the output the way a child experiences it: **run the built game and see
+whether the picture changes.**
+
+### 23A. The grader, and the bug that would have sent the fix the wrong way
+
+`spikes/phase12/does_it_play.py` runs a game under `SDL_VIDEODRIVER=dummy`, hooks
+`pygame.display.flip`, hashes 40 frames and compares them. The frame-capture technique is
+SPIKES §20I's, worked out for the Phase 13 preview and reused here to grade rather than
+to draw.
+
+**The first version graded the shipped starter as broken**, and that is the entry worth
+keeping. The starter's square only moves while a direction is held; nothing was holding
+one; every frame was identical; verdict STATIC. A perfectly good game scored as a failure,
+and acting on it would have meant "fixing" something that was never wrong — the same
+class of error as §22B's classifier and §17F's harness, for the third time in this
+project.
+
+The fix is two passes, and it makes the verdicts sharper rather than merely correct:
+
+| verdict | meaning |
+|---|---|
+| `DEAD` | never drew a frame |
+| `STATIC` | identical frames **even with a direction held** — nothing responds at all |
+| `INPUT_ONLY` | moves when a key is held, nothing moves by itself. **The starter is this, correctly.** An asteroids game should not be |
+| `MOVING` | something moves with no input |
+
+### 23B. The baseline: one conversation in six
+
+Six fresh Games projects, ordinary asks, graded:
+
+| build | asked for | verdict | why |
+|---|---|---|---|
+| 1 | spaceship + asteroids | **DEAD** | `pygame.random` — an API that does not exist |
+| 2 | spaceship + asteroids, faster | INPUT_ONLY | |
+| 3 | a bouncing ball | INPUT_ONLY | **0 of 1 edits landed** — nothing changed at all |
+| 4 | a falling square | **MOVING** | |
+| 5 | a second square sliding on its own | INPUT_ONLY | created and moved correctly, **never drawn** |
+| 6 | catch falling blocks | INPUT_ONLY | **0 edits** — still the untouched starter |
+
+**MOVING 1/6. INPUT_ONLY 4/6. DEAD 1/6.**
+
+**The two structural faults found by hand in §22D scored zero across all six.**
+`draw-before-fill` and `state-in-loop` were real, and they were that one game rather than
+the pattern — which is exactly why a sample was taken instead of generalising from the
+walk.
+
+### 23C. What the pattern actually is
+
+`build_5` is the clean diagnostic, because both its edits landed and it still does
+nothing. The model added the enemy **above** the loop (right), moved it **inside** the
+loop (right), and never drew it. It slides across memory and no pixel changes.
+
+Put beside the others, the shape is the same every time:
+
+| | SET UP above the loop | MOVE in the loop | DRAW below the fill | result |
+|---|---|---|---|---|
+| §22D's walk game | ✗ reset every frame | ✓ | ✗ above the fill | invisible and frozen |
+| build 5 | ✓ | ✓ | ✗ missing | invisible |
+| build 4 | ✓ | ✓ | ✓ | **works** |
+
+**A thing in a pygame game needs three pieces in three different places, and the model
+reliably supplies two.** Which two varies; the failure does not. That is not an editing
+fault and no edit tool can catch it — each individual edit did exactly what it said.
+
+### 23D. The first intervention, and why it was reverted
+
+Aimed at that shape, as data rather than code so it stays the child's and stays
+per-profile:
+
+- **the starter named the three places** -- `# SET UP`, `# MOVE`, `# DRAW`, with the DRAW
+  marker below `screen.fill(...)` so inserting at it would be correct by construction
+  rather than by instruction. They double as stable unique `edit_file` anchors, which
+  looked like §22's problem helped for free.
+- **`prompts/games.txt` stated the rule**, and the three one-off faults the sample also
+  produced.
+
+Measured against the same six conversations, and it was **much worse**:
+
+| | baseline | with the markers |
+|---|---|---|
+| MOVING | 1/6 | **0/6** |
+| STATIC | 4/6 | 1/6 |
+| DEAD | 1/6 | **5/6** |
+| `edit_file` landed | 8/12 | 19/32 |
+
+Five of six crashed, with one signature: `NameError: name 'player' is not defined`, and
+`ball_x`, `square2`, `block_y` in the others. The cause is visible in the output:
+
+```python
+# SET UP -- things that exist once. A new thing starts here.
+spaceship = {'x': WIDTH // 2, ...}      # replaced player, which DRAW still references
+
+# MOVE -- change where things are. A new thing moves here.
+keys = pygame.key.get_pressed()          # column 0 -- now OUTSIDE the while loop
+```
+
+**A labelled section is an invitation to replace the section**, including the code it
+labels. The markers made destructive whole-block rewrites both easy to target and
+attractive, and the model took them: it replaced `player` with a differently-named object
+while the DRAW code still referred to the old name, and flattened the loop body to column
+zero on the way.
+
+More edits landed and the product got worse. **"The edit landed" is not "the edit was
+right"** -- the same gap §22 closed one layer down, reappearing one layer up.
+
+Reverted. The hypothesis was reasonable and the measurement settled it, which is the only
+reason it cost eight minutes instead of shipping.
+
+### 23E. The hazard it exposed, which is real on its own
+
+Worth separating from the failed intervention, because it is not caused by it:
+**`edit_file` can silently lift code out of a loop, and nothing catches it.**
+
+```
+old_text  "    # MOVE ...\n    keys = pygame.key.get_pressed()"   (indented, in the loop)
+new_text  "# MOVE ...\nkeys = pygame.key.get_pressed()\n..."      (column zero)
+```
+
+Measured: `old_text` matches **exactly once**, so this never reaches the §22 recovery
+ladder at all -- the plain exact-match path writes `new_text` verbatim, which is the
+correct thing for it to do, since the model asked for exactly that text. The result
+compiles, because module-level statements are valid Python, so `_reject_broken_python`
+passes it. The loop body simply stops being the loop body and runs once instead of every
+frame.
+
+Deliberately **not** fixed by guessing. Re-indenting an exact match would break every
+legitimate dedent -- moving code out of an `if` is an ordinary edit -- and the tool has no
+way to tell the two apart from the text. What is cheap and honest is to say so in the
+prompt, which the reverted change's surviving half now does.
+
+### 23F. The prompt on its own, and the point at which to stop tuning words
+
+The markers were clearly the destructive half, so the other half was measured alone
+against the original starter, with one sentence added about keeping indentation:
+
+| variant | MOVING | INPUT_ONLY | STATIC | DEAD |
+|---|---|---|---|---|
+| baseline | **1/6** | 1/6 | 4/6 | 1/6 |
+| starter markers + prompt | 0/6 | 0/6 | 1/6 | **5/6** |
+| prompt only | 0/6 | 4/6 | **0/6** | 2/6 |
+
+**No variant produced a working game, and 1 in 18 conversations across all three did.**
+At n=6 against a model that is not deterministic in prose, 1/6 against 0/6 is not a
+difference anyone can stand behind, so the prompt is not claimed to help. It is kept
+because what it says is *true*, not because it worked — and STATIC going 4/6 → 0/6 is
+suggestive rather than significant.
+
+One result says more than the totals. `build_6` died on
+`NameError: name 'random' is not defined. Did you forget to import 'random'?` — the prompt
+says, in as many words, *"`import random`, then `random.randint(a, b)`"*. It stopped the
+model inventing `pygame.random` and the model then forgot the import. **The guidance moved
+the failure rather than removing it**, which is the clearest signal available that this is
+not a wording problem.
+
+Three variants, eighteen conversations, no gain. That is enough to stop writing sentences
+at it. What has *not* been tried is a different model, and Qwen3 8B is already downloaded
+and verified (§20E) — so the next measurement is whether 1-in-6 is a property of Open Nest
+or a property of a 4B model, which is a question about the catalogue and the 8 GB target
+rather than about prompts.
+
+### 23G. A bigger model does not fix it either
+
+Qwen3 8B, same six conversations, everything else held constant:
+
+| arm | MOVING | INPUT_ONLY | STATIC | DEAD | `edit_file` landed |
+|---|---|---|---|---|---|
+| 4B baseline | **1/6** | 1/6 | 4/6 | 1/6 | 8/12 (67%) |
+| 4B + starter markers | 0/6 | 0/6 | 1/6 | 5/6 | 19/32 (59%) |
+| 4B + prompt only | 0/6 | 4/6 | 0/6 | 2/6 | 10/16 (63%) |
+| **8B** | **0/6** | 4/6 | 0/6 | 2/6 | **6/20 (30%)** |
+
+**One working game in twenty-four conversations, across two models and three prompt
+variants.** Doubling the parameters changed nothing about the outcome and made the edit
+tool *worse* — 8B hits `edit_file`'s exact-match requirement half as often as the 4B does,
+which is worth remembering before anyone reaches for a bigger model to fix an editing
+problem.
+
+All three structural faults also turned up together in 8B's `build_5`, so they are general
+to the task rather than one bad 4B run.
+
+This closes the two explanations that were worth trying: **it is not a 4B limitation and
+it is not prompt wording.** And it matters for the catalogue that the answer is no,
+because 8B needs **16 GB minimum against an 8 GB target** — had it worked, the finding
+would have been that the product cannot build games on the hardware it is specified for.
+
+### 23H. What the measurements point at, which is not a model and not a prompt
+
+Every arm fails the same way: the model writes plausible code, the tools apply it
+faithfully, the game launches, and **nothing Open Nest looks at can tell that nothing
+happened.**
+
+The gap is structural and it is one line wide:
+
+```python
+if normalise_tool_name(call.name) in ("run_project", "compile_project") \
+        and not result.ok:
+    self._repair(turn)
+```
+
+`RunResult.ok` is True whenever `still_running` is, and an interactive game that launches
+is always still running. **So the repair loop can never fire for the dominant failure.**
+A game that crashes gets three repair attempts; a game that runs and shows a frozen
+picture gets none, and Gary is left describing an asteroid that is not there.
+
+Detection is cheap and already proven — `does_it_play` hashes 40 frames under
+`SDL_VIDEODRIVER=dummy` in a fraction of a second, deterministically, and separates
+`MOVING` from `INPUT_ONLY` from `STATIC` without asking the model anything.
+
+So the lever is **closing the feedback loop**, not tuning the thing at the other end of
+it. That is real new machinery — running a child's game headless inside a turn, with the
+sandbox and the latency that implies — and it is now justified by twenty-four
+conversations rather than by argument, which is the bar PHASE_12_HANDOFF §8 set. It is
+written up here as the proposal it is, and deliberately not built at the end of the
+session that measured the need for it.

@@ -34,11 +34,28 @@ What is genuinely settled, and should not be re-investigated:
 One thing §8 originally recorded turned out to be false, and it matters for anyone
 reading the old version: the tools *were* running. The failure was never "no tool call".
 
-**What is next, and it is not Phase 13 or 14.** The remaining gap is
-**capability / action-selection** — the model picks the right tool, the edit applies, and
-the code it writes is wrong in ordinary beginner ways (state initialised inside the loop,
-draw order inverted). That is a prompt-and-context problem. §9 has the exact failing
-code, and SPIKES §22F has the reasoning.
+**What is next, and it is not Phase 13 or 14.** Phase 12.3 measured the remaining gap
+properly and it is **not** what §9 guessed. A prompt-and-context problem was the
+hypothesis; twenty-four conversations say otherwise:
+
+| arm | games that work |
+|---|---|
+| Qwen3 4B, as shipped | 1/6 |
+| 4B + a starter that names SET UP / MOVE / DRAW | 0/6 — *much worse*, 5/6 crashed |
+| 4B + the rule stated in the prompt | 0/6 |
+| **Qwen3 8B** | **0/6**, and `edit_file` lands half as often |
+
+Neither a bigger model nor better wording moves it. What every arm shares is that the
+model writes plausible code, the tools apply it faithfully, the game launches — and
+**nothing in Open Nest can tell that nothing happened**, because `RunResult.ok` is True
+for any interactive game that is still running, so the repair loop never fires for the
+one failure that dominates. A game that *crashes* gets three repair attempts; a game that
+runs and shows a frozen picture gets none.
+
+**The lever is closing that feedback loop**, and detection is already proven cheap and
+deterministic (`spikes/phase12/does_it_play.py`). SPIKES §23 has the full measurement and
+§23H states the proposal. It is written up rather than built, because it is real new
+machinery and the session that measured the need for it is not the one to add it in.
 
 **Phases 13 and 14 are specified in §6 and §7.** Nothing in either has started.
 
@@ -596,6 +613,15 @@ a traversal through `phase12/../../`, and `/etc/passwd` — and 5 that must be a
 `paths.opennest_home()` returns None when Open Nest runs against standard macOS locations
 rather than a sandbox, and `home()` **raises** in that case. A teardown that cannot say
 where its root is has no business deleting anything.
+
+**Two decisions the owner settled, so they are not reopened:**
+
+- **The demo launcher lives on its own branch** and never merges. Main carries the real
+  app launcher only.
+- **Its teardown clears everything except the models and the toolchain.** Demo projects,
+  conversations, memory, checkpoints, screenshots and logs go; the 6.4 GB of weights, the
+  430 MB Arduino toolchain and the pip cache stay. That is exactly the `EPHEMERAL` /
+  `PROTECTED` split `scratch.py` already enforces.
 
 **This is the prototype for the demo launcher's teardown**, which has the same job at
 higher stakes: real model calls, something really built, and the machine left exactly as

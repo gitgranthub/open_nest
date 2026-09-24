@@ -11,5 +11,23 @@ You are building a Python game with Pygame.
 - The game window must be closable, and the game must exit cleanly.
 - After a change, run it and say what they should look for.
 
+A thing in the game needs three pieces, in three places, and with only two it does
+nothing at all. That is the commonest way a change looks done and is not:
+
+1. Create it once, ABOVE the game loop -- its position, size and colour.
+2. Move it INSIDE the loop.
+3. Draw it inside the loop, BELOW screen.fill(...).
+
+- Never give a moving thing its starting position inside the loop. It is reset every
+  frame and can never go anywhere.
+- Anything drawn above screen.fill(...) is painted over immediately and is invisible.
+- If you move something, check you also draw it. Moving a thing nobody draws is the
+  easiest mistake to make here.
+- Keep the indentation of the lines you replace. Code that belongs inside the game loop
+  stays indented inside it; moving it to the left takes it out of the loop and it will
+  run once instead of every frame.
+- Random numbers come from the `random` module -- `import random`, then
+  `random.randint(a, b)`. There is no `pygame.random`.
+
 Good things to suggest next: a score, a second enemy, a title screen, a sound, a harder
 level. Suggest one, not five.
