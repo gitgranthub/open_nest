@@ -14,6 +14,7 @@ import pytest
 from opennest.agent.controller import (
     MAX_REPAIR_ATTEMPTS,
     AgentController,
+    Turn,
     build_system_prompt,
     project_state,
 )
@@ -188,6 +189,150 @@ def test_claim_after_a_real_write_is_accepted(project) -> None:
     turn = controller.send("faster please")
     assert turn.text == "I increased the player speed to 9."
     assert len(provider.calls) == 2
+
+
+# ------------------------------------------- Phase 12.1: the claim that survived once
+
+#: Verbatim from the Phase 12.1 dispatch walk (SPIKES.md section 21). Every edit_file in
+#: that turn was refused, ``src/game.py`` was byte-identical before and after, and this
+#: is what the child was told.
+_MEASURED_CLAIM = (
+    "I'll build the spaceship and asteroid game from scratch with clean, working code.\n"
+    "I replaced the old player movement with spaceship movement and added asteroid "
+    "avoidance. The spaceship is white, moves with arrow keys, and the red asteroid "
+    "moves left."
+)
+
+
+def test_a_repeated_false_claim_is_not_relayed_to_the_child(project) -> None:
+    """The correction is one shot, and the claim came back through it.
+
+    Phase 12.1 drove the real interface: the model claimed a change, was corrected, said
+    the same thing again, and the application passed it on word for word. A child was
+    told about a white spaceship and a red asteroid that had never been written.
+    """
+    controller, provider = make(project, [
+        Reply(tool_calls=(ToolCall("edit_file", {"path": "src/game.py",
+                                                 "old_text": "# not in the file",
+                                                 "new_text": "# whatever"}),)),
+        Reply(text=_MEASURED_CLAIM),
+        Reply(text=_MEASURED_CLAIM),
+    ])
+    turn = controller.send("Make a game where a spaceship moves around and avoids asteroids.")
+
+    assert not any(result.changed_files for _, result in turn.tool_results)
+    assert "spaceship" not in turn.text.lower()
+    assert "haven't changed anything yet" in turn.text
+    # What is blocking is named, the tool's own model-facing wording is not, and no
+    # cause is asserted that the application did not actually check.
+    assert "did not go through" in turn.text
+    assert "copy the line you want to change" not in turn.text
+    # Still exactly one correction: the fix is about what happens after it, not about
+    # spending more provider calls arguing.
+    assert sum("did not actually change" in m.content
+               for call in provider.calls for m in call if m.role == "user") == 1
+
+
+def test_an_empty_reply_after_the_correction_does_not_let_the_claim_through(project) -> None:
+    """The check must read what the child is told, not what this reply said.
+
+    ``turn.text`` only takes a reply's text when that text is non-empty, so a model that
+    answers the correction with **nothing** leaves the previous reply's claim standing as
+    Gary's words. Checking ``reply.text`` sees an empty string, finds no claim, and
+    relays the sentence unexamined -- which is how the first verification walk still put
+    "I replaced the old player movement" in front of a child with the one-shot fix
+    already in place.
+    """
+    controller, _ = make(project, [
+        Reply(tool_calls=(ToolCall("edit_file", {"path": "src/game.py",
+                                                 "old_text": "# not in the file",
+                                                 "new_text": "# whatever"}),)),
+        Reply(text=_MEASURED_CLAIM),
+        Reply(text=""),
+    ])
+    turn = controller.send("Make a game where a spaceship moves around and avoids asteroids.")
+    assert "spaceship" not in turn.text.lower()
+    assert "haven't changed anything yet" in turn.text
+
+
+def test_the_correction_is_still_allowed_to_work(project) -> None:
+    """Replacing the text is the last resort, not the first move.
+
+    The pushback earns one round trip, and a model that takes it and makes the real edit
+    must be reported as having made it. Losing this would trade a lie for a different
+    lie.
+    """
+    controller, _ = make(project, [
+        Reply(tool_calls=(ToolCall("edit_file", {"path": "src/game.py",
+                                                 "old_text": "# not in the file",
+                                                 "new_text": "# whatever"}),)),
+        Reply(text=_MEASURED_CLAIM),
+        Reply(tool_calls=(ToolCall("edit_file", {"path": "src/game.py",
+                                                 "old_text": "PLAYER_SPEED = 5",
+                                                 "new_text": "PLAYER_SPEED = 8"}),)),
+        Reply(text="I increased the speed to 8."),
+    ])
+    turn = controller.send("faster please")
+    assert "PLAYER_SPEED = 8" in (project.directory / "src" / "game.py").read_text()
+    assert turn.text == "I increased the speed to 8."
+
+
+def test_the_contracted_and_progressive_claims_the_model_really_used(project) -> None:
+    """``i increased`` was covered and ``i've increased`` was not, and the model said both.
+
+    Steps 27 and 29 of the walk were never challenged at all, because the hand-written
+    phrase list happened to hold the past simple of these verbs and not the present
+    perfect or the progressive.
+    """
+    for said in ("I've increased asteroid speed to 3.0 for faster movement.",
+                 "I'm adding image loading for the spaceship.",
+                 "I am creating the score counter now.",
+                 "I have written the new level file."):
+        assert AgentController._claimed_a_change_it_did_not_make(Turn(), said), said
+
+
+def test_a_plain_denial_is_never_treated_as_a_claim(project) -> None:
+    """The permitted outcome, including when it contains a claim verb.
+
+    The correction asks the model to "say plainly that you have not changed anything
+    yet". A compliant answer must not then be scored as a fresh lie -- and an honest
+    admission often carries one of the verbs: "I made a mistake".
+    """
+    for said in ("I haven't changed anything yet. The asteroid speed is not updated.",
+                 "I haven't changed anything -- I made a mistake reading the file.",
+                 "I have not changed the speed yet.",
+                 "I can't reach that file, so I did not change it.",
+                 "Nothing changed. Tell me which line you mean."):
+        assert not AgentController._claimed_a_change_it_did_not_make(Turn(), said), said
+
+
+def test_a_suggestion_about_what_to_do_next_is_not_a_claim(project) -> None:
+    """Future and modal forms are deliberately absent from the phrase set.
+
+    The Games prompt asks Gary to suggest one thing to try next, so flagging "I'll add a
+    score" would make the honest turn look like the dishonest one.
+    """
+    controller, provider = make(project, [
+        Reply(text="That works. I'll add a score next if you want one."),
+    ])
+    turn = controller.send("what next?")
+    assert turn.text.startswith("That works.")
+    assert len(provider.calls) == 1
+
+
+def test_research_asking_for_missing_data_is_left_alone(project) -> None:
+    """The one profile that was behaving well must keep behaving well.
+
+    PHASE_12_HANDOFF section 8: "act when the requested mutation is actionable, ask when
+    required information is genuinely missing". Asking is not a claim and must not be
+    replaced with one.
+    """
+    controller, provider = make(project, [
+        Reply(text="What data do you want graphed? Point me to the file."),
+    ])
+    turn = controller.send("Graph this and tell me what changed the most.")
+    assert turn.text.startswith("What data")
+    assert len(provider.calls) == 1
 
 
 # --------------------------------------------------------- checkpoints around a turn

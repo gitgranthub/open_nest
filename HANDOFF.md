@@ -1,9 +1,17 @@
 # Handoff — start here
 
-You are picking up Open Nest after **Phase 12 (the owner's test drive)**, which is
-functionally complete with **one acceptance defect still open** — see §8 of
-[PHASE_12_HANDOFF.md](PHASE_12_HANDOFF.md). This document is what you need before
-touching anything.
+You are picking up Open Nest after **Phase 12 (the owner's test drive) and Phase 12.1
+(final acceptance), both complete**. This document is what you need before touching
+anything.
+
+**Phase 12.1 closed the last acceptance defect: Gary narrating changes he had not
+made.** Driving the real interface with `Toolbox.dispatch` instrumented at the class
+level killed the diagnosis it was filed under — the tools *were* running, every turn, on
+the worker thread. What was failing was every `edit_file`, followed by Gary announcing a
+white spaceship that had never been written. Three separate holes in one Phase 2 honesty
+guard, all in `agent/controller.py`, and **the third one only appeared after the first
+two were fixed and the walk was rerun**. See [PHASE_12_HANDOFF.md](PHASE_12_HANDOFF.md)
+§8 and SPIKES.md §21.
 
 **Read [PHASE_12_HANDOFF.md](PHASE_12_HANDOFF.md) next, and read it before you trust
 anything else here.** Phase 12 was the first time anything clicked the application, and
@@ -14,6 +22,18 @@ passed the whole time**, because every test reaches behaviour through an inline 
 the threading was the one part nothing exercised. Seven defects, three of them crashes
 or hangs, all fixed. If you add a worker, or a Qt driver, that file tells you what not
 to do.
+
+**`edit_file` is the thing to work on next, and it is not an honesty problem.** Across
+the three Phase 12.1 walks **18 of 18 `edit_file` calls the 4B model produced were
+refused** — every one because its `old_text` did not match `src/game.py` byte-for-byte,
+including repeatedly right after it had read the file, and twice re-sending an identical
+failing call. The model picks the right tool and then cannot hit it. Open Nest is now
+honest about that, which is what Phase 12.1 was for; it is not yet *good* at it, and a
+child asking for a spaceship game still does not get one. PHASE_12_HANDOFF §8 keeps this
+**capability / action-selection miss** separate from the truthfulness defect on purpose —
+"Gary told the truth" must not be read as "Gary did the job". The lever is tool
+ergonomics (an anchor or line-numbered edit a small model can actually hit), not tone,
+and it wants a measurement before a redesign.
 
 **Phases 13 and 14 are specified and not started**: the game preview drawn inside the
 workbench (PHASE_12_HANDOFF §6, feasibility measured), and getting work out of Open Nest
@@ -129,7 +149,8 @@ it belongs in section 4.
 | 9 — GitHub backup | complete, committed on `phase-9-github`. D1 resolved as OAuth device flow, **verified against the real GitHub**: real device flow, real private repo, real push, real PR, and a real Disconnect (SPIKES.md §17C-E). UI smoke-tested under cocoa: 21 checks, 21 passed (§17F). Five cosmetic defects recorded for Phase 10 |
 | **10 — Design and polish pass** | **complete**, on `phase-10-design` (10A committed; 10B–10D in the working tree). The brand system is wired into every screen and verified under real cocoa at 2x in both colour schemes. Two final-QA items remain, both "somebody has to look": watching the eagle loop, and a second display. See [PHASE_10_HANDOFF.md](PHASE_10_HANDOFF.md) |
 | **11 — Starter kits, Website, model registry** | **complete**, in the working tree on `phase-10-design`. Config schema 2 (`starters` + `starter_default`) and models schema 4 (per-machine memory metadata). A Website profile that previews offline; a catalogue that tiers from an 8 GB Air to a 64 GB Studio. 980 tests, ruff clean. Five surfaces rendered under real cocoa, three defects found and fixed — one of them an interpreter abort. See [PHASE_11_HANDOFF.md](PHASE_11_HANDOFF.md) |
-| **12 — Owner test drive and final acceptance** | **functionally complete, with one active acceptance defect.** The first time anything clicked the application — and it did not work: `run_in_thread` was silently dropping every background worker, so the setup wizard hung on step 3 of 9, the model never loaded, and a child's message to Gary never ran, with 980 tests passing throughout. Seven defects fixed, three of them crashes or hangs. 1018 tests, ruff clean. **Still open: Gary narrates changes he has not made** — three Games turns claimed work while calling no tool at all. That is a product-truthfulness defect, not polish, and Phase 12 is not done until it is fixed and retested. See [PHASE_12_HANDOFF.md](PHASE_12_HANDOFF.md) §8 |
+| **12 — Owner test drive and final acceptance** | **complete.** The first time anything clicked the application — and it did not work: `run_in_thread` was silently dropping every background worker, so the setup wizard hung on step 3 of 9, the model never loaded, and a child's message to Gary never ran, with 980 tests passing throughout. Seven defects fixed, three of them crashes or hangs. See [PHASE_12_HANDOFF.md](PHASE_12_HANDOFF.md) |
+| **12.1 — the acceptance defect** | **complete.** Gary narrating changes he had not made, reproduced through the real interface and closed. The filed diagnosis ("no tool call") was wrong — `Toolbox.dispatch` was entered every turn; every `edit_file` was refused and the claim was relayed anyway. Three holes in one guard, the third found only by rerunning the walk after fixing the first two. 1025 tests, ruff clean. §8 of PHASE_12_HANDOFF and SPIKES §21 |
 | 13 — The game preview in the workbench | **not started.** Specified in PHASE_12_HANDOFF §6; feasibility measured |
 | 14 — Getting work out of Open Nest (export / PDF / share) | **not started.** Specified in PHASE_12_HANDOFF §7. Nothing can currently leave the app |
 
@@ -151,7 +172,7 @@ turn cloud on, and the child can switch to Claude or OpenAI after a warning, or 
 pictures with an image model. Everything except Image Creation still works with cloud off,
 which is the default.
 
-980 tests pass, ruff is clean.
+1025 tests pass, ruff is clean.
 
 **The application icon is deliberately unresolved, and that is a ruling rather than a
 gap.** Phase 10D was told not to design or simplify one: it needs a separately approved
@@ -184,7 +205,7 @@ privileged-action pattern in §5, not a new mechanism.
 ## 2. Get running in five minutes
 
 ```bash
-.venv/bin/python -m pytest -q      # 980 passing, about 50 seconds
+.venv/bin/python -m pytest -q      # 1025 passing, about 55 seconds
 ```
 
 It is slower than it was (7 s at Phase 6). Phase 7 added tests that actually run each
@@ -553,6 +574,31 @@ does.** Do not "clean up" these without re-measuring:
 - **The chart palette's slot ORDER is its accessibility mechanism**, not a preference.
   Re-ordering silently breaks colour-blind separation and the render looks fine.
   SPIKES §20J.
+
+**Phase 12.1 traps — all four are about honesty checks, and all four cost a measurement:**
+
+- **`turn.text` and `reply.text` are not the same string, and the honesty checks must
+  read the first.** `turn.text` only takes a reply's text when that text is non-empty, so
+  a model answering a correction with **nothing** leaves the *previous* reply standing as
+  Gary's words. A check on `reply.text` sees `""`, finds no claim, and relays the earlier
+  sentence unexamined. This is how the verification walk leaked the identical false claim
+  with the fix already in place. Gary is answerable for the sentence on screen.
+- **A hand-written list of phrases rots asymmetrically, and nothing notices.**
+  `_CLAIMED_CHANGE` held `i increased` and not `i've increased`; four of thirteen verbs
+  had their present-perfect form and none had a progressive. The real model then said
+  exactly the missing forms. It is generated from verb triples now — if you add a verb,
+  add the triple, not one string.
+- **Exempt the plain denial, or the fix punishes the model for complying.** The
+  correction asks it to "say plainly that you have not changed anything yet", and an
+  honest admission often carries a claim verb: *"I haven't changed anything — I made a
+  mistake reading the file."* `_DENIED_CHANGE` is checked first for that reason.
+- **Do not name a cause you have not checked, in the copy that exists to stop invention.**
+  A draft of `_nothing_changed_text` said "the text I tried to replace was not in the
+  file". That was the measured case and would have been a fresh fabrication in the other
+  seven ways `edit_file` and `write_file` refuse.
+- **A defect found by clicking has to be re-checked by clicking.** Two of the three holes
+  were found by measuring; the third existed *only because the first two were fixed*, and
+  would have shipped if the fix had been trusted instead of re-driven. SPIKES §21.
 
 **Phase 11 traps:**
 

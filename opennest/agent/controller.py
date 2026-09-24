@@ -82,12 +82,62 @@ TOOL_USE_RULES = (
     "- Read a file first only when you do not already know what is in it."
 )
 
+#: The verbs a model reaches for when it believes it changed the project, as
+#: (past, participle, progressive). Generated into phrases below rather than written
+#: out, because the hand-written list this replaced had grown asymmetric: it carried
+#: ``i increased`` and not ``i've increased``, and no progressive form at all. Phase
+#: 12.1 drove three real Games turns through the interface and the model said
+#: **"I've increased asteroid speed to 3.0"** and **"I'm adding image loading for the
+#: spaceship"** with every ``edit_file`` refused and the file byte-identical -- both
+#: forms the list happened not to hold. SPIKES.md section 21 has the transcripts.
+_CHANGE_VERBS = (
+    ("changed", "changed", "changing"),
+    ("increased", "increased", "increasing"),
+    ("decreased", "decreased", "decreasing"),
+    ("updated", "updated", "updating"),
+    ("added", "added", "adding"),
+    ("set", "set", "setting"),
+    ("fixed", "fixed", "fixing"),
+    ("made", "made", "making"),
+    ("replaced", "replaced", "replacing"),
+    ("removed", "removed", "removing"),
+    ("renamed", "renamed", "renaming"),
+    ("created", "created", "creating"),
+    ("wrote", "written", "writing"),
+)
+
+
+def _claim_phrases() -> tuple[str, ...]:
+    """Past simple, present perfect and present progressive, for each verb.
+
+    Deliberately **not** the future or modal forms. "I'll add a score" is a suggestion,
+    and the Games prompt actively asks for one; flagging it would make an honest turn
+    look like a lie. What is caught is the model asserting the work is done or underway.
+    """
+    phrases: list[str] = []
+    for past, participle, progressive in _CHANGE_VERBS:
+        phrases += [f"i {past}", f"i've {participle}", f"i have {participle}"]
+        phrases += [f"i'm {progressive}", f"i am {progressive}"]
+    return tuple(phrases)
+
+
 #: Phrases a model uses when it believes it edited something. Used to catch the failure
 #: above deterministically rather than trusting the prompt to have fixed it.
-_CLAIMED_CHANGE = (
-    "i changed", "i've changed", "i have changed", "i increased", "i decreased",
-    "i updated", "i've updated", "i added", "i've added", "i set", "i fixed",
-    "i've fixed", "i made", "i replaced", "i removed", "i renamed",
+_CLAIMED_CHANGE = _claim_phrases()
+
+#: ...and phrases that plainly say it did not. A reply holding one of these is not a
+#: completion claim whatever else it says, which matters for two reasons. It is exactly
+#: what the correction below asks the model to produce -- "say plainly that you have not
+#: changed anything yet" -- so treating a compliant answer as a fresh lie would punish
+#: the model for doing the right thing. And it keeps an honest admission that happens to
+#: contain a claim verb ("I haven't changed anything -- I made a mistake reading the
+#: file") on the right side of the line.
+_DENIED_CHANGE = (
+    "haven't changed", "have not changed", "didn't change", "did not change",
+    "haven't edited", "have not edited", "didn't edit", "did not edit",
+    "nothing changed", "nothing has changed", "nothing was changed",
+    "nothing was saved", "no changes were made", "couldn't change",
+    "could not change", "wasn't able to change", "was not able to change",
 )
 
 
@@ -376,15 +426,35 @@ class AgentController:
                 turn.text = reply.text
 
             if not reply.wants_tool:
-                if not challenged and self._claimed_a_change_it_did_not_make(turn, reply.text):
-                    challenged = True
-                    self._metered.kind = CORRECTION
-                    self.history.append(Message(role="user", content=(
-                        "You did not actually change any file. Call edit_file now with "
-                        "the exact text to replace, or say plainly that you have not "
-                        "changed anything yet."
-                    )))
-                    continue
+                # Checked against ``turn.text`` -- what the child will actually be told
+                # -- and not against ``reply.text``. The two differ whenever a reply
+                # comes back empty, because the assignment above only overwrites on
+                # non-empty text, and that is not a corner case: it is how the Phase
+                # 12.1 verification walk still leaked step 22's claim after the
+                # correction was already in place. The model answered the pushback with
+                # nothing at all, ``reply.text`` was "", the check saw no claim, and the
+                # *previous* reply's "I replaced the old player movement" went to the
+                # child unexamined. Gary is answerable for the sentence on screen.
+                if self._claimed_a_change_it_did_not_make(turn, turn.text):
+                    if not challenged:
+                        challenged = True
+                        self._metered.kind = CORRECTION
+                        self.history.append(Message(role="user", content=(
+                            "You did not actually change any file. Call edit_file now "
+                            "with the exact text to replace, or say plainly that you "
+                            "have not changed anything yet."
+                        )))
+                        continue
+                    # The correction has been spent and the claim came back anyway.
+                    # Phase 12.1 measured that reaching a child verbatim: three real
+                    # Games turns, every edit_file refused, the file byte-identical, and
+                    # Gary announcing a white spaceship and a red asteroid that were
+                    # never written. The application knows exactly what happened, so it
+                    # says that instead of relaying the claim -- the same move
+                    # _describe_what_happened makes when the model says nothing at all,
+                    # and it costs no further provider call.
+                    turn.text = self._nothing_changed_text(turn)
+                    return self._finish_turn(turn)
                 if not corrected:
                     invented = self._described_a_file_it_cannot_see(reply.text, text)
                     if invented is not None:
@@ -540,11 +610,65 @@ class AgentController:
         Phase 2 saw exactly this: read_file, then "I increased the player speed from 5
         to 8" with no write. The base prompt forbids it, but a 4B model does it anyway,
         so the application checks rather than trusts.
+
+        A reply that plainly denies changing anything is never a claim, however it is
+        phrased afterwards. That branch is the *permitted* outcome -- the acceptance
+        rule asks for a real tool call or a plain "I have not changed it yet", and this
+        is what keeps the second one from being mistaken for the first.
         """
         if any(result.changed_files for _, result in turn.tool_results):
             return False
         lowered = (text or "").lower()
+        if any(phrase in lowered for phrase in _DENIED_CHANGE):
+            return False
         return any(phrase in lowered for phrase in _CLAIMED_CHANGE)
+
+    @staticmethod
+    def _nothing_changed_text(turn: Turn) -> str:
+        """What the child is told when the model insists on a change that did not happen.
+
+        Composed by the application from the tool results, never by the model, for the
+        reason ``_describe_what_happened`` exists: the application knows the answer
+        deterministically and asking again costs a provider call and can come back
+        wrong a third time.
+
+        It says the one thing that is certainly true -- nothing changed -- and then what
+        is blocking, which WORKORDER_01's acceptance direction asks for. Two things it
+        deliberately does not do:
+
+        - **It does not quote the refused tool's own message.** That text is written for
+          the model ("Read the file again and copy the line you want to change exactly
+          as it appears") and putting it in front of a child is instructions meant for
+          somebody else.
+        - **It does not name a cause it has not checked.** ``edit_file`` refuses for
+          four different reasons and ``write_file`` for four more; an earlier draft of
+          this said "the text I tried to replace was not in the file", which was the
+          measured case and would have been a fresh invention in the other seven. The
+          application knows a change was attempted and refused, so that is what it says.
+
+        Brand guide section 9: an error is something unexpected, not a failure, and the
+        reply ends with the way forward rather than the fault.
+        """
+        refused = {
+            normalise_tool_name(name)
+            for name, result in turn.tool_results
+            if not result.ok
+        }
+        if refused & {"edit_file", "write_file"}:
+            return (
+                "I haven't changed anything yet. The change I tried did not go through, "
+                "so the file is still as it was. Tell me again what you want different "
+                "and I will look at the file first."
+            )
+        if refused:
+            return (
+                "I haven't changed anything yet. What I tried did not work. "
+                "Tell me again what you want different."
+            )
+        return (
+            "I haven't changed anything yet. Tell me again what you want different, or "
+            "ask for one small change to start with."
+        )
 
     def _generate(self, on_text: Callable[[str], None] | None, *, turn: Turn | None = None):
         """One provider call, metered, with one retry if the answer came back empty.
