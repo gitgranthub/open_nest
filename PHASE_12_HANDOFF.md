@@ -34,30 +34,53 @@ What is genuinely settled, and should not be re-investigated:
 One thing §8 originally recorded turned out to be false, and it matters for anyone
 reading the old version: the tools *were* running. The failure was never "no tool call".
 
-**What is next, and it is not Phase 13 or 14.** Phase 12.3 measured the remaining gap
-properly and it is **not** what §9 guessed. A prompt-and-context problem was the
-hypothesis; twenty-four conversations say otherwise:
+---
 
-| arm | games that work |
+## THE CONCLUSION — why Phase 12 is still open
+
+> **Open Nest can detect that a game crashed. It cannot yet determine whether an
+> interactive game that successfully launches actually behaves as requested.**
+
+That sentence is the whole of it. Phase 12.3 measured the remaining gap properly and it
+is **not** what §9 guessed — a prompt-and-context problem was the hypothesis, and
+twenty-four conversations say otherwise.
+
+**The established evidence. None of this needs re-measuring; all of it is in SPIKES §23.**
+
+| | |
 |---|---|
-| Qwen3 4B, as shipped | 1/6 |
-| 4B + a starter that names SET UP / MOVE / DRAW | 0/6 — *much worse*, 5/6 crashed |
-| 4B + the rule stated in the prompt | 0/6 |
-| **Qwen3 8B** | **0/6**, and `edit_file` lands half as often |
+| **1 of 24** measured conversations produced the requested moving game | §23B, §23F, §23G |
+| **4B vs 8B did not solve it** — 8B scored 0/6 and landed `edit_file` at 30% against the 4B's 63% | §23G |
+| **Prompt tuning did not solve it** — three variants, no distinguishable gain | §23D, §23F |
+| **Starter markers made results worse** — 5/6 crashed; a labelled section invites replacing the code it labels | §23D |
+| **Tool execution alone is not the dominant remaining problem** — edits land and the game still does not work | §23C |
+| **`RunResult.ok == True` means the process launched and stayed alive, not that the game works** | §23H |
+| **The repair loop therefore cannot react to the dominant "runs but does not work" case** — a crash gets three attempts, a frozen picture gets none | §23H |
+| **`does_it_play.py` shows deterministic behavioural inspection is feasible** — 40 frames under `SDL_VIDEODRIVER=dummy`, no model involved. **Integrating it into the product is proposed, not implemented** | §23A, §23H |
 
-Neither a bigger model nor better wording moves it. What every arm shares is that the
-model writes plausible code, the tools apply it faithfully, the game launches — and
-**nothing in Open Nest can tell that nothing happened**, because `RunResult.ok` is True
-for any interactive game that is still running, so the repair loop never fires for the
-one failure that dominates. A game that *crashes* gets three repair attempts; a game that
-runs and shows a frozen picture gets none.
+**Two things left open on purpose, and neither should be guessed at:**
 
-**The lever is closing that feedback loop**, and detection is already proven cheap and
-deterministic (`spikes/phase12/does_it_play.py`). SPIKES §23 has the full measurement and
-§23H states the proposal. It is written up rather than built, because it is real new
-machinery and the session that measured the need for it is not the one to add it in.
+- **The `edit_file` exact-match dedent hazard** (§23E). A replacement sent at column zero
+  for an indented region is applied verbatim, compiles, and silently lifts code out of the
+  loop. It never reaches the §22 recovery ladder, because the match is exact. **Do not
+  "fix" it by re-indenting exact matches** — moving code out of an `if` is an ordinary
+  legitimate edit and the tool cannot tell the two apart from the text.
+- **Claim-to-artifact attribution** (§9, SPIKES §21C-bis), deferred by the owner. Do not
+  let it grow into a semantic claim-analysis subsystem.
 
-**Phases 13 and 14 are specified in §6 and §7.** Nothing in either has started.
+### Next: Phase 12.4 — Playability Feedback Loop
+
+Pick this up from the pushed branch. The lever is closing the feedback loop so the
+application can react to a game that runs and does nothing; the detection half is already
+proven cheap and deterministic. It is **written up rather than built** — it is real new
+machinery, and the session that measured the need for it was not the one to add it in.
+
+**Phase 13 stays reserved for the frame-streamed / embedded game preview** (§6, feasibility
+measured). It shares the frame-capture technique with `does_it_play.py` and is otherwise a
+different piece of work — do not merge the two. **Phase 14** is export (§7). Neither has
+started.
+
+---
 
 ---
 

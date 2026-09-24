@@ -29,7 +29,18 @@ the threading was the one part nothing exercised. Seven defects, three of them c
 or hangs, all fixed. If you add a worker, or a Qt driver, that file tells you what not
 to do.
 
-**`edit_file` is the thing to work on next, and it is not an honesty problem.** Across
+**Next is Phase 12.4 — Playability Feedback Loop, and the conclusion it rests on is one
+sentence: Open Nest can detect that a game crashed, but cannot yet determine whether an
+interactive game that successfully launches actually behaves as requested.** Phase 12.3
+measured 24 conversations: **1 produced the game that was asked for**. A bigger model did
+not help (8B scored 0/6 and edits worse), prompt tuning did not help, and naming the
+starter's sections made it markedly worse. `RunResult.ok` is True whenever a game is
+merely still running, so the repair loop cannot react to the dominant failure at all.
+`spikes/phase12/does_it_play.py` shows the detection is cheap and deterministic;
+**integrating it is proposed, not implemented** — PHASE_12_HANDOFF's conclusion section
+and SPIKES §23 have all of it.
+
+**`edit_file` was the previous suspect and is now measured NOT to be the dominant problem.** Across
 the three Phase 12.1 walks **18 of 18 `edit_file` calls the 4B model produced were
 refused** — every one because its `old_text` did not match `src/game.py` byte-for-byte,
 including repeatedly right after it had read the file, and twice re-sending an identical
@@ -158,6 +169,8 @@ it belongs in section 4.
 | **12 — Owner test drive and final acceptance** | **OPEN.** Defects fixed, outcome not met — no walk has yet produced a working game. The first time anything clicked the application — and it did not work: `run_in_thread` was silently dropping every background worker, so the setup wizard hung on step 3 of 9, the model never loaded, and a child's message to Gary never ran, with 980 tests passing throughout. Seven defects fixed, three of them crashes or hangs. See [PHASE_12_HANDOFF.md](PHASE_12_HANDOFF.md) |
 | 12.1 — the truthfulness defect | **closed.** Gary narrating changes he had not made, reproduced through the real interface and closed. The filed diagnosis ("no tool call") was wrong — `Toolbox.dispatch` was entered every turn; every `edit_file` was refused and the claim was relayed anyway. Three holes in one guard, the third found only by rerunning the walk after fixing the first two. 1025 tests, ruff clean. §8 of PHASE_12_HANDOFF and SPIKES §21 |
 | 12.2 — editing reliability | **closed.** 18 of 18 `edit_file` calls were refused; measured the distribution (47% the model editing code it imagined, 33% wrong indent, 20% a newline written as two characters) and added a bounded deterministic recovery that refuses ambiguity. 3 of 4 real edits now land. Also: one project runs one copy of itself, and the approval mark is no longer awarded for the starter launching. 1044 tests, ruff clean. SPIKES §22 |
+| 12.3 — does the child get a game? | **measured, and the answer is no.** 1 of 24 conversations produced the game that was asked for. 4B vs 8B did not solve it, prompt tuning did not solve it, starter markers made it worse, and tool execution is no longer the dominant problem. `RunResult.ok` is True for any game that merely launched, so the repair loop cannot react to "runs but does not work". SPIKES §23 |
+| **12.4 — Playability Feedback Loop** | **next, not started.** Let the application tell a working game from a frozen one and feed that back. Detection proven in `spikes/phase12/does_it_play.py`; integration proposed, not implemented. PHASE_12_HANDOFF conclusion section |
 | 13 — The game preview in the workbench | **not started.** Specified in PHASE_12_HANDOFF §6; feasibility measured |
 | 14 — Getting work out of Open Nest (export / PDF / share) | **not started.** Specified in PHASE_12_HANDOFF §7. Nothing can currently leave the app |
 
