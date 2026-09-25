@@ -22,7 +22,11 @@ and this is a fact about the text.
 
 from __future__ import annotations
 
-from opennest.ai.mlx_provider import parse_tool_calls, strip_tool_calls
+from opennest.ai.mlx_provider import (
+    parse_tool_calls,
+    reply_from_completion,
+    strip_tool_calls,
+)
 
 
 def test_a_reasoning_block_never_reaches_the_child() -> None:
@@ -58,6 +62,42 @@ def test_a_tool_call_after_a_reasoning_block_is_still_found() -> None:
     calls = parse_tool_calls(raw)
     assert [c.name for c in calls] == ["edit_file"]
     assert strip_tool_calls(raw).strip() == ""
+
+
+#: The shape Phase 12.4 measured, shortened: the model looped inside an ``edit_file``
+#: argument until the output cap, so the block never closed.
+CUT_OFF_CALL = (
+    '<tool_call>\n{"name": "edit_file", "arguments": {"path": "src/game.py", '
+    '"old_text": "    screen.fill(BACKGROUND)", "new_text": "    screen.fill(BACKGROUND)\\n'
+    '    second_square.x = 0\\n        second_square.x = WIDTH\\n        second_square.x = 0'
+)
+
+
+def test_a_tool_call_cut_off_by_the_output_cap_never_reaches_the_child() -> None:
+    reply = reply_from_completion(CUT_OFF_CALL)
+    assert reply.text == ""
+    assert reply.tool_calls == () and reply.dropped_tool_call
+
+
+def test_prose_before_a_cut_off_call_is_kept_and_the_call_is_not() -> None:
+    reply = reply_from_completion("I'll add a second square.\n" + CUT_OFF_CALL)
+    assert reply.text == "I'll add a second square."
+    assert "<tool_call>" not in reply.text and "edit_file" not in reply.text
+    assert reply.dropped_tool_call
+
+
+def test_a_closed_call_that_is_not_json_is_dropped_and_said_so() -> None:
+    reply = reply_from_completion('<tool_call>{"name": "edit_file", "arguments": {</tool_call>')
+    assert reply.text == "" and reply.tool_calls == () and reply.dropped_tool_call
+
+
+def test_a_call_that_parsed_is_not_reported_as_dropped() -> None:
+    raw = ('<tool_call>{"name": "run_project", "arguments": {}}</tool_call>\n'
+           "Run it and look for the square.")
+    reply = reply_from_completion(raw)
+    assert [c.name for c in reply.tool_calls] == ["run_project"]
+    assert reply.text == "Run it and look for the square."
+    assert not reply.dropped_tool_call
 
 
 def test_ordinary_prose_is_left_alone() -> None:

@@ -38,8 +38,12 @@ calls as everything else. Fourteen real conversations: **zero false failures**, 
 reached the child as "done", and one crash the model never ran was caught and repaired.
 The spike it grew from could not be used as it was: it graded **7 of 10 working games
 frozen**. What remains is the half no deterministic check should try: a game that is
-not broken is not therefore the game that was asked for. PHASE_12_HANDOFF §12 and SPIKES
-§24 have all of it, including the next lever the data shows and whose call it is.
+not broken is not therefore the game that was asked for, and **the 12.4 acceptance set
+still failed to produce the requested behaviour reliably.** That result is why the next
+work is the **Fast Path** — a classifier plus known recipes for common requests — which
+the owner has chosen and nobody has started. Two user-facing fallbacks 12.4 exposed are
+fixed: raw tool-call JSON never reaches the child, and "It works." is no longer said
+because a game merely launched. PHASE_12_HANDOFF §12 and SPIKES §24 have all of it.
 
 **`edit_file` was the previous suspect and is now measured NOT to be the dominant problem.** Across
 the three Phase 12.1 walks **18 of 18 `edit_file` calls the 4B model produced were
@@ -171,7 +175,7 @@ it belongs in section 4.
 | 12.1 — the truthfulness defect | **closed.** Gary narrating changes he had not made, reproduced through the real interface and closed. The filed diagnosis ("no tool call") was wrong — `Toolbox.dispatch` was entered every turn; every `edit_file` was refused and the claim was relayed anyway. Three holes in one guard, the third found only by rerunning the walk after fixing the first two. 1025 tests, ruff clean. §8 of PHASE_12_HANDOFF and SPIKES §21 |
 | 12.2 — editing reliability | **closed.** 18 of 18 `edit_file` calls were refused; measured the distribution (47% the model editing code it imagined, 33% wrong indent, 20% a newline written as two characters) and added a bounded deterministic recovery that refuses ambiguity. 3 of 4 real edits now land. Also: one project runs one copy of itself, and the approval mark is no longer awarded for the starter launching. 1044 tests, ruff clean. SPIKES §22 |
 | 12.3 — does the child get a game? | **measured, and the answer is no.** 1 of 24 conversations produced the game that was asked for. 4B vs 8B did not solve it, prompt tuning did not solve it, starter markers made it worse, and tool execution is no longer the dominant problem. `RunResult.ok` is True for any game that merely launched, so the repair loop cannot react to "runs but does not work". SPIKES §23 |
-| 12.4 — Playability Feedback Loop | **closed.** A headless playtest after every change feeds crashed / no picture / closed itself / frozen to the repair loop, sharing its three attempts and the call budget. The 12.3 spike graded 7 of 10 working games frozen and was rebuilt, not wired in. 14 real conversations: 0 false failures, 0 crashes reaching the child as "done". 1095 tests, ruff clean. PHASE_12_HANDOFF §12, SPIKES §24 |
+| 12.4 — Playability Feedback Loop | **closed.** A headless playtest after every change feeds crashed / no picture / closed itself / frozen to the repair loop, sharing its three attempts and the call budget. The 12.3 spike graded 7 of 10 working games frozen and was rebuilt, not wired in. 14 real conversations: 0 false failures, 0 crashes reaching the child as "done". 1104 tests, ruff clean. PHASE_12_HANDOFF §12, SPIKES §24 |
 | 13 — The game preview in the workbench | **not started.** Specified in PHASE_12_HANDOFF §6; feasibility measured |
 | 14 — Getting work out of Open Nest (export / PDF / share) | **not started.** Specified in PHASE_12_HANDOFF §7. Nothing can currently leave the app |
 
@@ -193,7 +197,7 @@ turn cloud on, and the child can switch to Claude or OpenAI after a warning, or 
 pictures with an image model. Everything except Image Creation still works with cloud off,
 which is the default.
 
-1095 tests pass, ruff is clean.
+1104 tests pass, ruff is clean.
 
 **The application icon is deliberately unresolved, and that is a ruling rather than a
 gap.** Phase 10D was told not to design or simplify one: it needs a separately approved
@@ -226,7 +230,7 @@ privileged-action pattern in §5, not a new mechanism.
 ## 2. Get running in five minutes
 
 ```bash
-.venv/bin/python -m pytest -q      # 1095 passing, about 100 seconds
+.venv/bin/python -m pytest -q      # 1104 passing, about 110 seconds
 ```
 
 It is slower than it was (7 s at Phase 6, 55 s at Phase 12.2). Phase 12.4 made every Games

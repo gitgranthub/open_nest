@@ -72,6 +72,12 @@ class Reply:
     #: cannot be inferred from what appeared on screen. Zero when unreported -- Anthropic
     #: folds thinking into ``output_tokens`` without breaking it out.
     reasoning_tokens: int = 0
+    #: The model began a tool call that could not be read -- cut off by the output cap,
+    #: or not valid JSON -- and it was dropped rather than shown. Phase 12.4 measured the
+    #: case: the model looped inside an ``edit_file`` call until the cap and the raw
+    #: ``<tool_call>`` JSON became Gary's reply. Nothing was run and nothing changed, and
+    #: the controller says so instead of saying nothing.
+    dropped_tool_call: bool = False
 
     @property
     def wants_tool(self) -> bool:

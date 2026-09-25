@@ -608,3 +608,74 @@ def test_the_real_playtest_catches_a_frozen_game_and_accepts_the_fix(project) ->
     assert "same picture" in _last_instruction(provider, 2)
     # The headless test never touches the game on the child's screen.
     assert controller.toolbox.last_run is None
+
+
+# ------------------------------------ two fallbacks Phase 12.4 showed to be wrong
+
+@pytest.mark.parametrize("prose", ["", "I'll add a second square that slides."])
+def test_a_tool_call_the_model_never_finished_is_answered_honestly(project, prose) -> None:
+    """The provider keeps the raw protocol off the screen; the controller says why."""
+    controller, provider = make(project, [Reply(text=prose, dropped_tool_call=True)])
+    calls = _verdicts(controller)
+
+    turn = controller.send("add a second square that slides on its own")
+
+    assert turn.text.startswith("I haven't changed anything yet.")
+    assert "<tool_call>" not in turn.text and "second square" not in turn.text
+    assert len(provider.calls) == 1 and calls == []
+
+
+def test_a_dropped_call_after_a_real_change_does_not_hide_the_change(project) -> None:
+    controller, _ = make(project, [_write(1), Reply(text="", dropped_tool_call=True)])
+    _verdicts(controller, playtest.PASSED)
+    turn = controller.send("add a part")
+    assert turn.text == "I changed src/part_1.py."
+
+
+@needs_sandbox
+def test_a_game_that_only_launched_is_said_to_have_started_not_to_work(project) -> None:
+    """``RunResult.ok`` for a game means it survived four seconds. That is all it says."""
+    controller, _ = make(project, [
+        Reply(tool_calls=(
+            ToolCall("edit_file", {"path": "src/game.py", "old_text": "PLAYER_SPEED = 5",
+                                   "new_text": "PLAYER_SPEED = 6"}),
+            ToolCall("run_project", {}),
+        )),
+        Reply(),  # acts, says nothing
+    ])
+    _verdicts(controller, playtest.PASSED)
+    try:
+        turn = controller.send("make the player a bit faster")
+    finally:
+        controller.toolbox.stop_running()
+    assert turn.text == "I changed src/game.py and started it."
+    assert "works" not in turn.text
+
+
+@needs_sandbox
+def test_a_crash_repair_that_only_got_the_game_launched_says_it_starts(project) -> None:
+    game = project.entrypoint_path
+    game.write_text("raise ValueError('boom')\n" + game.read_text(encoding="utf-8"))
+
+    def speed(old: str, new: str) -> Reply:
+        return Reply(tool_calls=(ToolCall("edit_file", {
+            "path": "src/game.py", "old_text": f"PLAYER_SPEED = {old}",
+            "new_text": f"PLAYER_SPEED = {new}"}),))
+
+    controller, _ = make(project, [
+        Reply(tool_calls=(ToolCall("run_project", {}),)),
+        # Three repairs that change the file and never run it, the first one the fix:
+        # the case _repair_actually_worked exists for.
+        Reply(tool_calls=(ToolCall("edit_file", {
+            "path": "src/game.py", "old_text": "raise ValueError('boom')\n",
+            "new_text": ""}),)),
+        speed("5", "6"),
+        speed("6", "7"),
+    ])
+    _verdicts(controller, playtest.PASSED)
+    try:
+        turn = controller.send("run it")
+    finally:
+        controller.toolbox.stop_running()
+    assert turn.text.startswith("That took a few tries, but it starts now.")
+    assert "works" not in turn.text

@@ -35,6 +35,12 @@ _FENCED_JSON = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 #: reply cut off by ``max_tokens`` mid-thought has an opening tag and no closing one --
 #: and that is the case where the most reasoning is on screen.
 _THINK_BLOCK = re.compile(r"<think>.*?(?:</think>|$)", re.DOTALL)
+#: What is left of a tool call once every closed block is gone: an opening tag the model
+#: never closed, because it ran out of output while writing the call. The same reasoning
+#: as the unclosed ``<think>`` above. Measured in Phase 12.4 (SPIKES.md section 24F): the
+#: model looped inside an ``edit_file`` argument until the cap, and the whole raw block
+#: was shown to the child as Gary's reply.
+_UNCLOSED_TOOL_CALL = re.compile(r"<tool_call>.*\Z", re.DOTALL)
 
 
 def resolve_local_model(model_id: str, revision: str | None = None) -> Path:
@@ -141,11 +147,8 @@ class MLXProvider(ModelProvider):
             last = response
             yield Chunk(text=response.text)
 
-        raw = "".join(pieces)
-        calls = parse_tool_calls(raw)
-        self._reply = Reply(
-            text=strip_tool_calls(raw).strip(),
-            tool_calls=calls,
+        self._reply = reply_from_completion(
+            "".join(pieces),
             prompt_tokens=int(getattr(last, "prompt_tokens", 0) or 0),
             generated_tokens=int(getattr(last, "generation_tokens", 0) or 0),
         )
@@ -188,6 +191,21 @@ class MLXProvider(ModelProvider):
             raise ProviderError(f"The conversation could not be prepared: {exc}") from exc
 
 
+def reply_from_completion(raw: str, *, prompt_tokens: int = 0,
+                          generated_tokens: int = 0) -> Reply:
+    """A finished completion as a :class:`Reply`: the calls, and only the prose."""
+    calls = parse_tool_calls(raw)
+    return Reply(
+        text=strip_tool_calls(raw).strip(),
+        tool_calls=calls,
+        # More calls begun than could be read: cut off, or not JSON. Tool protocol is
+        # never prose, so the text above has already lost it either way.
+        dropped_tool_call=raw.count("<tool_call>") > len(calls),
+        prompt_tokens=prompt_tokens,
+        generated_tokens=generated_tokens,
+    )
+
+
 def parse_tool_calls(text: str) -> tuple[ToolCall, ...]:
     """Pull tool calls out of a raw completion.
 
@@ -223,7 +241,11 @@ def strip_tool_calls(text: str) -> str:
     a future catalogue entry whose template spells the flag differently, or the
     pre-closed ``<think></think>`` the flag itself inserts would each otherwise reach
     the child as Gary's words.
+
+    An unclosed ``<tool_call>`` goes too, from its tag to the end: tool protocol is
+    never something to show a child, finished or not, and the model cannot have meant
+    anything it wrote after starting a call it never closed.
     """
-    return _FENCED_JSON.sub(
-        "", _TOOL_CALL_BLOCK.sub("", _THINK_BLOCK.sub("", text))
-    )
+    text = _TOOL_CALL_BLOCK.sub("", _THINK_BLOCK.sub("", text))
+    text = _UNCLOSED_TOOL_CALL.sub("", text).replace("</tool_call>", "")
+    return _FENCED_JSON.sub("", text)

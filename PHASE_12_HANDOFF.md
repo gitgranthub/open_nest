@@ -80,22 +80,37 @@ conversations say otherwise.
 - **Claim-to-artifact attribution** (§9, SPIKES §21C-bis), deferred by the owner. Do not
   let it grow into a semantic claim-analysis subsystem.
 
-### 12.4 is closed. What the measurements point at next
+### 12.4 is closed. What it established, and what comes next
 
-Not started, and each needs a decision rather than a guess:
+> **Playtest now detects crashes, no-draw, premature exit, and genuinely static output
+> under controlled input. It does not determine whether the generated game semantically
+> matches the child's request.**
+
+**The measured result that motivates the next work: the 12.4 acceptance set still failed
+to produce the requested behaviour reliably.** None of the six controlled game requests
+produced the game that was asked for. The loop stopped broken games reaching the child as
+"done"; it did not make the model build the right one. The falling square that jitters,
+the title that is a comment, the ball that does not bounce — each passes, because none
+of them is broken, and none of them is what was asked. That is why Phase 12 stays open.
+
+**Next: the Fast Path — a classifier plus known recipes.** Route common requests
+("make it fall", "add an enemy", "add a score") through implementations known to work,
+rather than asking a 4B model to invent the whole thing each time. It is the next
+architecture experiment, owner-directed, and **not started** in the session that built
+12.4. The playtest stays as it is under it: a recipe's output still gets tested.
+
+**Recorded as future hardening, deliberately not built:**
 
 - **Claims of motion the test measured as absent.** In three of fourteen acceptance
   conversations Gary described a bouncing ball, a chasing enemy or a moving coin while
   the playtest had measured `moved_by_itself = False`. That comparison is deterministic,
-  and it is exactly claim-to-artifact attribution, which the owner deferred. It is the
-  cheapest next lever the data shows; it is the owner's call whether to take it.
-- **Turns where nothing landed.** Two of the six controlled conversations ended as the
+  and it is claim-to-artifact attribution, which the owner deferred. It must not be
+  grown out of 12.4 into semantic claim verification; the Fast Path is expected to make
+  these cases rarer at the source.
+- **Turns where no edit landed.** Two of the six controlled conversations ended as the
   untouched starter: one with every edit refused, one with the model looping inside its
-  own tool call until the output cap — which put raw `<tool_call>` JSON on screen as
-  Gary's reply. The second is a real defect, filed separately and not fixed here.
-- **"Not broken" is not "what was asked".** The falling square that jitters, the title
-  that is a comment. None of the six controlled game requests produced the game that was
-  asked for in the 12.4 acceptance either, and that is why Phase 12 stays open.
+  own tool call until the output cap. The raw JSON that second case put on screen is
+  **fixed** (§12, "Two fallbacks corrected"); the loop itself is not.
 
 **Phase 13 stays reserved for the frame-streamed / embedded game preview** (§6, feasibility
 measured). It shares the frame-capture technique with `does_it_play.py` and is otherwise a
@@ -685,6 +700,11 @@ Before this, `RunResult.ok` was True for any interactive game that survived four
 so a frozen picture got no repair at all, and a crash got one only if the model happened
 to run the game. Full measurements in SPIKES.md §24; this is what a reader needs.
 
+> **Playtest now detects crashes, no-draw, premature exit, and genuinely static output
+> under controlled input. It does not determine whether the generated game semantically
+> matches the child's request.** And the 12.4 acceptance set still failed to produce the
+> requested behaviour reliably — the result the Fast Path work starts from.
+
 ### The spike could not be wired in, and why that mattered most
 
 `does_it_play.py` proved the technique and was not a grader anyone could act on. Measured
@@ -741,18 +761,45 @@ told what the test saw, in the application's words.
 - **It cannot fire under `scripts/offline.sh`.** Seatbelt does not nest; every test there
   is UNAVAILABLE. The acceptance driver runs unwrapped with `HF_HUB_OFFLINE=1`, as the
   product does.
-- **The suite is slower: 55 s → ~100 s.** About thirteen existing tests change a Games
+- **The suite is slower: 55 s → ~110 s.** About thirteen existing tests change a Games
   project and now pay a real ~2 s playtest of the starter, plus ~15 s of new playtest
   tests. Kept on purpose: the profile says Games are tested, and a test-only switch would
   make every one of those tests describe a configuration the product never runs.
 
+### Two fallbacks corrected, both exposed by 12.4
+
+Owner-directed cleanup, kept narrow on purpose: neither reopens the 12.1 truthfulness
+system nor redesigns the tool-call parser.
+
+- **Raw tool-call JSON never reaches the child.** The acceptance run had the model loop
+  inside an `edit_file` argument until the output cap; the block never closed, the
+  parser only removed *closed* blocks, and the whole raw `<tool_call>{...` became Gary's
+  reply. `strip_tool_calls` now drops an unclosed block from its tag to the end — the
+  same treatment an unclosed `<think>` already had — and `Reply.dropped_tool_call` says a
+  call was begun and could not be read. When that is the last word and nothing changed,
+  the child gets the application's existing honest "I haven't changed anything yet"
+  instead of silence or the half-sentence before the call. Not retried: it was a
+  repetition loop, and at temperature 0 the same prompt loops the same way. The parser
+  itself is unchanged.
+- **"It works." is no longer inferred from a launch.** Two fallbacks said it from
+  `RunResult.ok`, which for a game means only that it survived four seconds:
+  `_describe_what_happened` now says *"I changed src/game.py and started it."*, and
+  `_repair_actually_worked` says *"That took a few tries, but it starts now."* A run that
+  **finished** — a Research analysis that exited cleanly — keeps "It works.", because it
+  is not a launch. Neither sentence mentions the playtest's pass: "the picture changes"
+  would read to a child as "my asteroid moves", which nothing verified.
+
+**A trap left in place, noted rather than changed:** `AgentWorker.chunk` streams the
+model's *raw* output, every tool call included. Nothing renders it today — the transcript
+updates once, at the end of the turn (§5). Connecting it to the transcript without the
+same stripping would put tool protocol on screen for every call, not just a broken one.
+
 ### What was deliberately left
 
-- **`_describe_what_happened` still says "It works."** when the model said nothing and the
-  last run was merely still running. It is Gary's voice and 12.1's territory, which 12.4
-  was told not to reopen. Small, and worth a decision.
-- **Claims of motion the test measured as absent** — see the conclusion section.
-- **The raw `<tool_call>` reply**: filed as a separate task, not fixed here.
+- **Claims of motion the test measured as absent** — future hardening, see the conclusion
+  section. Not built, and not to be grown out of the playtest.
+- **The model looping inside its own tool call.** Its output is now kept off the screen;
+  the loop itself is a capability miss, the kind the Fast Path is meant to route around.
 
 ### The drivers
 

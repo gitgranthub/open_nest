@@ -444,6 +444,15 @@ class AgentController:
                 turn.text = reply.text
 
             if not reply.wants_tool:
+                if reply.dropped_tool_call and not self._changed_anything(turn):
+                    # A call the model could not finish -- it ran out of output while
+                    # writing it -- so nothing ran and nothing changed. The provider has
+                    # already kept the raw protocol off the screen; without this the
+                    # child would be told nothing at all, or a half-sentence that came
+                    # before the call. Not retried: measured, it was a repetition loop,
+                    # and at temperature 0 the same prompt loops the same way.
+                    turn.text = self._nothing_changed_text(turn)
+                    return self._finish_turn(turn)
                 # Checked against ``turn.text`` -- what the child will actually be told
                 # -- and not against ``reply.text``. The two differ whenever a reply
                 # comes back empty, because the assignment above only overwrites on
@@ -522,6 +531,10 @@ class AgentController:
         return turn
 
     @staticmethod
+    def _changed_anything(turn: Turn) -> bool:
+        return any(result.changed_files for _, result in turn.tool_results)
+
+    @staticmethod
     def _describe_what_happened(turn: Turn) -> str:
         """Say what was done when the model did it without saying anything.
 
@@ -534,6 +547,12 @@ class AgentController:
         do it too. The application knows exactly what happened from the tool results, so
         it says so itself rather than spending a provider call asking the model to
         repeat itself in words.
+
+        **"It works." is only said for a run that finished.** An interactive run is
+        ``ok`` the moment it survives four seconds, and Phase 12.4 measured how little
+        that says: a game can launch and do nothing at all (SPIKES.md section 24). So a
+        game that launched is described as having started -- which is all a launch
+        shows -- and nothing here claims the child's feature was checked.
         """
         changed = sorted({
             path
@@ -542,7 +561,10 @@ class AgentController:
         })
         ran = [result for _, result in turn.tool_results if result.run is not None]
         last_run_ok = ran and ran[-1].ok
+        only_launched = last_run_ok and ran[-1].run.still_running
 
+        if changed and only_launched:
+            return f"I changed {', '.join(changed)} and started it."
         if changed and last_run_ok:
             return f"I changed {', '.join(changed)} and ran it. It works."
         if changed:
@@ -921,10 +943,18 @@ class AgentController:
         if not result.ok:
             return False
         self.refresh_state()
-        turn.text = (
-            "That took a few tries, but it works now. "
-            "I fixed the problem and ran it to make sure."
-        )
+        if result.run is not None and result.run.still_running:
+            # A game that got past its startup: all that proves is that it starts, and
+            # the headless playtest that follows is what says any more (Phase 12.4).
+            turn.text = (
+                "That took a few tries, but it starts now. "
+                "I changed it and started it again to check."
+            )
+        else:
+            turn.text = (
+                "That took a few tries, but it works now. "
+                "I fixed the problem and ran it to make sure."
+            )
         return True
 
 
