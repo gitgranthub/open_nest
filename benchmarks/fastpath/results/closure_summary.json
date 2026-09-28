@@ -1,0 +1,2690 @@
+[
+ {
+  "id": "CG1",
+  "profile": "games",
+  "messages": [
+   "Make a game where a spaceship moves around and avoids asteroids.",
+   "Make the asteroids zigzag instead of going straight.",
+   "Make the asteroids move faster."
+  ],
+  "source": "known-1",
+  "arm": "fast",
+  "turns": [
+   {
+    "message": "Make a game where a spaceship moves around and avoids asteroids.",
+    "seconds": 4.09,
+    "route": "recipe",
+    "fastpath": {
+     "route": "recipe",
+     "reason": "confident, whole game",
+     "intent": "make_avoid_game",
+     "score": 0.9983,
+     "margin": 16.5,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "add_enemy",
+     "ms": 1859,
+     "recipe": "game.make_avoid_game",
+     "verification": [
+      {
+       "check": "playtest_passes",
+       "status": "pass",
+       "detail": "100 frames"
+      },
+      {
+       "check": "moves_by_itself",
+       "status": "pass",
+       "detail": ""
+      },
+      {
+       "check": "drawn_after_fill",
+       "status": "pass",
+       "detail": ""
+      }
+     ],
+     "result": "success",
+     "changed_files": [
+      "src/game.py"
+     ],
+     "slot_questions": [],
+     "seconds": 4.084
+    },
+    "provider_calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "tools": [
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 5,
+    "edits_landed": 5,
+    "refused": 0,
+    "playtests": [
+     "passed"
+    ],
+    "gave_up": false,
+    "text": "I made it a dodging game: five asteroids that float across in a wave and come back round. If one touches the player, the player goes back to the middle. The player is drawn as a little ship now. I tested it without a window: it runs, and something moves on its own now."
+   },
+   {
+    "message": "Make the asteroids zigzag instead of going straight.",
+    "seconds": 2.83,
+    "route": "recipe",
+    "fastpath": {
+     "route": "recipe",
+     "reason": "confident",
+     "intent": "change_thing_motion",
+     "score": 1.0,
+     "margin": 23.75,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "other",
+     "ms": 298,
+     "shape": {
+      "intent": "one",
+      "score": 1.0,
+      "margin": 10.25,
+      "agreement": 1.0,
+      "orderings": 2,
+      "letter_mass": 1.0,
+      "runner_up": "no",
+      "ms": 348
+     },
+     "recipe": "game.change_thing_motion",
+     "verification": [
+      {
+       "check": "motion_set",
+       "status": "pass",
+       "detail": "ASTEROID: zigzag"
+      },
+      {
+       "check": "playtest_passes",
+       "status": "pass",
+       "detail": "100 frames"
+      },
+      {
+       "check": "moves_by_itself",
+       "status": "pass",
+       "detail": ""
+      },
+      {
+       "check": "drawn_after_fill",
+       "status": "pass",
+       "detail": ""
+      }
+     ],
+     "result": "success",
+     "changed_files": [
+      "src/game.py"
+     ],
+     "slot_questions": [],
+     "seconds": 2.827
+    },
+    "provider_calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "tools": [
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 5,
+    "edits_landed": 5,
+    "refused": 0,
+    "playtests": [
+     "passed"
+    ],
+    "gave_up": false,
+    "text": "I changed how the asteroids move: they zigzag across the screen and come back round now. I tested it without a window: it runs, and something moves on its own now."
+   },
+   {
+    "message": "Make the asteroids move faster.",
+    "seconds": 3.41,
+    "route": "recipe",
+    "fastpath": {
+     "route": "recipe",
+     "reason": "confident",
+     "intent": "change_thing_speed",
+     "score": 1.0,
+     "margin": 27.5,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "change_thing_look",
+     "ms": 302,
+     "shape": {
+      "intent": "one",
+      "score": 1.0,
+      "margin": 18.75,
+      "agreement": 1.0,
+      "orderings": 2,
+      "letter_mass": 1.0,
+      "runner_up": "no",
+      "ms": 351
+     },
+     "recipe": "game.change_thing_speed",
+     "verification": [
+      {
+       "check": "value_set",
+       "status": "pass",
+       "detail": "ASTEROID_SPEED = 2"
+      },
+      {
+       "check": "playtest_passes",
+       "status": "pass",
+       "detail": "101 frames"
+      },
+      {
+       "check": "moves_by_itself",
+       "status": "pass",
+       "detail": ""
+      }
+     ],
+     "result": "success",
+     "changed_files": [
+      "src/game.py"
+     ],
+     "slot_questions": [
+      {
+       "question": "Does the message want it to end up faster or slower?",
+       "intent": "up",
+       "score": 1.0,
+       "margin": 26.0,
+       "agreement": 1.0,
+       "orderings": 2,
+       "letter_mass": 1.0,
+       "runner_up": "other",
+       "ms": 347
+      }
+     ],
+     "seconds": 3.41
+    },
+    "provider_calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "tools": [
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 1,
+    "edits_landed": 1,
+    "refused": 0,
+    "playtests": [
+     "passed"
+    ],
+    "gave_up": false,
+    "text": "I raised ASTEROID_SPEED from 1 to 2. I tested it without a window: it runs, and something moves on its own now."
+   }
+  ],
+  "grade": {
+   "routes": [
+    "recipe",
+    "recipe",
+    "recipe"
+   ],
+   "playtest": "passed",
+   "motion": "zigzag",
+   "working": true,
+   "judged": "auto"
+  },
+  "files_sha": "ff47f8c7fb2d902c771b47f8b95ba2b9cba9305e0b1a1ec91bdf353883c1a74e"
+ },
+ {
+  "id": "CG2",
+  "profile": "games",
+  "messages": [
+   "Make a game where a spaceship moves around and avoids asteroids.",
+   "can the asteroids bounce around instead"
+  ],
+  "source": "known-1",
+  "arm": "fast",
+  "turns": [
+   {
+    "message": "Make a game where a spaceship moves around and avoids asteroids.",
+    "seconds": 4.04,
+    "route": "recipe",
+    "fastpath": {
+     "route": "recipe",
+     "reason": "confident, whole game",
+     "intent": "make_avoid_game",
+     "score": 0.9983,
+     "margin": 16.5,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "add_enemy",
+     "ms": 1855,
+     "recipe": "game.make_avoid_game",
+     "verification": [
+      {
+       "check": "playtest_passes",
+       "status": "pass",
+       "detail": "100 frames"
+      },
+      {
+       "check": "moves_by_itself",
+       "status": "pass",
+       "detail": ""
+      },
+      {
+       "check": "drawn_after_fill",
+       "status": "pass",
+       "detail": ""
+      }
+     ],
+     "result": "success",
+     "changed_files": [
+      "src/game.py"
+     ],
+     "slot_questions": [],
+     "seconds": 4.042
+    },
+    "provider_calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "tools": [
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 5,
+    "edits_landed": 5,
+    "refused": 0,
+    "playtests": [
+     "passed"
+    ],
+    "gave_up": false,
+    "text": "I made it a dodging game: five asteroids that float across in a wave and come back round. If one touches the player, the player goes back to the middle. The player is drawn as a little ship now. I tested it without a window: it runs, and something moves on its own now."
+   },
+   {
+    "message": "can the asteroids bounce around instead",
+    "seconds": 2.91,
+    "route": "recipe",
+    "fastpath": {
+     "route": "recipe",
+     "reason": "confident",
+     "intent": "change_thing_motion",
+     "score": 1.0,
+     "margin": 19.25,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "add_moving_thing",
+     "ms": 305,
+     "shape": {
+      "intent": "one",
+      "score": 0.9997,
+      "margin": 7.5,
+      "agreement": 1.0,
+      "orderings": 2,
+      "letter_mass": 1.0,
+      "runner_up": "no",
+      "ms": 347
+     },
+     "recipe": "game.change_thing_motion",
+     "verification": [
+      {
+       "check": "motion_set",
+       "status": "pass",
+       "detail": "ASTEROID: bounce"
+      },
+      {
+       "check": "playtest_passes",
+       "status": "pass",
+       "detail": "101 frames"
+      },
+      {
+       "check": "moves_by_itself",
+       "status": "pass",
+       "detail": ""
+      },
+      {
+       "check": "drawn_after_fill",
+       "status": "pass",
+       "detail": ""
+      }
+     ],
+     "result": "success",
+     "changed_files": [
+      "src/game.py"
+     ],
+     "slot_questions": [],
+     "seconds": 2.908
+    },
+    "provider_calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "tools": [
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 4,
+    "edits_landed": 4,
+    "refused": 0,
+    "playtests": [
+     "passed"
+    ],
+    "gave_up": false,
+    "text": "I changed how the asteroids move: they bounce off the edges now. I tested it without a window: it runs, and something moves on its own now."
+   }
+  ],
+  "grade": {
+   "routes": [
+    "recipe",
+    "recipe"
+   ],
+   "playtest": "passed",
+   "motion": "bounce",
+   "working": true,
+   "judged": "auto"
+  },
+  "files_sha": "d46706da13a4688e527e7cc9da2debe836d3d7c9f7c44fe4ccea53a48eb1a21a"
+ },
+ {
+  "id": "CG3",
+  "profile": "games",
+  "messages": [
+   "Add a ball that bounces around the screen.",
+   "make the ball go round in circles"
+  ],
+  "source": "known-1",
+  "arm": "fast",
+  "turns": [
+   {
+    "message": "Add a ball that bounces around the screen.",
+    "seconds": 3.32,
+    "route": "recipe",
+    "fastpath": {
+     "route": "recipe",
+     "reason": "confident",
+     "intent": "add_moving_thing",
+     "score": 1.0,
+     "margin": 28.0,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "add_enemy",
+     "ms": 301,
+     "shape": {
+      "intent": "one",
+      "score": 1.0,
+      "margin": 9.5,
+      "agreement": 1.0,
+      "orderings": 2,
+      "letter_mass": 1.0,
+      "runner_up": "no",
+      "ms": 172
+     },
+     "recipe": "game.add_moving_thing",
+     "verification": [
+      {
+       "check": "playtest_passes",
+       "status": "pass",
+       "detail": "101 frames"
+      },
+      {
+       "check": "moves_by_itself",
+       "status": "pass",
+       "detail": ""
+      },
+      {
+       "check": "drawn_after_fill",
+       "status": "pass",
+       "detail": ""
+      }
+     ],
+     "result": "success",
+     "changed_files": [
+      "src/game.py"
+     ],
+     "slot_questions": [
+      {
+       "question": "How should the new thing move?",
+       "intent": "bounce",
+       "score": 1.0,
+       "margin": 23.75,
+       "agreement": 1.0,
+       "orderings": 2,
+       "letter_mass": 1.0,
+       "runner_up": "other",
+       "ms": 584
+      }
+     ],
+     "seconds": 3.32
+    },
+    "provider_calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "tools": [
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 5,
+    "edits_landed": 5,
+    "refused": 0,
+    "playtests": [
+     "passed"
+    ],
+    "gave_up": false,
+    "text": "I put in a ball that bounces off the edges. BALL_COUNT, BALL_SIZE and BALL_SPEED at the top set how many, how big and how fast. I tested it without a window: it runs, and something moves on its own now."
+   },
+   {
+    "message": "make the ball go round in circles",
+    "seconds": 53.43,
+    "route": "normal",
+    "fastpath": {
+     "route": "normal",
+     "reason": "not one single change",
+     "intent": "change_thing_motion",
+     "score": 0.9507,
+     "margin": 22.75,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 0.9141,
+     "runner_up": "change_thing_speed",
+     "ms": 306,
+     "shape": {
+      "intent": "no",
+      "score": 0.9974,
+      "margin": 17.75,
+      "agreement": 1.0,
+      "orderings": 2,
+      "letter_mass": 1.0,
+      "runner_up": "one",
+      "ms": 175
+     },
+     "seconds": 0.483
+    },
+    "provider_calls": 8,
+    "input_tokens": 29414,
+    "output_tokens": 1076,
+    "tools": [
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 4,
+    "edits_landed": 4,
+    "refused": 0,
+    "playtests": [
+     "crashed",
+     "crashed",
+     "crashed",
+     "crashed"
+    ],
+    "gave_up": true,
+    "text": "I made the change, but when I tested the game it stopped with an error, and I couldn't fix that yet. Tell me what you want to try next, or we can go back to the last version that worked."
+   }
+  ],
+  "grade": {
+   "routes": [
+    "recipe",
+    "normal"
+   ],
+   "playtest": "crashed",
+   "motion": null,
+   "working": false,
+   "judged": "auto"
+  },
+  "files_sha": "17867394d8e8630f537b0e1b0825cca7e7e0cb10f3f73016db2c7f4de3e8a0ed"
+ },
+ {
+  "id": "CG4",
+  "profile": "games",
+  "messages": [
+   "Call my game Space Rocks."
+  ],
+  "source": "regression",
+  "arm": "fast",
+  "turns": [
+   {
+    "message": "Call my game Space Rocks.",
+    "seconds": 3.03,
+    "route": "recipe",
+    "fastpath": {
+     "route": "recipe",
+     "reason": "confident",
+     "intent": "set_title",
+     "score": 1.0,
+     "margin": 29.5,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "change_background",
+     "ms": 285,
+     "shape": {
+      "intent": "one",
+      "score": 1.0,
+      "margin": 24.25,
+      "agreement": 1.0,
+      "orderings": 2,
+      "letter_mass": 1.0,
+      "runner_up": "no",
+      "ms": 346
+     },
+     "recipe": "game.set_title",
+     "verification": [
+      {
+       "check": "caption_set",
+       "status": "pass",
+       "detail": "Space Rocks"
+      },
+      {
+       "check": "playtest_passes",
+       "status": "pass",
+       "detail": "101 frames"
+      }
+     ],
+     "result": "success",
+     "changed_files": [
+      "src/game.py"
+     ],
+     "slot_questions": [],
+     "seconds": 3.023
+    },
+    "provider_calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "tools": [
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/game.py"
+      ],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 1,
+    "edits_landed": 1,
+    "refused": 0,
+    "playtests": [
+     "passed"
+    ],
+    "gave_up": false,
+    "text": "The game window is called \"Space Rocks\" now. You will see it at the top of the window when you press Run Game. I tested it without a window, and it runs."
+   }
+  ],
+  "grade": {
+   "routes": [
+    "recipe"
+   ],
+   "playtest": "passed",
+   "motion": null,
+   "working": true,
+   "judged": "auto"
+  },
+  "files_sha": "a1950738915192cafb54a3aaedbfe644a25b5e01e54a57a95ccd7a404ef741dd"
+ },
+ {
+  "id": "CW1",
+  "profile": "website",
+  "messages": [
+   "change the footer to say Made by Maya"
+  ],
+  "source": "gap",
+  "arm": "fast",
+  "turns": [
+   {
+    "message": "change the footer to say Made by Maya",
+    "seconds": 1.32,
+    "route": "recipe",
+    "fastpath": {
+     "route": "recipe",
+     "reason": "confident",
+     "intent": "change_text",
+     "score": 1.0,
+     "margin": 30.5,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "add_section",
+     "ms": 1139,
+     "shape": {
+      "intent": "one",
+      "score": 1.0,
+      "margin": 11.0,
+      "agreement": 1.0,
+      "orderings": 2,
+      "letter_mass": 1.0,
+      "runner_up": "no",
+      "ms": 172
+     },
+     "recipe": "website.change_text",
+     "verification": [
+      {
+       "check": "html_balanced",
+       "status": "pass",
+       "detail": ""
+      },
+      {
+       "check": "added_present",
+       "status": "pass",
+       "detail": ""
+      },
+      {
+       "check": "links_resolve",
+       "status": "pass",
+       "detail": ""
+      }
+     ],
+     "result": "success",
+     "changed_files": [
+      "src/index.html"
+     ],
+     "slot_questions": [],
+     "seconds": 1.316
+    },
+    "provider_calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "tools": [
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/index.html"
+      ],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 1,
+    "edits_landed": 1,
+    "refused": 0,
+    "playtests": [],
+    "gave_up": false,
+    "text": "Now the footer says \u201cMade by Maya\u201d -- it said \u201cMade with Open Nest.\u201d. I checked the files: every tag is closed and every link goes somewhere real. I can't see the page myself, so press Preview Website and have a look."
+   }
+  ],
+  "grade": {
+   "routes": [
+    "recipe"
+   ],
+   "working": true,
+   "balanced": true,
+   "judged": "auto"
+  },
+  "files_sha": "e797a998a8bf2dbb4c4d95fc6c3ebb4a2494988bd83c1a74548b88820474c02f"
+ },
+ {
+  "id": "CW2",
+  "profile": "website",
+  "messages": [
+   "make the tagline say I love skateboarding"
+  ],
+  "source": "gap",
+  "arm": "fast",
+  "turns": [
+   {
+    "message": "make the tagline say I love skateboarding",
+    "seconds": 0.44,
+    "route": "recipe",
+    "fastpath": {
+     "route": "recipe",
+     "reason": "confident",
+     "intent": "change_text",
+     "score": 1.0,
+     "margin": 27.38,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "change_heading",
+     "ms": 265,
+     "shape": {
+      "intent": "one",
+      "score": 0.9988,
+      "margin": 6.0,
+      "agreement": 1.0,
+      "orderings": 2,
+      "letter_mass": 1.0,
+      "runner_up": "no",
+      "ms": 173
+     },
+     "recipe": "website.change_text",
+     "verification": [
+      {
+       "check": "html_balanced",
+       "status": "pass",
+       "detail": ""
+      },
+      {
+       "check": "added_present",
+       "status": "pass",
+       "detail": ""
+      },
+      {
+       "check": "links_resolve",
+       "status": "pass",
+       "detail": ""
+      }
+     ],
+     "result": "success",
+     "changed_files": [
+      "src/index.html"
+     ],
+     "slot_questions": [],
+     "seconds": 0.44
+    },
+    "provider_calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "tools": [
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/index.html"
+      ],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 1,
+    "edits_landed": 1,
+    "refused": 0,
+    "playtests": [],
+    "gave_up": false,
+    "text": "Now the line under the headline says \u201cI love skateboarding\u201d -- it said \u201cI made this.\u201d. I checked the files: every tag is closed and every link goes somewhere real. I can't see the page myself, so press Preview Website and have a look."
+   }
+  ],
+  "grade": {
+   "routes": [
+    "recipe"
+   ],
+   "working": true,
+   "balanced": true,
+   "judged": "auto"
+  },
+  "files_sha": "06bf373b7c6f8099ea43479572f0448f1d2065b08680c21abe009302e9719dce"
+ },
+ {
+  "id": "CW3",
+  "profile": "website",
+  "messages": [
+   "add a card about my hamster"
+  ],
+  "source": "regression",
+  "arm": "fast",
+  "turns": [
+   {
+    "message": "add a card about my hamster",
+    "seconds": 8.96,
+    "route": "normal",
+    "fastpath": {
+     "route": "normal",
+     "reason": "not one single change",
+     "intent": "add_card",
+     "score": 1.0,
+     "margin": 31.88,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "add_button",
+     "ms": 265,
+     "shape": {
+      "intent": "no",
+      "score": 0.509,
+      "margin": 18.75,
+      "agreement": 0.5,
+      "orderings": 2,
+      "letter_mass": 1.0,
+      "runner_up": "one",
+      "ms": 172
+     },
+     "seconds": 0.438
+    },
+    "provider_calls": 2,
+    "input_tokens": 4332,
+    "output_tokens": 251,
+    "tools": [
+     {
+      "name": "write_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/assets/hamster-card.html"
+      ],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 0,
+    "edits_landed": 1,
+    "refused": 0,
+    "playtests": [],
+    "gave_up": false,
+    "text": "I added a hamster card in src/assets/hamster-card.html. It has Whiskers, a red hamster who loves cheese and tunnels.  \n\nThe card includes an image placeholder for whiskers.jpg. The child should add the image file to src/assets/ if they have it.  \n\nTo see it, go to the website and look for a section where the card can be displayed. They can add it to the page using HTML.  \n\nLook for the card in the assets folder."
+   }
+  ],
+  "grade": {
+   "routes": [
+    "normal"
+   ],
+   "working": false,
+   "balanced": true,
+   "judged": "auto"
+  },
+  "files_sha": "d5906153b8f80761ca40162b357175f9e600d5c60d1881bea29cbb1c0a6c0c82"
+ },
+ {
+  "id": "CW4",
+  "profile": "website",
+  "messages": [
+   "add a section about my favourite films"
+  ],
+  "source": "regression",
+  "arm": "fast",
+  "turns": [
+   {
+    "message": "add a section about my favourite films",
+    "seconds": 23.2,
+    "route": "normal",
+    "fastpath": {
+     "route": "normal",
+     "reason": "not one single change",
+     "intent": "add_section",
+     "score": 1.0,
+     "margin": 33.25,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "change_text",
+     "ms": 268,
+     "shape": {
+      "intent": "no",
+      "score": 0.9088,
+      "margin": 21.75,
+      "agreement": 1.0,
+      "orderings": 2,
+      "letter_mass": 0.9526,
+      "runner_up": "one",
+      "ms": 173
+     },
+     "seconds": 0.442
+    },
+    "provider_calls": 4,
+    "input_tokens": 10645,
+    "output_tokens": 724,
+    "tools": [
+     {
+      "name": "edit_file",
+      "ok": false,
+      "reason": "not_found",
+      "changed": [],
+      "recovered": ""
+     },
+     {
+      "name": "read_file",
+      "ok": true,
+      "reason": "",
+      "changed": [],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/index.html"
+      ],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 2,
+    "edits_landed": 1,
+    "refused": 1,
+    "playtests": [],
+    "gave_up": false,
+    "text": "The new \"My Favourite Films\" section is added after the Things section. Look for a new section with h2 \"My Favourite Films\" and a list of films. Press Preview Website to see it."
+   }
+  ],
+  "grade": {
+   "routes": [
+    "normal"
+   ],
+   "working": false,
+   "balanced": true,
+   "judged": "auto"
+  },
+  "files_sha": "76a9b3571fcc715b20de06f8564faa827b587488afe8574e4411758ed76bb5a9"
+ },
+ {
+  "id": "CW5",
+  "profile": "website",
+  "messages": [
+   "make the font comic sans"
+  ],
+  "source": "gap-probe",
+  "arm": "fast",
+  "turns": [
+   {
+    "message": "make the font comic sans",
+    "seconds": 17.51,
+    "route": "normal",
+    "fastpath": {
+     "route": "normal",
+     "reason": "not one single change",
+     "intent": "change_font_size",
+     "score": 0.9998,
+     "margin": 20.75,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "other",
+     "ms": 269,
+     "shape": {
+      "intent": "no",
+      "score": 0.75,
+      "margin": 26.75,
+      "agreement": 1.0,
+      "orderings": 2,
+      "letter_mass": 0.9447,
+      "runner_up": "one",
+      "ms": 346
+     },
+     "seconds": 0.789
+    },
+    "provider_calls": 4,
+    "input_tokens": 10965,
+    "output_tokens": 227,
+    "tools": [
+     {
+      "name": "edit_file",
+      "ok": false,
+      "reason": "not_found",
+      "changed": [],
+      "recovered": ""
+     },
+     {
+      "name": "read_file",
+      "ok": true,
+      "reason": "",
+      "changed": [],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/styles.css"
+      ],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 2,
+    "edits_landed": 1,
+    "refused": 1,
+    "playtests": [],
+    "gave_up": false,
+    "text": "The font is now Comic Sans. Look for the text to appear in a playful, cursive style. Press Preview Website to see it."
+   }
+  ],
+  "grade": {
+   "routes": [
+    "normal"
+   ],
+   "working": true,
+   "balanced": true,
+   "judged": "auto"
+  },
+  "files_sha": "dee59240f12e8b71b0463fc02d1b53df6a807b82994c28c1b231af370d0a398c"
+ },
+ {
+  "id": "CR1",
+  "profile": "research",
+  "messages": [
+   "Graph this and tell me what changed the most."
+  ],
+  "source": "known-3",
+  "arm": "fast",
+  "turns": [
+   {
+    "message": "Graph this and tell me what changed the most.",
+    "seconds": 9.26,
+    "route": "recipe",
+    "fastpath": {
+     "route": "recipe",
+     "reason": "two parts, and one recipe draws the chart the other asks for",
+     "compound": {
+      "covered": "Graph this",
+      "decided": "tell me what changed the most",
+      "shape": {
+       "intent": "one",
+       "score": 1.0,
+       "margin": 21.0,
+       "agreement": 1.0,
+       "orderings": 2,
+       "letter_mass": 1.0,
+       "runner_up": "no",
+       "ms": 348
+      }
+     },
+     "intent": "biggest_change",
+     "score": 1.0,
+     "margin": 26.25,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "group_average",
+     "ms": 269,
+     "shape": {
+      "intent": "one",
+      "score": 0.505,
+      "margin": 4.25,
+      "agreement": 0.5,
+      "orderings": 2,
+      "letter_mass": 1.0,
+      "runner_up": "no",
+      "ms": 175
+     },
+     "recipe": "analysis.biggest_change",
+     "verification": [
+      {
+       "check": "runs_clean",
+       "status": "pass",
+       "detail": ""
+      },
+      {
+       "check": "chart_written",
+       "status": "pass",
+       "detail": "charts/water_ml_change_by_plant.png"
+      },
+      {
+       "check": "printed_result",
+       "status": "pass",
+       "detail": "How much water_ml changed from the first day to the last:"
+      }
+     ],
+     "result": "success",
+     "changed_files": [
+      "src/analysis.py"
+     ],
+     "slot_questions": [
+      {
+       "question": "Which number might have changed?",
+       "intent": "water_ml",
+       "score": 0.8177,
+       "margin": 1.0,
+       "agreement": 1.0,
+       "orderings": 2,
+       "letter_mass": 1.0,
+       "runner_up": "other",
+       "ms": 348
+      }
+     ],
+     "seconds": 9.261
+    },
+    "provider_calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "tools": [
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/analysis.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "run_project",
+      "ok": true,
+      "reason": "",
+      "changed": [],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 1,
+    "edits_landed": 1,
+    "refused": 0,
+    "playtests": [],
+    "gave_up": false,
+    "text": "The analysis works out how much water_ml changed for each plant now, and draws it in charts/water_ml_change_by_plant.png.\n\nI ran it, and it printed:\n\n    How much water_ml changed from the first day to the last:\n    plant\n    Fern     20\n    Basil    10\n    Bean     10\n    Mint    -20\n    The biggest change was Fern: +20.00"
+   }
+  ],
+  "grade": {
+   "routes": [
+    "recipe"
+   ],
+   "exit": 0,
+   "charts": [
+    "chart.png",
+    "water_ml_change_by_plant.png"
+   ],
+   "judged": "auto",
+   "working": true
+  },
+  "files_sha": "afa6314161ad7960982b56282dcda89f8c9ada97150df843113f392d62830608"
+ },
+ {
+  "id": "CR3",
+  "profile": "research",
+  "messages": [
+   "find the windiest day and print it"
+  ],
+  "source": "veto",
+  "arm": "fast",
+  "turns": [
+   {
+    "message": "find the windiest day and print it",
+    "seconds": 15.27,
+    "route": "normal",
+    "fastpath": {
+     "route": "normal",
+     "reason": "the message does not say what that recipe is about",
+     "intent": "biggest_change",
+     "score": 0.9999,
+     "margin": 8.75,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "change_printout",
+     "ms": 294,
+     "seconds": 0.295
+    },
+    "provider_calls": 2,
+    "input_tokens": 9442,
+    "output_tokens": 128,
+    "tools": [
+     {
+      "name": "read_file",
+      "ok": true,
+      "reason": "",
+      "changed": [],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 0,
+    "edits_landed": 0,
+    "refused": 0,
+    "playtests": [],
+    "gave_up": false,
+    "text": "I found the windiest day. The highest wind speed is 28.9 kph on 2026-04-04 in Oslo. That's the windiest day in the dataset.  \nI'll update the analysis to show this.  \nThe windiest day is 2026-04-04 with 28.9 kph wind in Oslo."
+   }
+  ],
+  "grade": {
+   "routes": [
+    "normal"
+   ],
+   "exit": 0,
+   "charts": [
+    "chart.png"
+   ],
+   "judged": "auto",
+   "working": true,
+   "note": "safe = no wrong recipe; whether Gary's answer is right is read by hand"
+  },
+  "files_sha": "1a7081d715ffec256472c7132cb48dca830e9814ce3cb9025544d164294b6d68"
+ },
+ {
+  "id": "CR4",
+  "profile": "research",
+  "messages": [
+   "make a line graph of how tall each plant got every day"
+  ],
+  "source": "regression",
+  "arm": "fast",
+  "turns": [
+   {
+    "message": "make a line graph of how tall each plant got every day",
+    "seconds": 6.98,
+    "route": "recipe",
+    "fastpath": {
+     "route": "recipe",
+     "reason": "confident",
+     "intent": "line_chart",
+     "score": 1.0,
+     "margin": 22.25,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "scatter_plot",
+     "ms": 291,
+     "shape": {
+      "intent": "one",
+      "score": 0.9999,
+      "margin": 9.0,
+      "agreement": 1.0,
+      "orderings": 2,
+      "letter_mass": 1.0,
+      "runner_up": "no",
+      "ms": 175
+     },
+     "recipe": "analysis.line_chart",
+     "verification": [
+      {
+       "check": "runs_clean",
+       "status": "pass",
+       "detail": ""
+      },
+      {
+       "check": "chart_written",
+       "status": "pass",
+       "detail": "charts/height_cm_over_day.png"
+      },
+      {
+       "check": "printed_result",
+       "status": "pass",
+       "detail": "The last height_cm for each plant:"
+      }
+     ],
+     "result": "success",
+     "changed_files": [
+      "src/analysis.py"
+     ],
+     "slot_questions": [],
+     "seconds": 6.978
+    },
+    "provider_calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "tools": [
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/analysis.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "run_project",
+      "ok": true,
+      "reason": "",
+      "changed": [],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 1,
+    "edits_landed": 1,
+    "refused": 0,
+    "playtests": [],
+    "gave_up": false,
+    "text": "There is a line chart of height_cm over day, one line for each plant now, in charts/height_cm_over_day.png.\n\nI ran it, and it printed:\n\n    The last height_cm for each plant:\n    plant\n    Bean     35.6\n    Basil    25.3\n    Mint     18.7\n    Fern     10.3"
+   }
+  ],
+  "grade": {
+   "routes": [
+    "recipe"
+   ],
+   "exit": 0,
+   "charts": [
+    "chart.png",
+    "height_cm_over_day.png"
+   ],
+   "judged": "auto",
+   "working": true
+  },
+  "files_sha": "b0180e4510d217f3c479c5b78251e1c2e5d3d74a0f51cf43f58dd5661969dbf3"
+ },
+ {
+  "id": "CA1",
+  "profile": "arduino",
+  "messages": [
+   "add a button on pin 2 that turns the light on when i press it"
+  ],
+  "source": "known-2",
+  "arm": "fast",
+  "turns": [
+   {
+    "message": "add a button on pin 2 that turns the light on when i press it",
+    "seconds": 3.17,
+    "route": "recipe",
+    "fastpath": {
+     "route": "recipe",
+     "reason": "confident",
+     "intent": "add_button",
+     "score": 1.0,
+     "margin": 19.5,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "read_sensor",
+     "ms": 1018,
+     "shape": {
+      "intent": "one",
+      "score": 0.993,
+      "margin": 4.25,
+      "agreement": 1.0,
+      "orderings": 2,
+      "letter_mass": 1.0,
+      "runner_up": "no",
+      "ms": 172
+     },
+     "recipe": "arduino.add_button",
+     "verification": [
+      {
+       "check": "added_present",
+       "status": "pass",
+       "detail": ""
+      },
+      {
+       "check": "wiring_noted",
+       "status": "pass",
+       "detail": "pin 2"
+      },
+      {
+       "check": "compiles",
+       "status": "pass",
+       "detail": "arduino:avr:uno"
+      }
+     ],
+     "result": "success",
+     "changed_files": [
+      "src/project/project.ino",
+      "src/project/wiring.md"
+     ],
+     "slot_questions": [],
+     "seconds": 3.167
+    },
+    "provider_calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "tools": [
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/project/project.ino"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/project/project.ino"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/project/project.ino"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/project/wiring.md"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "compile_project",
+      "ok": true,
+      "reason": "",
+      "changed": [],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 4,
+    "edits_landed": 4,
+    "refused": 0,
+    "playtests": [],
+    "gave_up": false,
+    "text": "Pin 2 is the button now -- the light is on while you hold it down and off when you let go. One leg to the pin, one to GND, as wiring.md says. I compiled it and it compiles cleanly."
+   }
+  ],
+  "grade": {
+   "routes": [
+    "recipe"
+   ],
+   "compiled": true,
+   "working": true,
+   "judged": "auto"
+  },
+  "files_sha": "25bfc3e36024d75ff3af53e1a4dc85c2e1353c715a8543ee86f0aedf9e5f3168"
+ },
+ {
+  "id": "CA2",
+  "profile": "arduino",
+  "messages": [
+   "add a button on pin 3 so each press turns the light on and off"
+  ],
+  "source": "known-2",
+  "arm": "fast",
+  "turns": [
+   {
+    "message": "add a button on pin 3 so each press turns the light on and off",
+    "seconds": 1.71,
+    "route": "recipe",
+    "fastpath": {
+     "route": "recipe",
+     "reason": "confident",
+     "intent": "add_button",
+     "score": 1.0,
+     "margin": 23.25,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "read_sensor",
+     "ms": 291,
+     "shape": {
+      "intent": "one",
+      "score": 0.9992,
+      "margin": 6.5,
+      "agreement": 1.0,
+      "orderings": 2,
+      "letter_mass": 1.0,
+      "runner_up": "no",
+      "ms": 172
+     },
+     "recipe": "arduino.add_button",
+     "verification": [
+      {
+       "check": "added_present",
+       "status": "pass",
+       "detail": ""
+      },
+      {
+       "check": "wiring_noted",
+       "status": "pass",
+       "detail": "pin 3"
+      },
+      {
+       "check": "compiles",
+       "status": "pass",
+       "detail": "arduino:avr:uno"
+      }
+     ],
+     "result": "success",
+     "changed_files": [
+      "src/project/project.ino",
+      "src/project/wiring.md"
+     ],
+     "slot_questions": [],
+     "seconds": 1.708
+    },
+    "provider_calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "tools": [
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/project/project.ino"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/project/project.ino"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/project/project.ino"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/project/wiring.md"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "compile_project",
+      "ok": true,
+      "reason": "",
+      "changed": [],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 4,
+    "edits_landed": 4,
+    "refused": 0,
+    "playtests": [],
+    "gave_up": false,
+    "text": "Pin 3 is the button now -- each press turns the light on, or off again, and it stays that way. One leg to the pin, one to GND, as wiring.md says. I compiled it and it compiles cleanly."
+   }
+  ],
+  "grade": {
+   "routes": [
+    "recipe"
+   ],
+   "compiled": true,
+   "working": true,
+   "judged": "auto"
+  },
+  "files_sha": "4c234b1d4e64856a0a34a060cbed6a9653eb281d4298aeeea84706c825831ba4"
+ },
+ {
+  "id": "CA3",
+  "profile": "arduino",
+  "messages": [
+   "make it blink faster"
+  ],
+  "source": "regression",
+  "arm": "fast",
+  "turns": [
+   {
+    "message": "make it blink faster",
+    "seconds": 1.77,
+    "route": "recipe",
+    "fastpath": {
+     "route": "recipe",
+     "reason": "confident",
+     "intent": "change_blink_speed",
+     "score": 1.0,
+     "margin": 29.0,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "change_blink_pattern",
+     "ms": 165,
+     "shape": {
+      "intent": "one",
+      "score": 1.0,
+      "margin": 11.75,
+      "agreement": 1.0,
+      "orderings": 2,
+      "letter_mass": 1.0,
+      "runner_up": "no",
+      "ms": 96
+     },
+     "recipe": "arduino.change_blink_speed",
+     "verification": [
+      {
+       "check": "value_set",
+       "status": "pass",
+       "detail": ""
+      },
+      {
+       "check": "compiles",
+       "status": "pass",
+       "detail": "arduino:avr:uno"
+      }
+     ],
+     "result": "success",
+     "changed_files": [
+      "src/project/project.ino"
+     ],
+     "slot_questions": [
+      {
+       "question": "Should the light blink faster or slower?",
+       "intent": "faster",
+       "score": 0.9992,
+       "margin": 6.5,
+       "agreement": 1.0,
+       "orderings": 2,
+       "letter_mass": 1.0,
+       "runner_up": "slower",
+       "ms": 269
+      }
+     ],
+     "seconds": 1.765
+    },
+    "provider_calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "tools": [
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/project/project.ino"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "compile_project",
+      "ok": true,
+      "reason": "",
+      "changed": [],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 1,
+    "edits_landed": 1,
+    "refused": 0,
+    "playtests": [],
+    "gave_up": false,
+    "text": "The light is on for 250 ms and off for 250 ms now -- it was 500 and 500. I compiled it and it compiles cleanly."
+   }
+  ],
+  "grade": {
+   "routes": [
+    "recipe"
+   ],
+   "compiled": true,
+   "working": true,
+   "judged": "auto"
+  },
+  "files_sha": "ec32248f2421baaaedeb577cd8fa699422fe7220ad52cf94fb2d807edd0b54b5"
+ },
+ {
+  "id": "CP1",
+  "profile": "raspberry_pi",
+  "messages": [
+   "make it blink 10 times"
+  ],
+  "source": "regression",
+  "arm": "fast",
+  "turns": [
+   {
+    "message": "make it blink 10 times",
+    "seconds": 7.36,
+    "route": "recipe",
+    "fastpath": {
+     "route": "recipe",
+     "reason": "confident",
+     "intent": "change_blink_count",
+     "score": 1.0,
+     "margin": 25.62,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "add_button",
+     "ms": 1024,
+     "shape": {
+      "intent": "one",
+      "score": 0.9992,
+      "margin": 6.5,
+      "agreement": 1.0,
+      "orderings": 2,
+      "letter_mass": 1.0,
+      "runner_up": "no",
+      "ms": 172
+     },
+     "recipe": "pi.change_blink_count",
+     "verification": [
+      {
+       "check": "value_set",
+       "status": "pass",
+       "detail": ""
+      },
+      {
+       "check": "runs_on_mac",
+       "status": "pass",
+       "detail": ""
+      },
+      {
+       "check": "prints_blinks",
+       "status": "pass",
+       "detail": "10 blinks on pin 17"
+      }
+     ],
+     "result": "success",
+     "changed_files": [
+      "src/main.py"
+     ],
+     "slot_questions": [],
+     "seconds": 7.357
+    },
+    "provider_calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "tools": [
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/main.py"
+      ],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 1,
+    "edits_landed": 1,
+    "refused": 0,
+    "playtests": [],
+    "gave_up": false,
+    "text": "I set BLINKS to 10 -- it was 3. I ran it on this Mac with pretend pins, and it printed every blink -- 10 of them. On the Pi it will light the real LED."
+   }
+  ],
+  "grade": {
+   "routes": [
+    "recipe"
+   ],
+   "working": true,
+   "judged": "auto"
+  },
+  "files_sha": "6b1158b8104259ab894d752aa85765c9b05dd930dadd51e7fa76f9553fd44ea0"
+ },
+ {
+  "id": "CP2",
+  "profile": "raspberry_pi",
+  "messages": [
+   "move the led to pin 22"
+  ],
+  "source": "regression",
+  "arm": "fast",
+  "turns": [
+   {
+    "message": "move the led to pin 22",
+    "seconds": 2.35,
+    "route": "recipe",
+    "fastpath": {
+     "route": "recipe",
+     "reason": "confident",
+     "intent": "change_led_pin",
+     "score": 1.0,
+     "margin": 25.0,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "add_button",
+     "ms": 295,
+     "shape": {
+      "intent": "one",
+      "score": 0.998,
+      "margin": 5.5,
+      "agreement": 1.0,
+      "orderings": 2,
+      "letter_mass": 1.0,
+      "runner_up": "no",
+      "ms": 172
+     },
+     "recipe": "pi.change_led_pin",
+     "verification": [
+      {
+       "check": "value_set",
+       "status": "pass",
+       "detail": ""
+      },
+      {
+       "check": "runs_on_mac",
+       "status": "pass",
+       "detail": ""
+      },
+      {
+       "check": "prints_blinks",
+       "status": "pass",
+       "detail": "3 blinks on pin 22"
+      }
+     ],
+     "result": "success",
+     "changed_files": [
+      "src/main.py"
+     ],
+     "slot_questions": [],
+     "seconds": 2.342
+    },
+    "provider_calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "tools": [
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/main.py"
+      ],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 1,
+    "edits_landed": 1,
+    "refused": 0,
+    "playtests": [],
+    "gave_up": false,
+    "text": "The LED is on BCM pin 22 now, not 17. Move its wire to match before you run it on the Pi. I ran it on this Mac with pretend pins, and it printed every blink -- 3 of them. On the Pi it will light the real LED."
+   }
+  ],
+  "grade": {
+   "routes": [
+    "recipe"
+   ],
+   "working": true,
+   "judged": "auto"
+  },
+  "files_sha": "0b0d519a5e13b121843e2486fa2f5e8087763a3ce9849d24416a501a6138f4ed"
+ },
+ {
+  "id": "CB1",
+  "profile": "blank",
+  "messages": [
+   "change the footer to say Made by Sam"
+  ],
+  "source": "blank",
+  "arm": "fast",
+  "turns": [
+   {
+    "message": "change the footer to say Made by Sam",
+    "seconds": 1.33,
+    "route": "recipe",
+    "fastpath": {
+     "route": "recipe",
+     "reason": "confident",
+     "family": "website",
+     "family_reason": "its files are a website project",
+     "intent": "change_text",
+     "score": 1.0,
+     "margin": 30.25,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "add_section",
+     "ms": 1147,
+     "shape": {
+      "intent": "one",
+      "score": 1.0,
+      "margin": 11.0,
+      "agreement": 1.0,
+      "orderings": 2,
+      "letter_mass": 1.0,
+      "runner_up": "no",
+      "ms": 173
+     },
+     "recipe": "website.change_text",
+     "verification": [
+      {
+       "check": "html_balanced",
+       "status": "pass",
+       "detail": ""
+      },
+      {
+       "check": "added_present",
+       "status": "pass",
+       "detail": ""
+      },
+      {
+       "check": "links_resolve",
+       "status": "pass",
+       "detail": ""
+      }
+     ],
+     "result": "success",
+     "changed_files": [
+      "src/index.html"
+     ],
+     "slot_questions": [],
+     "seconds": 1.323
+    },
+    "provider_calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "tools": [
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/index.html"
+      ],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 1,
+    "edits_landed": 1,
+    "refused": 0,
+    "playtests": [],
+    "gave_up": false,
+    "text": "Now the footer says \u201cMade by Sam\u201d -- it said \u201cMade with Open Nest.\u201d. I checked the files: every tag is closed and every link goes somewhere real. I can't see the page myself, and this project has no preview to open."
+   }
+  ],
+  "grade": {
+   "routes": [
+    "recipe"
+   ],
+   "working": true,
+   "balanced": true,
+   "judged": "auto"
+  },
+  "files_sha": "1647b258789850338a493105a39ad450b23bc526371b5a7b6ac5588ca734be4b"
+ },
+ {
+  "id": "CB2",
+  "profile": "blank",
+  "messages": [
+   "Make the player move faster."
+  ],
+  "source": "blank",
+  "arm": "fast",
+  "turns": [
+   {
+    "message": "Make the player move faster.",
+    "seconds": 48.25,
+    "route": "guide",
+    "fastpath": {
+     "route": "guide",
+     "reason": "confident",
+     "family": "games",
+     "family_reason": "its files are a games project",
+     "intent": "change_player_speed",
+     "score": 1.0,
+     "margin": 26.0,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "change_player_colour",
+     "ms": 1833,
+     "shape": {
+      "intent": "one",
+      "score": 1.0,
+      "margin": 13.25,
+      "agreement": 1.0,
+      "orderings": 2,
+      "letter_mass": 1.0,
+      "runner_up": "no",
+      "ms": 172
+     },
+     "recipe": "game.change_player_speed",
+     "stepped_aside": "this project cannot run the check that change needs",
+     "seconds": 2.007
+    },
+    "provider_calls": 12,
+    "input_tokens": 29400,
+    "output_tokens": 753,
+    "tools": [
+     {
+      "name": "edit_file",
+      "ok": false,
+      "reason": "not_found",
+      "changed": [],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": false,
+      "reason": "not_found",
+      "changed": [],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": false,
+      "reason": "not_found",
+      "changed": [],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": false,
+      "reason": "not_found",
+      "changed": [],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": false,
+      "reason": "not_found",
+      "changed": [],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": false,
+      "reason": "not_found",
+      "changed": [],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": false,
+      "reason": "not_found",
+      "changed": [],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": false,
+      "reason": "not_found",
+      "changed": [],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": false,
+      "reason": "not_found",
+      "changed": [],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": false,
+      "reason": "not_found",
+      "changed": [],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": false,
+      "reason": "not_found",
+      "changed": [],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 11,
+    "edits_landed": 0,
+    "refused": 11,
+    "playtests": [],
+    "gave_up": false,
+    "text": "That turned into more steps than I can do at once. Here is where I got to -- tell me what to try next, or ask for something smaller."
+   }
+  ],
+  "grade": {
+   "routes": [
+    "guide"
+   ],
+   "working": false,
+   "judged": "auto",
+   "note": "Gary, guided: a Blank project has no playtest"
+  },
+  "files_sha": "7d5e77a5218ad513509fdfb35d459df49f99757b7dd34cae78b080c18b298024"
+ },
+ {
+  "id": "CB3",
+  "profile": "blank",
+  "messages": [
+   "work out the average height for each plant"
+  ],
+  "source": "blank",
+  "arm": "fast",
+  "turns": [
+   {
+    "message": "work out the average height for each plant",
+    "seconds": 8.03,
+    "route": "recipe",
+    "fastpath": {
+     "route": "recipe",
+     "reason": "confident",
+     "family": "research",
+     "family_reason": "its files are a research project",
+     "intent": "group_average",
+     "score": 1.0,
+     "margin": 21.25,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "group_count",
+     "ms": 1360,
+     "shape": {
+      "intent": "one",
+      "score": 0.9996,
+      "margin": 7.25,
+      "agreement": 1.0,
+      "orderings": 2,
+      "letter_mass": 1.0,
+      "runner_up": "no",
+      "ms": 175
+     },
+     "recipe": "analysis.group_average",
+     "verification": [
+      {
+       "check": "runs_clean",
+       "status": "pass",
+       "detail": ""
+      },
+      {
+       "check": "printed_result",
+       "status": "pass",
+       "detail": "Average height_cm for each plant:"
+      }
+     ],
+     "result": "success",
+     "changed_files": [
+      "src/main.py"
+     ],
+     "slot_questions": [],
+     "seconds": 8.024
+    },
+    "provider_calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "tools": [
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/main.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "run_project",
+      "ok": true,
+      "reason": "",
+      "changed": [],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 1,
+    "edits_landed": 1,
+    "refused": 0,
+    "playtests": [],
+    "gave_up": false,
+    "text": "The analysis works out the average height_cm for each plant now.\n\nI ran it, and it printed:\n\n    Average height_cm for each plant:\n    plant\n    Bean     19.57\n    Basil    14.07\n    Mint     10.79\n    Fern      6.37"
+   }
+  ],
+  "grade": {
+   "routes": [
+    "recipe"
+   ],
+   "exit": 0,
+   "charts": [
+    "chart.png"
+   ],
+   "judged": "auto",
+   "working": true
+  },
+  "files_sha": "6f431def8a0e210ef06b82ad7ad90abf58a1d011510bfaca497f0974e1aa234c"
+ },
+ {
+  "id": "CB4",
+  "profile": "blank",
+  "messages": [
+   "make it blink faster"
+  ],
+  "source": "blank",
+  "arm": "fast",
+  "turns": [
+   {
+    "message": "make it blink faster",
+    "seconds": 10.56,
+    "route": "guide",
+    "fastpath": {
+     "route": "guide",
+     "reason": "confident",
+     "family": "arduino",
+     "family_reason": "its files are a arduino project",
+     "intent": "change_blink_speed",
+     "score": 1.0,
+     "margin": 27.75,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "add_serial_message",
+     "ms": 903,
+     "shape": {
+      "intent": "one",
+      "score": 0.9684,
+      "margin": 2.75,
+      "agreement": 1.0,
+      "orderings": 2,
+      "letter_mass": 1.0,
+      "runner_up": "no",
+      "ms": 95
+     },
+     "recipe": "arduino.change_blink_speed",
+     "stepped_aside": "this project cannot run the check that change needs",
+     "seconds": 0.998
+    },
+    "provider_calls": 3,
+    "input_tokens": 6056,
+    "output_tokens": 168,
+    "tools": [
+     {
+      "name": "read_file",
+      "ok": true,
+      "reason": "",
+      "changed": [],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/blink/blink.ino"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/blink/blink.ino"
+      ],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 2,
+    "edits_landed": 2,
+    "refused": 0,
+    "playtests": [],
+    "gave_up": false,
+    "text": "Both ON and OFF delays are now 100 milliseconds. The blink rate is faster."
+   }
+  ],
+  "grade": {
+   "routes": [
+    "guide"
+   ],
+   "working": true,
+   "judged": "auto",
+   "note": "no compiler in a Blank project"
+  },
+  "files_sha": "244330c5c0067f23fa07fb8624a1c807240c55996752d35110738c838b1452f4"
+ },
+ {
+  "id": "CB5",
+  "profile": "blank",
+  "messages": [
+   "make a little program that tells me a joke"
+  ],
+  "source": "blank",
+  "arm": "fast",
+  "turns": [
+   {
+    "message": "make a little program that tells me a joke",
+    "seconds": 5.82,
+    "route": "normal",
+    "fastpath": {
+     "route": "normal",
+     "reason": "nothing in its files says what kind of project it is yet",
+     "seconds": 0.0
+    },
+    "provider_calls": 2,
+    "input_tokens": 3551,
+    "output_tokens": 117,
+    "tools": [
+     {
+      "name": "write_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/joke.py"
+      ],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 0,
+    "edits_landed": 1,
+    "refused": 0,
+    "playtests": [],
+    "gave_up": false,
+    "text": "I added a joke program. It picks a random joke and prints it."
+   }
+  ],
+  "grade": {
+   "routes": [
+    "normal"
+   ],
+   "working": null,
+   "judged": "by hand"
+  },
+  "files_sha": "b7a946902526777e2e03d9a238f2bf32390fec2492df3e52fa28769ec254c1ad"
+ },
+ {
+  "id": "CR2",
+  "profile": "research",
+  "messages": [
+   "Graph this and tell me what changed the most."
+  ],
+  "source": "known-3",
+  "arm": "fast",
+  "turns": [
+   {
+    "message": "Graph this and tell me what changed the most.",
+    "seconds": 8.76,
+    "route": "recipe",
+    "fastpath": {
+     "route": "recipe",
+     "reason": "two parts, and one recipe draws the chart the other asks for",
+     "compound": {
+      "covered": "Graph this",
+      "decided": "tell me what changed the most",
+      "shape": {
+       "intent": "one",
+       "score": 1.0,
+       "margin": 19.0,
+       "agreement": 1.0,
+       "orderings": 2,
+       "letter_mass": 1.0,
+       "runner_up": "no",
+       "ms": 347
+      }
+     },
+     "intent": "biggest_change",
+     "score": 1.0,
+     "margin": 26.25,
+     "agreement": 1.0,
+     "orderings": 3,
+     "letter_mass": 1.0,
+     "runner_up": "group_average",
+     "ms": 265,
+     "shape": {
+      "intent": "one",
+      "score": 0.5132,
+      "margin": 3.25,
+      "agreement": 0.5,
+      "orderings": 2,
+      "letter_mass": 1.0,
+      "runner_up": "no",
+      "ms": 344
+     },
+     "recipe": "analysis.biggest_change",
+     "verification": [
+      {
+       "check": "runs_clean",
+       "status": "pass",
+       "detail": ""
+      },
+      {
+       "check": "chart_written",
+       "status": "pass",
+       "detail": "charts/change_by_column.png"
+      },
+      {
+       "check": "printed_result",
+       "status": "pass",
+       "detail": "How much each column changed from the first month to the last:"
+      }
+     ],
+     "result": "success",
+     "changed_files": [
+      "src/analysis.py"
+     ],
+     "slot_questions": [],
+     "seconds": 8.754
+    },
+    "provider_calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "tools": [
+     {
+      "name": "edit_file",
+      "ok": true,
+      "reason": "",
+      "changed": [
+       "src/analysis.py"
+      ],
+      "recovered": ""
+     },
+     {
+      "name": "run_project",
+      "ok": true,
+      "reason": "",
+      "changed": [],
+      "recovered": ""
+     }
+    ],
+    "edit_attempts": 1,
+    "edits_landed": 1,
+    "refused": 0,
+    "playtests": [],
+    "gave_up": false,
+    "text": "The analysis works out how much each number column changed now, and draws it in charts/change_by_column.png.\n\nI ran it, and it printed:\n\n    How much each column changed from the first month to the last:\n    rainfall_mm       7\n    sunshine_hours   -4\n    The biggest change was rainfall_mm: +7.00"
+   }
+  ],
+  "grade": {
+   "routes": [
+    "recipe"
+   ],
+   "exit": 0,
+   "charts": [
+    "change_by_column.png",
+    "chart.png"
+   ],
+   "judged": "auto",
+   "working": true
+  },
+  "files_sha": "0a75d1fac5da17739b38adb4dd0ed95bcf96488c64fce3cc47793407371c9de5"
+ }
+]

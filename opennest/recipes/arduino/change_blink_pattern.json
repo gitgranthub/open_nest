@@ -1,0 +1,11 @@
+{
+  "id": "arduino.change_blink_pattern",
+  "intent": "change_blink_pattern",
+  "describe": "change the blinking pattern, like SOS or a heartbeat",
+  "requires": [],
+  "op": null,
+  "params": {},
+  "guide": [
+    "Write the pattern as a sequence of digitalWrite and delay() calls in loop(), or as a small function like blinkFor(on, off) that loop() calls. Keep the times as named constants at the top."
+  ]
+}

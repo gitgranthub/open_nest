@@ -1,0 +1,24 @@
+{
+  "id": "analysis.describe_data",
+  "intent": "describe_data",
+  "describe": "say what is in the data: how many rows, which columns, anything missing",
+  "requires": [
+    "table"
+  ],
+  "op": "run_only",
+  "params": {},
+  "guide": [
+    "Run the analysis: it already prints the rows, the columns and any empty cells. Then say what it printed.",
+    "Never state a finding the code has not computed: write code that prints the result, run it, then quote what it printed."
+  ],
+  "verify": [
+    "runs_clean",
+    "printed_result"
+  ],
+  "report": [
+    "I ran the analysis on $table.",
+    "Here is what is in $table.",
+    "I looked through $table with the analysis."
+  ],
+  "teach": "Looking at what is in the data before analysing it is how you catch a missing value or a column you did not expect."
+}

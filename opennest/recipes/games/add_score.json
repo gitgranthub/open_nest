@@ -1,0 +1,26 @@
+{
+  "id": "game.add_score",
+  "intent": "add_score",
+  "describe": "add a score",
+  "requires": [
+    "loop",
+    "fill",
+    "flip"
+  ],
+  "op": "add_score",
+  "params": {
+    "rule": "choose"
+  },
+  "guide": [
+    "Make score = 0 and a font = pygame.font.Font(None, 36) once, above the loop. Draw it every frame after screen.fill with screen.blit(font.render(f\"Score: {score}\", True, colour), (10, 10))."
+  ],
+  "verify": [
+    "playtest_passes"
+  ],
+  "report": [
+    "I added a score in the top left corner. $how",
+    "There is a score in the top left now. $how",
+    "The score shows in the top left corner. $how"
+  ],
+  "teach": "The score is a number the game keeps, and font.render turns it into a picture of text that is drawn every frame."
+}

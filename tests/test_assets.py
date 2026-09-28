@@ -606,8 +606,10 @@ def test_the_agent_pulls_the_model_up_and_it_corrects_itself(project, dropped) -
     asset = assets.import_file(project, source)
     controller, provider = build(project, [
         Reply(text=REPLY_CLAIMED_SIGHT),
+        # No "I put it on screen" here: nothing was changed, so since the pre-13 pass
+        # that sentence is caught as a claim too -- which is right, and not this test.
         Reply(text="I have not seen the picture, so I do not know what it shows. "
-                   "I put it on screen as the player."),
+                   "Tell me what is in it and I can use it."),
     ], model=BLIND)
 
     turn = controller.send("Does the dragon in my picture have wings?", attachments=[asset])

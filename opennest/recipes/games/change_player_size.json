@@ -1,0 +1,34 @@
+{
+  "id": "game.change_player_size",
+  "intent": "change_player_size",
+  "describe": "make the player bigger or smaller",
+  "requires": [
+    "player_size"
+  ],
+  "op": "set_number",
+  "params": {
+    "fact": "player_size",
+    "question": "Does the message want the player to end up bigger or smaller?",
+    "up": "bigger",
+    "down": "smaller",
+    "up_word": "raised",
+    "down_word": "lowered",
+    "factor": 1.5,
+    "min": 8,
+    "max": 240
+  },
+  "guide": [
+    "Find the constant the player's rectangle is built from -- usually PLAYER_SIZE -- and change only that number."
+  ],
+  "verify": [
+    "value_set",
+    "playtest_passes",
+    "player_responds"
+  ],
+  "report": [
+    "I $direction $name from $old to $new, so the player is drawn that many pixels across.",
+    "$name is $new now, from $old. Everything that uses the player's size follows it.",
+    "The player is $new pixels across now -- $name was $old."
+  ],
+  "teach": "The player is a rectangle made from $name, so changing that one number changes its size everywhere it is used."
+}

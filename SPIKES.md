@@ -2719,3 +2719,681 @@ deterministic check was told not to judge.
   question for `Turn`, not a reason to widen this check.
 - **Games only, pygame only.** The Pi test loop is interactive too and has no playtest:
   it is a console program the harness cannot watch.
+
+---
+
+## 25. The Fast Path spike — a classifier on the loaded model, and recipes known to work
+
+Phase 12.3 measured one working game in twenty-four conversations and 12.4 made the
+broken ones visible without making the model build the right one. The owner's next
+experiment (FAST_PATH work order, widened in-session to every project type, with rich
+snippets rather than templates): classify a request with the model already in memory,
+and when it is a known kind of change, make it with a recipe whose result is checked --
+leaving everything else to Gary exactly as before.
+
+Everything below is Qwen3 4B Instruct on the 48 GB M4 Pro unless it says otherwise. The
+drivers were written in `spikes/fastpath/` (gitignored) and are kept in git in
+`benchmarks/fastpath/` (25M); every number is persisted beside them.
+
+### 25A. Scoring a closed question without generating
+
+`MLXProvider.score_choices(system, user, labels)` renders the question, runs one forward
+pass, and returns the log-probability of each option letter at the first answer
+position. Nothing is decoded.
+
+| | |
+|---|---|
+| option letters A-Z | single tokens in the Qwen3 vocabulary |
+| probability mass on the offered letters | 1.000 on every one of 20 probe requests |
+| one question, fixed part cached | ~48 ms |
+| one question, uncached (~250-token prompt) | 0.37 s |
+| model load (already downloaded) | 0.8 s |
+
+Qwen3 8B works through the same call unchanged (it is a thinking model; the pre-closed
+`<think></think>` from `enable_thinking=False` puts the answer letter first).
+
+### 25B. The share is not a confidence. Stability is.
+
+The first probe put **1.000 on the winner for right and wrong answers alike** --
+"Make the enemies scared of the player" went to `add_collision` at 1.000. A 4B instruct
+model is overconfident on a lettered question, so the renormalised share of one ordering
+says nothing. What separated them was asking again with the options reordered:
+
+| | margin (nats, 1st vs 2nd) | same winner in 4 orderings |
+|---|---|---|
+| 16 clear requests | 13-32 | all 16 |
+| "square fall … start again" | 6.5 | no |
+| "enemies scared of the player" | 23.8 | no |
+| "Now make it blue" (no context) | 13.2 | no |
+
+So the classifier asks in three fixed orderings and reports `share` (averaged over
+orderings, **named a normalised score, not a probability**), `agreement` and `margin`.
+"Now make it blue" is resolved by giving the classifier the previous message.
+
+### 25C. The labelled sets
+
+- **First set, 159 requests**: 18 of Phase 12's own requests, 11 from the work order, and
+  130 written by a separate agent that was never shown the categories (26 per project
+  type, deliberately mixed: tweaks, additions, whole-game asks, moods, multi-part asks,
+  questions, follow-ups, pins given and not). Labelled before any classifier run. **Used
+  for tuning** -- everything after 25D was designed while looking at it.
+- **Held-out set, 120 requests**: a second blind agent, a different dataset for Research
+  (weather instead of plants), labelled against the final taxonomy before being run.
+  After its first run, three gate rules were chosen on the first set and then checked on
+  it **once more**; one proposed rule was rejected because of it. 25E reports both looks.
+  **The honest numbers are these.**
+
+### 25D. What went wrong first, and the two fixes
+
+Run as first designed (options only, no facts, no gate) the classifier was confident and
+wrong in ways a recipe would have acted on:
+
+- **Several changes at once** -- "blink 20 times, use pin 23, and add a buzzer" became just
+  the 20 blinks.
+- **Questions** -- "what does empty cells mean" became *run the analysis*.
+- **Not knowing what the project is** -- "make the square go faster" went to the asteroids,
+  because nothing told the model the square is the player.
+- **Changing something that is already there** -- "add a trend line", "sort it biggest to
+  smallest", "change the button to say…" became *add a new one*.
+
+Fixes, each measured:
+
+1. **Known facts in the question** (`kinds.<profile>.brief`): "The player is the orange
+   square, moved with the arrow keys. Nothing else is in the game yet." Put in the
+   variable part of the prompt so the fixed part stays cached.
+2. **A gate before any recipe**: *"Does this message ask for exactly one specific change
+   to the project, and nothing else?"*, yes/no, asked both ways round, must agree with
+   share ≥ 0.8. Among the requests the intent question was confident about (67 right, 18
+   wrong):
+
+   | gate | right let through | wrong stopped |
+   |---|---|---|
+   | none | 67/67 | 0/18 |
+   | four-way "what kind of message is this?" | 15/67 | 16/18 |
+   | "is it several / a question / a mood?" (block on yes) | 9-18/67 | 16-17/18 |
+   | **yes/no "exactly one change?"** | **43/67** | **13/18** |
+
+   The four-way question was badly position-biased (its two orderings disagreed on
+   plain requests like "Make the player bigger"); the blocking questions drew a yes for
+   nearly everything.
+3. **Near-miss options, guidance only**, where the model was measured choosing the wrong
+   recipe for want of a right one: fix a problem; lives/timers/game over; the player's
+   shape; restyle or reorder the page; remove something; restyle an existing chart;
+   change what the analysis prints; buzzers; a Pi second LED; Pi messages. They route
+   to Gary *with* guidance, never to a deterministic edit.
+
+### 25E. Classifier against keyword rules
+
+The work order's section 16 baseline, `spikes/fastpath/lexical.py`: first-match keyword
+rules. Written after reading the first set, so it is flattered there; the held-out set
+is fair to both.
+
+| held-out, 120 requests | intent correct | edits it would make | right | **wrong** |
+|---|---|---|---|---|
+| keyword rules (deterministic intents only) | 80 (67%) | 51 | 21 | **30** |
+| Qwen, facts, no gate | 81 (68%) | 33 | 23 | **10** |
+| Qwen, facts + strict gate (first version) | 81 (68%) | 15 | 15 | **0** |
+| **Qwen, facts + final gate (shipped)** | 81 (68%) | **20** | **19** | **1** |
+
+**The classifier does not buy accuracy. It buys knowing when not to act.** Keyword rules
+would make the wrong edit more often than the right one. The thresholds are flat across
+0.8-0.99 (one extra wrong route at 0.8), so 0.90 stands.
+
+The gate went through two more rounds after the end-to-end run showed it stopping the
+very requests the Fast Path exists for (25G): "Call my game Space Rocks", "Use this
+picture for my spaceship", both whole-game asks. Each change was chosen on the first set
+and then checked **once** on the held-out set, and is reported as that second look:
+
+- **Tweaks get a second question, about themselves.** For a recipe that changes one value
+  (`router.TWEAK_OPS`), a "no" from the general gate is followed by *"Is this message
+  asking for exactly this, and nothing more: <the intent>?"*. A misfired tweak changes one
+  checked value and is one Undo away; an addition keeps the strict gate alone. First set:
+  +4 right, +1 wrong. Held-out: +4 right ("my guy moves like a snail can he go quicker",
+  "let me use wasd too", "theyre way too fast", "do a dozen"), +1 wrong -- "make it blink
+  faster also what does BCM mean and can i have a second light" gets its faster blink and
+  nothing else. Not a wrong edit; an unanswered question.
+- **Whole-game recipes skip the gate and must be near-certain** (share ≥ 0.99 in every
+  ordering). A whole game is several parts by nature and the gate stopped both Phase 12
+  whole-game asks with the intent at 1.00; the one multi-part neighbour measured scored
+  0.94. The held-out set has no whole-game ask that should become a recipe, so this is the
+  least-tested rule here.
+- **An attached picture confirms a picture recipe.** Both gate questions said no to "Use
+  this picture for my spaceship" with the picture attached. The attachment is a fact about
+  this message, so with the intent certain it answers what the gate was guessing at. No
+  labelled request carries an attachment, so neither set can move under this rule.
+- **Rejected, measured:** treating "what changed the most" as whole. The held-out set has
+  "find the windiest day and print it" classified there at 1.00; it would have become a
+  wrong edit.
+
+Where the held-out requests went, final configuration:
+
+| | changes asked for (60) | not a known change (60) |
+|---|---|---|
+| a recipe made it | **18** | 1 acceptable ("undo that, I liked orange better" set orange); **1 partial** (above) |
+| Gary, with the right guidance | 13 | -- |
+| Gary, with misleading guidance | 2 | 2 ("shoot lasers" guided as a moving thing; a quiz as a button) |
+| Gary, as before | 27 | 56 |
+
+**Coverage is still the weak side**: 18 of 60 changes made by a recipe, 13 more guided
+well. Most of the rest have the right intent and are stopped by the gate, which is also
+what keeps wrong edits near zero. The first (tuning) set, same configuration: 44 recipe
+routes right, 2 wrong ("draw a separate little chart for each plant" became one bar
+chart; "can it be faster" after a request about a song changed the blink).
+
+### 25F. Latency and memory
+
+| | |
+|---|---|
+| a decision: intent (3 orderings) + gate (2), warm | 0.44 s (median 441 ms over 159) |
+| a tweak's second gate question, when it is asked | ~0.1 s more (short prefix) |
+| the same, cold for a project type | ~2.1 s, once |
+| with the prefix cache at 4 entries | 2.05 s **every** decision -- five prefixes, four slots, constant thrash |
+| resident prefix cache, 5 prefixes | 302 MB at mlx_lm's 256-token KV step; **210 MB** at a 16-token step (8 entries allowed, so a tweak's second question does not evict the intent prefixes) |
+
+210 MB is held while a project is open and freed by `unload`. On an 8 GB Mac that is real.
+Two levers were measured-for but not pulled: an 8-bit KV cache (about half again) and
+two intent orderings instead of three (one fewer 363-token prefix, a safety question
+this data does not answer).
+
+### 25G. End to end: today's path against the Fast Path
+
+`spikes/fastpath/bench_e2e.py`: the same 44 conversations twice, through the real
+controller, Toolbox, Seatbelt and playtest; the only difference is whether
+`AgentController` has a `FastPathRouter`. Games: every Phase 12 request (12.3, 12.4,
+12.2's sample, DoD 22-30 including the attached spaceship), the work order's creative
+ones, and two mid-build sequences. Website, Research, Arduino and Pi: small **new** sets
+(5-6 each) -- Phase 12 had no benchmark for them, so their numbers are thin.
+
+Graded twice. Automatically where the criterion is objective (the value changed and is
+used; it compiles; it printed every blink; the page is balanced and the link resolves).
+Then **blind**: 44 cases -- every one the automatic grader could not decide, and a sample
+of 12 it had -- anonymised and shuffled for four separate grading agents who were never
+told there were two paths. The blind verdict is used where it exists, for both arms
+alike, and an identical outcome in both arms gets the one verdict. The automatic grader
+agreed with the blind one on 10 of the 12 sampled cases; one disagreement is a real
+recipe fault it missed (below), the other a wording rule it applied too strictly.
+
+| Metric | Current Path | Fast Path |
+|---|---:|---:|
+| Intent correct (classifier) | n/a | 47/50 |
+| **Working result** | **14/44** | **33/44** |
+| Gary truthful (blind-graded) | 12/23 | 20/23 |
+| Avg latency per message | 29.4 s | 9.5 s |
+| **Median latency** | **20.1 s** | **3.2 s** |
+| Generated tokens | 27,147 | 7,407 |
+| Model calls | 249 | 60 |
+| Edits landed / attempted | 53/132 | 94/113 |
+| Tool refusals (retries) | 89 | 20 |
+| Correct refusals (no pin given) | 1/2 | 1/2 |
+| False fast-path routes | n/a | 2/34 |
+| Routes | none 50 | recipe 34, guide 5, normal 11 |
+
+Phase 12's own Games requests alone (18 conversations, 20 messages):
+
+| Metric | Current Path | Fast Path |
+|---|---:|---:|
+| **Working result** | **4/18** | **17/18** |
+| Gary truthful (blind-graded) | 3/11 | 10/10 |
+| Median latency | 20.7 s | 3.1 s |
+| Generated tokens | 12,289 | 324 |
+| Model calls | 109 | 5 |
+| Tool refusals | 39 | 1 |
+
+By project type (working result, current → fast): Games 5/22 → 19/22, Website 2/6 →
+4/6, Research 0/6 → 2/6, Arduino 1/5 → 3/5, Pi 5/5 → 5/5. The per-conversation table is
+`spikes/fastpath/e2e_tables.md`.
+
+**The truthfulness row is the one to read twice.** On today's path Gary described work
+that is not in the files in 11 of the 23 blind-graded conversations: an asteroid that
+"moves" and is reset every frame, a score "at the top of the screen" that is never drawn.
+Every reply a recipe wrote was graded truthful, because it is built from the values the
+operation set and the checks that passed. The three untruthful fast-arm replies are all
+turns the Fast Path had handed to Gary.
+
+**Iteration is where it compounds.** "Dodging game → zigzag them → faster": 57 s and no
+working game today; 9 s, all three turns by recipe, on the Fast Path. "Faster → even faster
+→ bigger": 50 s → 11 s, no model call. A recipe finds what an earlier one made (the
+`ASTEROID_*` naming) and what Gary wrote (it reads the file as it is), and changes only its
+own lines.
+
+**Run 1** (`e2e_run1.json`, before the gate rounds in 25E): Phase 12 Games 14/18 on the
+Fast Path; "Call my game Space Rocks", the attached spaceship and both whole-game asks went
+to Gary through the gate, and he failed all but one of them.
+
+### 25H. Clicked: the Phase 12 app walk, through MainWindow
+
+`spikes/fastpath/app_walk_fastpath.py` runs `spikes/phase12/app_walk.py` unchanged --
+MainWindow now attaches a `FastPathRouter` -- with each turn's record printed. Real
+window (offscreen), real worker thread, real model.
+
+**The first walk found a fault no benchmark had: recipes did not compose.** DoD step 22
+("spaceship … avoids asteroids") ran as a recipe and, because the child said
+*spaceship*, drew the player as a ship. Step 27 ("use this picture for my spaceship") then
+could not find the player's drawing -- it only knew the starter's one-line rectangle --
+and stepped aside to Gary, who described the picture as "the one with the white glow".
+The player's drawing is now whatever `pygame.draw` statement draws the player's rect,
+however many lines it spans, and the picture replaces that whole statement. A test pins
+the exact sequence. (The invented "white glow" is Gary's path and a gap in the existing
+`invented_description` check, not the Fast Path; recorded separately.)
+
+Second walk: **40 / 41**. Steps 22, 27 and 29 all by recipe, each checked; Undo restored
+the previous version; Gary said he had not seen the picture. The one failure is step 34:
+"Graph this and tell me what changed the most" went to Gary through the gate -- the
+model reads "graph this *and* tell me" as two things -- and he ran out of calls. Known
+failure 3 below.
+
+
+### 25I. Faults the spike found in itself
+
+- `kind_for` imported all five project modules at once, so before four existed every
+  Games turn failed into the fallback. The fallback worked -- the turn went to Gary, the
+  failure was recorded -- which is the point of it.
+- **The drawings were rewritten to start with `x, y = thing.center`, and the
+  drawn-after-fill check still expected the draw call on the loop's first line.** Every
+  add-a-thing recipe then failed its own check and rolled back. Found by the unit tests,
+  not the earlier live runs, which predated the rewrite.
+- **A rolled-back recipe left its playtest in the turn**, so the repair loop saw Gary's
+  unchanged game as crashed and pushed him three times. Only a recipe that succeeded now
+  leaves a playtest behind.
+- Four slot-parsing faults caught by reading the smoke output, not by a test: an
+  apostrophe cut a quoted title short, "about my dog" lost "my", a button's message
+  swallowed "when you press it", and "set ON_MILLISECONDS to 100" changed both times.
+- **Recipes did not compose** (25H): one recipe's ship stopped the next recipe's picture.
+  Found only by clicking.
+- **A detail question was confidently wrong.** "Make the background dark blue" reached the
+  colour recipe, and "which part should change colour?" answered *the cards* at 0.99; the
+  cards went dark blue. The child's own word for the part ("background", "cards",
+  "writing") now decides it before any question -- the literal-words-first rule the slots
+  were meant to follow and this one did not.
+- **Guidance can break code.** The restyle-chart guidance named `numpy.polyfit` without
+  saying to import numpy; Gary followed it and the analysis crashed. Caught by the blind
+  grader, not a check.
+
+### 25J. Known failure cases
+
+1. **"Make the asteroids zigzag instead of going straight"** became *change their speed*:
+   there is no "change how an existing thing moves" option, so the model took the nearest.
+   The reply was truthful ("I raised ASTEROID_SPEED from 2 to 3"). Fix: a
+   `change_thing_motion` recipe that rewrites an existing group's move code. Not done
+   here because adding an option moves every letter and means re-running both
+   classification benchmarks (~30 minutes of model time) -- a maintenance cost in itself.
+2. **"Add a button on pin 2 that turns the light on when I press it"** got a light that
+   *blinks* while the button is held. The recipe's behaviour is fixed; it needs an
+   "on while held / blink while held / toggle" choice.
+3. **DoD 33-34, "Graph this and tell me what changed the most"**: the gate reads it as two
+   things, Gary then runs out of calls. The recipe does both halves; no gate change found
+   that admits it without also admitting "find the windiest day" (25E).
+4. **Coverage**: 18 of 60 held-out changes made by a recipe. The gate stops most of the
+   rest with the right intent.
+5. **"Make the square fall …"** (Phase 12.4's c4): the intent wavers between "the player
+   moves by itself" and "add a moving thing", so it is guided, and Gary still fails it.
+6. **"Add another LED"** (no pin): the right answer is to ask. The recipe would ask, via
+   `NeedsAnswer`; routing never reached it, and Gary did not ask on either path.
+7. **Misleading guidance**: 4 of 120 held-out requests were guided with the wrong recipe
+   ("shoot lasers" as a moving thing). Guidance is weaker than a recipe but not harmless
+   -- 25I's numpy case.
+8. **Seventeen deterministic recipes never ran end to end with the model** -- colours,
+   collisions, controls, player motion, three chart kinds, sections, cards, images, the
+   Arduino LED and serial, the Pi pin. They ran in the smoke drivers with a stubbed
+   chooser (every one through the real playtest, compile or run), not through a real
+   conversation.
+
+### 25K. What this does not establish
+
+- **One model, one Mac.** Qwen3 4B on 48 GB. The scorer was run on Qwen3 8B (20 probe
+  requests); nothing else. The 8 GB question is sharper now: +210 MB resident.
+- **Small samples outside Games**: 5-6 conversations per project type end to end.
+- **Blind grading is not noise-free**: one pair of identical outcomes got different
+  truthfulness verdicts before identical outcomes were made to share one.
+- **Labels are one person's.** The request sets were written blind to the categories;
+  the gold labels were not written blind to the recipes.
+- **No child has used it.** Everything here is a driver typing Phase 12's words.
+- **Maintenance**: ~5,300 lines (with docstrings) and 62 recipes, 39 deterministic.
+  Every change to the option list is a behaviour change to re-measure.
+
+### 25L. Final state, and where the measurements live
+
+*The state at the end of the spike. The closure pass after it (25M) changed the recipe
+count, the UI walk (41/41), where the files live (`benchmarks/fastpath/`) and three of
+the known failures below; read 25M for the current state.*
+
+**The Fast Path is implemented and worth keeping.** It is attached in MainWindow, falls
+back to Gary on every uncertainty, and on the measurements above it is better on every
+axis the work order named. The next work is refinement of it -- chiefly the one-change
+gate -- **not** a replacement of the architecture.
+
+| | |
+|---|---|
+| Games, Phase 12's own requests, working | **4/18 → 17/18** |
+| all 44 conversations, five project types, working | **14/44 → 33/44** |
+| median seconds per message, all 44 | **20.1 → 3.2** |
+| classifier intent accuracy, held-out | 68% -- about keyword level (67%). Its value is the gate: knowing when to defer (keyword rules: 30 wrong edits of 51; final gate: 1 partial of 20) |
+| real UI walk (Phase 12 app walk, unchanged, through MainWindow) | **40/41** -- the remaining miss is the compound Research request (DoD 33-34) |
+| scoring cache, resident while a project is open | **~210 MB** (5 prefixes measured; up to 8 entries at a 16-token KV step) |
+| coverage bottleneck | the one-change gate: 18 of 60 held-out change requests take a recipe |
+| known missing cases | motion-pattern changes ("zigzag instead"), button behaviour ("turns the light on" gets a blink), the compound Research request |
+| evidence outside Games | **evidence outside Games is thinner**: 5-6 end-to-end conversations per project type, against 22 for Games |
+| second classifier model | **none added** -- no Open-Jev, no tiny classifier, no second model process. Every question is answered by the model Gary already has loaded |
+
+Recipes, 62 in all -- **39 deterministic, 23 guidance-only**:
+
+| project type | recipes | deterministic | guidance-only |
+|---|---:|---:|---:|
+| games | 21 | 17 | 4 |
+| website | 11 | 7 | 4 |
+| research | 11 | 8 | 3 |
+| arduino | 9 | 4 | 5 |
+| raspberry_pi | 10 | 3 | 7 |
+
+**Where the measurements live.** `spikes/` is gitignored, so none of the drivers or result
+files below are in git or on GitHub: they exist only in the working copy on the
+measuring Mac, `spikes/fastpath/`. The authoritative files:
+
+| file | what it is |
+|---|---|
+| `e2e.json` | **the final end-to-end run** (25G), both arms, every turn persisted |
+| `e2e_tables.md` | the tables in 25G, generated from `e2e.json` + the blind grades |
+| `blind/blind_grades.json`, `blind/blind_key.json` | the blind verdicts and which case was which arm; `blind/blind_batch_*.json` are exactly what the graders saw, `blind/blind_brief.md` their instructions |
+| `decide_dev3.json`, `decide_heldout2.json` | the final decision benchmarks (25D-25E), with `gate4_decide_*.json` holding the gate-variant answers the final gate was chosen from |
+| `labels.json`, `labels_heldout.json` | the gold labels; `independent_requests.json`, `heldout_requests.json` the two request sets as the blind agents wrote them |
+| `log_app_walk.txt` | **the final UI walk**, 40/41 (25H) |
+
+Superseded, kept for the record and not to be quoted: `e2e_run1.json` (before the gate
+rounds), `log_app_walk_run1.txt` (the walk that found the composition fault),
+`decide_4b.json`, `decide_dev2.json`, `decide_heldout.json` (before the fixes in 25I),
+`classify_4b.json` (the frozen first design, no facts and no gate), `shape_probe*.json`
+(gate designs that were rejected).
+
+To regenerate: the 25G tables with `.venv/bin/python spikes/fastpath/analyse_e2e.py
+e2e.json spikes/fastpath/blind/blind_grades.json spikes/fastpath/blind/blind_key.json`;
+the **final-gate** routing in 25E (19 right, 1 partial on held-out) with
+`.venv/bin/python spikes/fastpath/analyse_final_gate.py`; the strict-gate and no-gate rows
+and the threshold sweep with `.venv/bin/python spikes/fastpath/analyse_decide.py
+decide_heldout2.json` -- which does **not** include the two later gate rules.
+
+### 25M. Closure pass: Blank, the three known misses, one website gap -- then frozen
+
+The owner's closure instruction after 25L: fill only demonstrated gaps, make Blank
+projects derive their recipes from their files, run a small cross-project acceptance
+set, **do not** improve coverage by lowering thresholds or weakening the gate, and then
+**freeze Fast Path and classifier development**. The next milestone is the owner's
+local demo. Everything below is Qwen3 4B on the 48 GB M4 Pro.
+
+**What the inherited evidence got wrong, found before changing anything:**
+
+- **The walk's step 34 could never pass.** It looked for a chart in `outputs/`; the
+  Research starter and every recipe write to `charts/`, and nothing in Open Nest writes
+  `outputs/`. The 40/41 in 25H was therefore 40/41 whatever step 33 did. The check now
+  looks in `charts/` and ignores the starter's own `chart.png` (every run draws it, so
+  it would pass a step 33 that did nothing); the old check's verdict is still printed.
+- **"First to last" sorted month names alphabetically.** `biggest_change` and the line
+  chart sorted by the time column; on the walk's own CSV (Jan-Dec) that is Apr-Sep, and
+  the quoted finding would have been wrong. Only numbers and ISO dates are sorted now;
+  anything else keeps the order it was written in.
+- **`sunshine_hours` was read as a time column** ("hours"), so the walk's data had two
+  time axes, none was used, and the sunshine was left out of "what changed the most".
+  An hour, minute or second beside another word is now a measurement.
+- **`benchmarks/fastpath/`** (the drivers and results copied from the gitignored
+  `spikes/fastpath/` so they can be committed, `results/raw/` still ignored) had 64
+  ruff errors of its own; "ruff clean" held only because it was new. It is excluded
+  exactly as `spikes/` is.
+
+**Gate relaxations, measured on stored answers and rejected.** Before the closure
+instruction arrived, the obvious levers were scored from `gate4_decide_*.json` (the
+answers 25E chose the final gate from), with no model time:
+
+| held-out (dev) | changes made by a recipe | wrong recipe routes | guided wrong |
+|---|---:|---:|---:|
+| final gate (shipped) | 18 (44) | 1 (2) | 4 (5) |
+| the tweak question for additions too | 21 (51) | **4 (3)** | 8 (8) |
+| the tweak question for everything | 21 (51) | **4 (3)** | 16 (12) |
+| the tweak question for guide-only recipes | 18 (44) | 1 (2) | **12 (9)** |
+
+Every relaxation that adds recipe routes adds wrong edits at about the same rate
+("1. add a 4th card 2. make the font comic sans 3. put a clock at the bottom" became one
+card); the guide-only one mostly adds misleading guidance to questions and moods. None
+was shipped. The gate is unchanged.
+
+**What changed:**
+
+1. **Blank projects gain a family from their files** (`kinds.family_for`): `src/index.html`
+   → Website; `src/main.py` importing pygame → Games; importing pandas with a CSV in
+   `data/` → Research; importing RPi/gpiozero → Raspberry Pi; any `.ino` → Arduino. Only
+   that family's options are put to the classifier. Nothing recognisable, or two
+   families at once, is Gary as before. A family's recipes make a change themselves only
+   where the project can run the check they are verified by (`kind.verifiable`); a game
+   in a Blank project has no playtest and a sketch has no compiler, so there they are
+   guidance. Website and Research checks run in a Blank project, so those recipes do.
+2. **Known miss 1, motion** -- `game.change_thing_motion`, a new option. It rewrites a
+   thing's setup and movement code only when both are *exactly* what a recipe wrote
+   (each motion's code is generated and looked for as whole lines), so code the child or
+   Gary changed is never touched; the drawing, constants and collision stay. The motion
+   is the child's word ("instead of going straight" and "not falling" are taken out
+   first), or a closed question when they named none or several. Checked by reading the
+   motion back from the file, the playtest, and movement.
+3. **Known miss 2, the button** -- `add_button` does what the child said: *on while held*
+   ("turns the light on"), *blink while held* (and when they said nothing -- the
+   measured behaviour), or *toggle* ("on and off", "each press"). Steady and toggle
+   replace the blink, so they apply only to a loop() that is still just the blink. The
+   blink timing stops being a fact once loop() no longer waits on it, so a later "blink
+   faster" cannot report changing numbers that do nothing.
+4. **Known miss 3, the compound** -- when the gate calls a message two things and one of
+   them is only "graph this" (`router._BARE_CHART`), the other part is decided on its
+   own, and taken only if it goes to a deterministic recipe whose checks include writing
+   a chart. Measured: the general gate says *no* to "tell me what changed the most" even
+   alone, because it is a question rather than a change -- so that part, and only a part
+   of such a message, gets the tweak's recipe-specific question instead (yes to it, no to
+   "find the windiest day"). Every other compound still goes to Gary. In both label sets
+   exactly one request can reach this path: the known one.
+5. **A veto for the known confusion** -- a recipe may carry `needs_words`. `biggest_change`
+   needs the child (this message or the last) to say something changed, grew, rose or
+   fell; "find the windiest day" (1.00 in every ordering, 25E) now goes to Gary with no
+   misleading guidance. A veto only: it can remove a route, never add one. Every labelled
+   request that accepts `biggest_change` still passes it.
+6. **The one website gap filled** -- `change_text` is deterministic for the tagline, the
+   footer and the page's one button, when the child names the part and spells out the
+   words. Three first-set requests were already recognised with certainty and handed to
+   Gary only because the recipe guided. Also fixed: "change it **to say** Hello" gave
+   the words "say Hello" -- the headline recipe had the same fault.
+
+**Decision benchmark, whole label sets, final code** (`decide_dev5.json`,
+`decide_heldout4.json`, scored from the router's own decision by `analyse_routes.py`):
+
+| | before (25E, final gate) | after |
+|---|---:|---:|
+| held-out: changes made by a recipe | 18 | **18** |
+| held-out: wrong recipe routes | 1 (the BCM partial) | **1** (the same) |
+| held-out: guided right / guided wrong | 13 / 4 | 13 / 4 |
+| dev: changes made by a recipe | 44 | **48** (3 text changes, the compound) |
+| dev: wrong recipe routes | 2 | **2** (the same two) |
+| decision latency, median | 441 ms | 441-442 ms |
+
+**Held-out coverage did not improve**, and could not without the relaxations above: of
+its 27 missed changes, only 3 have a certain intent for a deterministic recipe and are
+stopped by the gate; the rest are guide-only intents, uncertain intents or wrong ones.
+
+**The first placement of the new option was measured and reverted.** Inserted after
+`change_thing_look`, it moved most Games letters in all three orderings, and "i want to
+shoot little lasers out of the square when i press x" went from `add_moving_thing` at
+0.67 (guided) to 0.99 in every ordering -- a wrong recipe route (`decide_heldout3.json`,
+`decide_dev4.json`). Appended before "other", it keeps every existing option's letter
+in two of the three orderings; chosen for that reason, measured once, and the held-out
+result is identical to before. New options go at the end.
+
+**Cross-project acceptance** (`bench_e2e.py --set closure --arm fast`, 23 conversations
+written by the developer -- not blind -- through the real controller, sandbox, playtest,
+compiler and run; `closure_summary.json`, `analyse_closure.py`):
+
+| | working | notes |
+|---|---:|---|
+| Games | 3/4 | zigzag, then faster: 3 turns, all recipes, 10 s; "bounce instead" by recipe. **Miss**: "make the ball go round in circles" -- right intent (0.95), gate said no, Gary's edit crashed the game and he said so |
+| Website | 3/5 | footer and tagline words by recipe in about 1 s; "comic sans" by Gary. **Misses**: "add a card about my hamster" and "a section about my favourite films" -- right intent, stopped by the gate, Gary failed both (the second is 25G's W3 again) |
+| Research | 4/4 | the compound request on the plants and on the walk's monthly data, by the composed recipe; "find the windiest day" vetoed, and Gary gave the right day (read, not computed) |
+| Arduino | 3/3 | the button on while held, the toggle, a faster blink -- all compiled with the real toolchain |
+| Raspberry Pi | 2/2 | ten blinks, pin 22 -- both run and printed |
+| Blank | 3/5 | website words and a research average by recipe; a Blank sketch guided, Gary right. **Misses**: a Blank game is guidance by design and Gary landed 0 of 11 edits; a joke program in an empty Blank project works but Gary named it `joke.py`, so Run (which runs `main.py`) does nothing |
+| **all** | **18/23** | **0 wrong recipe edits**; median 4.1 s per message, 37 model calls and 3,444 generated tokens across 27 messages -- nearly all in the five Gary turns |
+
+One recipe result is working by the objective grader and **questionable by reading**:
+on the plants, "graph this and tell me what changed the most" charted how much *water*
+each plant was given, not how much it grew. No column was named; the closed question
+chose `water_ml` at 0.82 with a 1-nat margin -- just over the 0.8 slot bar. It is stated
+truthfully ("how much water_ml changed"), but it is a guess.
+
+**The real UI walk, through MainWindow: 41/41.** Step 33 by the composed recipe: *"How
+much each column changed from the first month to the last: rainfall_mm 7,
+sunshine_hours -4. The biggest change was rainfall_mm: +7.00"*, quoted from the run;
+step 34 finds `charts/change_by_column.png`. By the original step-34 check it would still
+have failed (`app_walk_closure.txt`).
+
+**Website coverage**, against the owner's list:
+
+| action | recipe | |
+|---|---|---|
+| navigation | every new section adds its own nav link | deterministic |
+| hero / header | `change_heading` (headline and tab title); the tagline via `change_text` | deterministic |
+| content sections, "pages" | `add_section`, shaped by its title (list, steps, contact note, paragraph) | deterministic |
+| images | `add_image` -- the child's picture, described only in their words | deterministic |
+| gallery | `add_gallery` | guidance |
+| cards | `add_card` | deterministic |
+| buttons | `add_button` (count, message, new colours); the label via `change_text` | deterministic |
+| colours, background | `change_colours` -- light and dark, with a contrast warning | deterministic |
+| typography | `change_font_size` | deterministic |
+| layout, order, hover | `restyle_page` | guidance |
+| footer | its words via `change_text`; removing it via `remove_element` | deterministic / guidance |
+| **gaps** | a font family ("comic sans" -- Gary managed it once here); a link to another site; a second HTML page | none |
+
+**Remaining obvious gaps -- recorded, not fixed (the owner's instruction):**
+
+- **The gate still stops right intents**: "go round in circles", "a card about my
+  hamster", "a section about my favourite films" in this run alone. It is the coverage
+  bottleneck and was deliberately left alone. A motion change *could* be treated as a
+  tweak (it only swaps recipe-written code, verified); no labelled request can measure
+  that, so it was not done.
+- **An unnamed column is a guess** (the water above). Asking, or computing every number
+  column, would be the fix.
+- **Games in a Blank project** get guidance and Gary fails them; Blank has no playtest
+  and runs a game as a batch. A Blank project that is really a game is better told so.
+- **Blank's Run button runs `src/main.py`**, and Gary does not always write there.
+- **Research answers read off the file** ("the windiest day is ...") rather than computed
+  are Gary's path, and break the Research prompt's first rule.
+
+**Frozen.** No further Fast Path or classifier development until after the owner's local
+demo: no Open-Jev or second classifier, no prompt experiments, no embeddings or RAG, no
+new taxonomy. Recipes: **63 -- 41 deterministic, 22 guidance-only** (games 22 = 18 + 4,
+website 11 = 8 + 3, research 11 = 8 + 3, arduino 9 = 4 + 5, raspberry_pi 10 = 3 + 7);
+~5,950 lines in `opennest/fastpath/`. 1207 tests, ruff clean.
+
+**Where it lives now: `benchmarks/fastpath/`, which is meant to be committed.**
+`inputs/` (labels, request sets, CSVs), `results/` (`decide_dev3/heldout2` and
+`gate4_*` -- the 25E baseline; `decide_dev5/heldout4` -- final; `decide_dev4/heldout3` --
+the reverted first placement; `closure_summary.json`; `app_walk.txt` -- the 40/41 walk;
+`app_walk_closure.txt` -- the 41/41 walk; `blind/`; `e2e_summary.json`, `e2e_tables.md`),
+and `results/raw/` (full runs with every file, gitignored). The app walk itself,
+`spikes/phase12/app_walk.py`, and `spikes/fastpath/app_walk_fastpath.py` are still in the
+gitignored `spikes/` -- local to the measuring Mac -- with the step-34 correction.
+
+### 25N. Pre-13 interaction pass: natural wording, several requests, a smarter fallback -- then frozen
+
+The owner's instruction after the first test drive: recipes handle predictable mechanics
+and Gary -- whichever model is selected -- handles understanding, adaptation and
+anything new; a child must not need magic wording or become the orchestration layer;
+no gate loosening, no large recipe growth; then freeze before Phase 13. Everything below
+is Qwen3 4B on the 48 GB M4 Pro.
+
+**What changed** (no new recipe; no classifier option or prompt change):
+
+1. **Capabilities, not phrases, for a picture.** With a picture attached, "use a picture
+   for the player" and "make the player a different shape or character" are one
+   capability (`attachment_covers`): every ordering must choose one of them, with
+   near-certainty between them. Measured first: "use this as my eagle" was *the player's
+   look* at 1.00 and went to Gary. And a picture message is classified without the
+   message before it -- measured, "i want a game where I'm flying around..." before it
+   pulled "make this the player" to **a whole new dodging game at 1.00**, which would
+   have been built over the child's work.
+2. **Several requests are made one by one** (`router.split_parts`, `run_parts`). A message
+   splits only when every piece stands on its own as a request or a question (a leading
+   complaint -- "the cars are too slow, speed them up" -- joins the request after it).
+   Of 279 labelled requests, 21 split, every one genuinely several requests; "cats and
+   minecraft", "back and forth", "red and bigger" stay whole. Each piece is decided as a
+   message of its own **with the ordinary gate** (the recipe-specific question was
+   measured to add wrong pieces), against the project as the pieces before left it; a
+   recipe makes it only if confident and checkable, and a whole game only as the first
+   piece. Whatever is left goes to Gary **in the same turn**, told what was already made
+   and to do only the rest; the honesty guard, "nothing changed" and the fallback
+   description look only at his share (`Turn.gary_from`), so a recipe's real change can
+   never cover a claim of his.
+3. **Gary gets building blocks when no recipe fits.** Every Gary turn in a recognised
+   project type gets the project facts (where the loop, fill and draw are, the constants),
+   how his change will be checked, and -- only when the classifier found a recipe likely
+   and the gate stopped it -- that recipe's pattern, labelled "only if it fits; if they
+   asked a question, answer it and change nothing". Never for a veto or "other".
+4. **The fallback reduces the problem instead of the child.** When Gary's whole attempt
+   changes nothing -- a cut-off call, a claim caught twice, or **three refused edits in a
+   row** -- one planning call (`prompts/plan.txt`) splits the request into at most three
+   steps; recipe steps are made and checked, Gary does the first of the rest, and the
+   others are offered: "next" does them. Once per turn, from the one budget. If even the
+   steps come to nothing, the plan itself is offered. A bare "next" with nothing offered
+   is answered without a model call.
+5. **Vetoes and guards, from the acceptance run:** a whole game must say "game" in *this*
+   message; a leading "and"/"also" is dropped before classifying ("and make the
+   background a sunset orange" was "several changes" with it, the colour recipe at 1.00
+   without); a number asked "faster and slower at once" is not one direction; the
+   honesty guard knows more verbs ("I moved ...") and treats "I tested it" / "I ran it"
+   with nothing run as a claim -- **measured, Gary had copied the recipes' "I tested it
+   without a window" into a turn that changed nothing**; a look change names only the
+   constants that changed; a reply starts with a capital.
+6. **The still frame** (the optional item): a playtest that runs to the end leaves its
+   last frame at `.opennest/tmp/playtest.png`; after a turn that changed the game and
+   passed, the Build panel shows it, captioned as the test's view.
+
+**Label sets** (`decide_dev6.json`, `decide_heldout5.json`): only the 20 requests that
+now split changed route -- every other request routes exactly as before. Held-out: 18
+changes by recipe, **0 wrong recipe routes** (its one, the BCM partial, is now split:
+the faster blink by recipe, the question and the second light to Gary). Dev: 48, the same
+2 wrong. Decision latency unchanged (441-442 ms). **These sets have now been examined too
+often to be called held-out**; the next claim about coverage needs a fresh blind set.
+
+**The split requests, made for real** (`parts_check.py`, `parts_check.json`): 13 pieces
+were made by recipes -- a purple background, "Maze Runner", "Epic Facts" and "Leo's
+Lab", a fourth card, three faster blinks, two Pi pins, two blink counts -- **all 13
+right, 0 wrong**; everything uncertain (a buzzer, comic sans, a clock, a fart-noise
+button, "make the cars blue") went to Gary as the rest.
+
+**Owner acceptance, natural wording** (`acceptance_pre13.py`, the real Workbench and
+worker thread, VersionHistory, the real model; the developer's wording, written before
+the run; final run):
+
+| | what happened | |
+|---|---|---|
+| "i want a game where i'm flying around and have to dodge cars" | the dodging game by recipe, 4 s | ✓ |
+| a picture + "use this as my eagle" | the picture recipe, 3 s; the picture is in the code | ✓ (Gary, before the fixes, changed a line and described "the eagle's shadow") |
+| "the cars are too slow, speed them up and give me a score" | the speed by recipe, the score by Gary in the same turn -- drawn in the code, 23 s | ✓ (before the leading-complaint rule: the score was silently dropped) |
+| "make the cars act nervous, like they're scared of me" | Gary's edits refused and his claim caught; planned into three steps; one step by a recipe, one by Gary (tested), one offered with "next", 74 s | ✓ truthful; the recipe step only raised the speed, now deferred by the mixed-direction rule |
+| Undo after that turn | back to after the score turn | ✓ |
+| "make the cars bigger", then Undo | CAR_SIZE 37 → 56 by recipe; Undo → 37 | ✓ (the reply named CAR_COLOUR too; fixed) |
+| "make an isometric game where an eagle flies over a parking lot and poops on the cars" | Gary made a change (a moving eagle) and **described a parking lot that is not in the code** | ✗ unverified description |
+| "next", with nothing offered | answered at once, no model call | ✓ (before: twelve calls, 162 s) |
+| "can the bottom of the page say made by maya" | the footer by recipe, 2 s | ✓ |
+| "and make the background a sunset orange" | the colour by recipe, 1 s | ✓ (before: Gary, three refused edits) |
+
+**The real UI walk, rerun on the final code: 41/41** (`app_walk_pre13.txt`) -- the same
+four recipe turns, step 33 still by the composed "graph this and ..." recipe.
+
+**Remaining issues -- recorded, not fixed, and not the start of another iteration:**
+
+- **Undo toggles.** It restores the version before the latest save *as a new save*, so a
+  second Undo brings the change back. One Undo after each change works.
+- **Gary's descriptions are unverified once he has changed something** ("a parking lot",
+  "yellow eagle"). The guard catches claims of changes that did not happen and of tests
+  that did not run; it cannot check that what he describes is what he wrote.
+- **The 4B model's refused edits** (Phase 12.2) are still what most Gary turns fail on;
+  now three refusals end in steps rather than a spent budget.
+- **A plan step can be matched to a recipe that does less than it says**; the one seen
+  is now deferred, others are possible.
+- The plants "what changed the most" column guess; games in a Blank project are guidance
+  only; Blank's Run button runs `main.py`.
+- Creative turns on Gary take 35-75 s on the 4B model.
+
+**Frozen.** No further Fast Path, classifier or recipe work before Phase 13. Recipes
+still **63 -- 41 deterministic, 22 guidance-only**. 1256 tests, ruff clean.

@@ -1,0 +1,12 @@
+{
+  "id": "game.change_player_look",
+  "intent": "change_player_look",
+  "describe": "make the player a different shape or character, like a circle or a cat",
+  "guide": [
+    "The player is drawn by one line inside the loop, after screen.fill -- usually pygame.draw.rect(screen, PLAYER_COLOUR, player). Replace only that drawing line: pygame.draw.circle(screen, PLAYER_COLOUR, player.center, PLAYER_SIZE // 2) for a circle, or pygame.draw.polygon for a pointed shape. Keep the player rect as it is, so movement and collisions still work.",
+    "For a character like a cat, they need a picture: ask them to add one, and it can be drawn with screen.blit where the rectangle was."
+  ],
+  "requires": [],
+  "op": null,
+  "params": {}
+}

@@ -1,0 +1,105 @@
+qt.qpa.fonts: Populating font family aliases took 110 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost. 
+This plugin does not support raise()
+  [PASS] the local model finishes loading at launch
+  [PASS] the Flight Deck offers Games
+This plugin does not support propagateSizeHints()
+  [PASS] the New Project dialog opened
+  [PASS] OK enables once the project is named
+This plugin does not support propagateSizeHints()
+  [PASS] the project was created and opened
+  [PASS] it is on disk
+  [PASS] step 22: the message reached the box
+FASTPATH {"route": "recipe", "reason": "confident, whole game", "intent": "make_avoid_game", "score": 0.9962, "agreement": 1.0, "recipe": "game.make_avoid_game", "result": "success", "changed_files": ["src/game.py"], "stepped_aside": null, "seconds": 3.978, "checks": [["playtest_passes", "pass"], ["moves_by_itself", "pass"], ["drawn_after_fill", "pass"]]}
+GARY-SAID "I made it a dodging game: five asteroids that zigzag across the screen and come back round. If one touches the player, the player goes back to the middle. The player is drawn as a little ship now. I tested it without a window: it runs, and something moves on its own now."
+  [PASS] step 22: the turn finished
+  [PASS] step 22: Gary said something
+  [note] step 22: tools -> edit_file(ok), edit_file(ok), edit_file(ok), edit_file(ok), edit_file(ok)
+  [note] Gary, first turn: 'You: Make a game where a spaceship moves around and avoids asteroids.\n\nGary: I made it a dodging game: five asteroids that zigzag across the screen and come back round. If one touches the player, the player goes back to the middle. The player is drawn as a little ship now. I tested it without a window: it runs, and something moves on its own now.\n'
+  [PASS] no reasoning monologue reached the transcript
+  [PASS] the project has an entry point on disk
+  [PASS] a Run button is offered
+  [PASS] the run finished
+  [note] run output: 'The project is running. Press Stop when you are done.'
+  [PASS] the run was confined, not refused
+  [PASS] Stop ends the run and closes the game window
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+  [PASS] importing asks what the file is
+  [note] asset-kind prompt: 'What is spaceship.png?' default 'Use it in the project'
+  [PASS] the picture was imported and attached to the next message
+  [PASS] the attachment is visible to the child
+  [note] attachment line: 'Going with your next message: spaceship.png'
+  [PASS] it was copied into the project
+  [PASS] step 27: the message reached the box
+FASTPATH {"route": "recipe", "reason": "confident, and the picture is attached", "intent": "replace_player_sprite", "score": 1.0, "agreement": 1.0, "recipe": "game.replace_player_sprite", "result": "success", "changed_files": ["src/game.py"], "stepped_aside": null, "seconds": 2.484, "checks": [["playtest_passes", "pass"]]}
+GARY-SAID "The player is drawn with assets/spaceship.png now, scaled to the player's size. I can't see the picture, so tell me if it looks wrong way round or too small. I tested it without a window, and it runs."
+  [PASS] step 27: the turn finished
+  [PASS] step 27: Gary said something
+  [note] step 27: tools -> edit_file(ok), edit_file(ok)
+  [PASS] Gary does not claim to have looked at the picture
+  [PASS] step 29: the message reached the box
+FASTPATH {"route": "recipe", "reason": "confident", "intent": "change_thing_speed", "score": 0.9682, "agreement": 1.0, "recipe": "game.change_thing_speed", "result": "success", "changed_files": ["src/game.py"], "stepped_aside": null, "seconds": 3.189, "checks": [["value_set", "pass"], ["playtest_passes", "pass"], ["moves_by_itself", "pass"]]}
+GARY-SAID "I raised ASTEROID_SPEED from 3 to 5. I tested it without a window: it runs, and something moves on its own now."
+  [PASS] step 29: the turn finished
+  [PASS] step 29: Gary said something
+  [note] step 29: tools -> edit_file(ok)
+  [PASS] the change reached the file
+  [PASS] Undo is offered once there is something to undo
+  [PASS] Undo does not stop to ask -- it is the safety net
+  [PASS] Undo put the previous version back
+  [PASS] Back returns to the Flight Deck
+  [PASS] a Research profile exists
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+  [PASS] the Research project opened
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+  [PASS] importing the CSV asks what it is
+  [note] asset-kind prompt: 'What is weather.csv?' default 'Data to work with'
+  [PASS] step 33: the message reached the box
+FASTPATH {"route": "normal", "reason": "not one single change", "intent": "biggest_change", "score": 1.0, "agreement": 1.0, "recipe": null, "result": null, "changed_files": null, "stepped_aside": null, "seconds": 1.545, "checks": []}
+GARY-SAID "That turned into more steps than I can do at once. Here is where I got to -- tell me what to try next, or ask for something smaller."
+  [PASS] step 33: the turn finished
+  [PASS] step 33: Gary said something
+  [note] step 33: tools -> read_file(ok), edit_file(FAILED), read_file(ok), edit_file(FAILED), edit_file(FAILED), edit_file(FAILED), edit_file(FAILED), read_file(ok), edit_file(FAILED), read_file(ok), edit_file(FAILED), edit_file(FAILED)
+  [note] step 33: edit_file refused -- That exact text is not in 'src/analysis.py'. Read the file again and copy the line you want to change exactly 
+  [note] step 33: edit_file refused -- That change would break src/analysis.py: expected an indented block after 'else' statement on line 74 on line 
+  [note] step 33: edit_file refused -- That change would break src/analysis.py: expected an indented block after 'else' statement on line 74 on line 
+  [note] step 33: edit_file refused -- That change would break src/analysis.py: expected an indented block after 'else' statement on line 74 on line 
+  [note] step 33: edit_file refused -- That change would break src/analysis.py: expected an indented block after 'else' statement on line 74 on line 
+  [note] step 33: edit_file refused -- That exact text is not in 'src/analysis.py'. Read the file again and copy the line you want to change exactly 
+  [note] step 33: edit_file refused -- That exact text is not in 'src/analysis.py'. Read the file again and copy the line you want to change exactly 
+  [note] step 33: edit_file refused -- That exact text is not in 'src/analysis.py'. Read the file again and copy the line you want to change exactly 
+  [note] research output: 'Reading weather.csv\n  12 rows, 3 columns\n  columns: month, rainfall_mm, sunshine_hours\n  no empty cells\n\nThe number columns, summarised:\n       rainfall_mm  sunshine_hours\ncount    12.000000       12.000000\nmean     66.500000      127.750000\nstd      19.374304       65.234019\nmin      42.000000       40.000000\n25%      51.250000       66.000000\n50%      62.000000      130.000000\n75%      86.500000'
+  [FAIL] step 34: a chart was produced — nothing in /Users/grantcheney/Documents/Grant/github/open_nest/.opennest-sandbox/projects/Phase 12 Driver Research/outputs
+  [note] models offered in the picker: ['Qwen3 4B — On this Mac', 'Qwen3 8B — On this Mac', 'Qwen3 14B — On this Mac', 'Qwen3 Coder 30B — On this Mac', 'Qwen2.5 Coder 3B — On this Mac', 'Llama 3.2 3B — On this Mac', 'Claude — Internet', 'Claude Haiku — Internet', 'OpenAI — Internet']
+This plugin does not support propagateSizeHints()
+  [PASS] switching to cloud says something first
+  [note] cloud message: 'Claude uses the internet, and cloud AI is turned off.\n\nA parent can turn it on in Settings.'
+  [PASS] step 38: no path escapes the project through the file tools
+  [PASS] the window closed without aborting the process
+
+=== app-walk: 40/41 checks passed ===
+  FAILED: step 34: a chart was produced — nothing in /Users/grantcheney/Documents/Grant/github/open_nest/.opennest-sandbox/projects/Phase 12 Driver Research/outputs
+  notes:
+    - step 22: tools -> edit_file(ok), edit_file(ok), edit_file(ok), edit_file(ok), edit_file(ok)
+    - Gary, first turn: 'You: Make a game where a spaceship moves around and avoids asteroids.\n\nGary: I made it a dodging game: five asteroids that zigzag across the screen and come back round. If one touches the player, the player goes back to the middle. The player is drawn as a little ship now. I tested it without a window: it runs, and something moves on its own now.\n'
+    - run output: 'The project is running. Press Stop when you are done.'
+    - asset-kind prompt: 'What is spaceship.png?' default 'Use it in the project'
+    - attachment line: 'Going with your next message: spaceship.png'
+    - step 27: tools -> edit_file(ok), edit_file(ok)
+    - step 29: tools -> edit_file(ok)
+    - asset-kind prompt: 'What is weather.csv?' default 'Data to work with'
+    - step 33: tools -> read_file(ok), edit_file(FAILED), read_file(ok), edit_file(FAILED), edit_file(FAILED), edit_file(FAILED), edit_file(FAILED), read_file(ok), edit_file(FAILED), read_file(ok), edit_file(FAILED), edit_file(FAILED)
+    - step 33: edit_file refused -- That exact text is not in 'src/analysis.py'. Read the file again and copy the line you want to change exactly 
+    - step 33: edit_file refused -- That change would break src/analysis.py: expected an indented block after 'else' statement on line 74 on line 
+    - step 33: edit_file refused -- That change would break src/analysis.py: expected an indented block after 'else' statement on line 74 on line 
+    - step 33: edit_file refused -- That change would break src/analysis.py: expected an indented block after 'else' statement on line 74 on line 
+    - step 33: edit_file refused -- That change would break src/analysis.py: expected an indented block after 'else' statement on line 74 on line 
+    - step 33: edit_file refused -- That exact text is not in 'src/analysis.py'. Read the file again and copy the line you want to change exactly 
+    - step 33: edit_file refused -- That exact text is not in 'src/analysis.py'. Read the file again and copy the line you want to change exactly 
+    - step 33: edit_file refused -- That exact text is not in 'src/analysis.py'. Read the file again and copy the line you want to change exactly 
+    - research output: 'Reading weather.csv\n  12 rows, 3 columns\n  columns: month, rainfall_mm, sunshine_hours\n  no empty cells\n\nThe number columns, summarised:\n       rainfall_mm  sunshine_hours\ncount    12.000000       12.000000\nmean     66.500000      127.750000\nstd      19.374304       65.234019\nmin      42.000000       40.000000\n25%      51.250000       66.000000\n50%      62.000000      130.000000\n75%      86.500000'
+    - models offered in the picker: ['Qwen3 4B — On this Mac', 'Qwen3 8B — On this Mac', 'Qwen3 14B — On this Mac', 'Qwen3 Coder 30B — On this Mac', 'Qwen2.5 Coder 3B — On this Mac', 'Llama 3.2 3B — On this Mac', 'Claude — Internet', 'Claude Haiku — Internet', 'OpenAI — Internet']
+    - cloud message: 'Claude uses the internet, and cloud AI is turned off.\n\nA parent can turn it on in Settings.'
+  11 screenshots in /Users/grantcheney/Documents/Grant/github/open_nest/.opennest-sandbox/phase12

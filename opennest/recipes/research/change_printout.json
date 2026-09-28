@@ -1,0 +1,12 @@
+{
+  "id": "analysis.change_printout",
+  "intent": "change_printout",
+  "describe": "change what the analysis prints, or how it rounds or converts numbers",
+  "guide": [
+    "The printing is in the describe() function and the code after it in analysis.py. Change or remove those print lines; round with .round(1); convert units with a new column (for example frame[\"temp_f\"] = frame[\"temp_c\"] * 9 / 5 + 32) before it is used.",
+    "Never state a finding the code has not computed: run it and quote what it prints."
+  ],
+  "requires": [],
+  "op": null,
+  "params": {}
+}

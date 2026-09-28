@@ -1,0 +1,26 @@
+{
+  "id": "website.add_button",
+  "intent": "add_button",
+  "describe": "add a button that does something",
+  "requires": [
+    "first_section_end"
+  ],
+  "op": "add_button",
+  "params": {},
+  "guide": [
+    "A button is <button id=\"...\" type=\"button\">Label</button> in index.html, and what it does goes in src/script.js: document.getElementById(\"...\").addEventListener(\"click\", () => { ... }). The id in both places must match exactly.",
+    "To show words, put an empty <p id=\"...\"> under it and set its textContent. To change colours, set a CSS variable with document.documentElement.style.setProperty(\"--bg\", colour)."
+  ],
+  "verify": [
+    "added_present",
+    "html_balanced",
+    "links_resolve",
+    "offline"
+  ],
+  "report": [
+    "I added a \"$label\" button that $what.",
+    "There is a \"$label\" button now. It $what.",
+    "The new \"$label\" button $what. Its code is at the bottom of script.js."
+  ],
+  "teach": "addEventListener(\"click\", ...) tells the page what to do each time the button is pressed."
+}

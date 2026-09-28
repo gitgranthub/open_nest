@@ -1,0 +1,5 @@
+A child asked for something in their {project} project that was too much to build in one go. Break it into at most three small steps, in the order to build them.
+
+Each step is one concrete change a child could ask for on its own, in plain words, like "Add cars that drive along the bottom of the screen". Start each step with a verb. Keep what they asked for -- do not invent extra features.
+
+Reply with one step per line and nothing else: no numbers, no explanations.

@@ -1,0 +1,821 @@
+[
+ {
+  "set": "labels.json",
+  "profile": "games",
+  "text": "make the player green and add a score and can the background be purple",
+  "route": "recipe",
+  "reason": "several requests in one message",
+  "recipe": null,
+  "parts": [
+   {
+    "part": "make the player green",
+    "route": "guide",
+    "intent": "change_player_colour",
+    "score": 0.668,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "add a score",
+    "route": "normal",
+    "intent": "add_score",
+    "score": 0.6825,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "can the background be purple",
+    "route": "recipe",
+    "intent": "change_background",
+    "score": 1.0,
+    "recipe": "game.change_background",
+    "result": "success",
+    "stepped_aside": null
+   }
+  ],
+  "remaining": [
+   "make the player green",
+   "add a score"
+  ],
+  "reply": "BACKGROUND is (140, 80, 200) now, so the whole window fills with purple each frame. I tested it without a window, and it runs."
+ },
+ {
+  "set": "labels.json",
+  "profile": "games",
+  "text": "add some walls i have to get around, put music in, and change the name to Maze Runner",
+  "route": "recipe",
+  "reason": "several requests in one message",
+  "recipe": null,
+  "parts": [
+   {
+    "part": "add some walls i have to get around",
+    "route": "normal",
+    "intent": "make_avoid_game",
+    "score": 1.0,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "put music in",
+    "route": "normal",
+    "intent": "other",
+    "score": 0.3424,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "change the name to Maze Runner",
+    "route": "recipe",
+    "intent": "set_title",
+    "score": 1.0,
+    "recipe": "game.set_title",
+    "result": "success",
+    "stepped_aside": null
+   }
+  ],
+  "remaining": [
+   "add some walls i have to get around",
+   "put music in"
+  ],
+  "reply": "I set the window title to \"Maze Runner\". I tested it without a window, and it runs."
+ },
+ {
+  "set": "labels.json",
+  "profile": "website",
+  "text": "change the title to Epic Facts, make the cards blue and add a video",
+  "route": "recipe",
+  "reason": "several requests in one message",
+  "recipe": null,
+  "parts": [
+   {
+    "part": "change the title to Epic Facts",
+    "route": "recipe",
+    "intent": "change_heading",
+    "score": 1.0,
+    "recipe": "website.change_heading",
+    "result": "success",
+    "stepped_aside": null
+   },
+   {
+    "part": "make the cards blue",
+    "route": "normal",
+    "intent": "change_colours",
+    "score": 0.3346,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "add a video",
+    "route": "normal",
+    "intent": "add_image",
+    "score": 0.3939,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   }
+  ],
+  "remaining": [
+   "make the cards blue",
+   "add a video"
+  ],
+  "reply": "The headline says \"Epic Facts\" now. The browser tab says the same. I checked the files: every tag is closed and nothing loads from the internet. I can't see the page myself, so press Preview Website and have a look."
+ },
+ {
+  "set": "labels.json",
+  "profile": "website",
+  "text": "make the menu stay at the top when you scroll and also add a joke of the day and make the font comic sans",
+  "route": "guide",
+  "reason": "several requests, none of them one a recipe makes",
+  "recipe": null,
+  "parts": [
+   {
+    "part": "make the menu stay at the top when you scroll",
+    "route": "recipe",
+    "intent": "restyle_page",
+    "score": 1.0,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "add a joke of the day",
+    "route": "normal",
+    "intent": "add_section",
+    "score": 0.5399,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "make the font comic sans",
+    "route": "normal",
+    "intent": "change_font_size",
+    "score": 1.0,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   }
+  ],
+  "remaining": [
+   "make the menu stay at the top when you scroll",
+   "add a joke of the day",
+   "make the font comic sans"
+  ],
+  "reply": ""
+ },
+ {
+  "set": "labels.json",
+  "profile": "research",
+  "text": "add a pie chart of the sunlight types and make the writing bigger and print how many plants there are",
+  "route": "guide",
+  "reason": "several requests, none of them one a recipe makes",
+  "recipe": null,
+  "parts": [
+   {
+    "part": "add a pie chart of the sunlight types",
+    "route": "normal",
+    "intent": "restyle_chart",
+    "score": 0.3342,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "make the writing bigger",
+    "route": "guide",
+    "intent": "restyle_chart",
+    "score": 0.6667,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "print how many plants there are",
+    "route": "normal",
+    "intent": "group_count",
+    "score": 0.3822,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   }
+  ],
+  "remaining": [
+   "add a pie chart of the sunlight types",
+   "make the writing bigger",
+   "print how many plants there are"
+  ],
+  "reply": ""
+ },
+ {
+  "set": "labels.json",
+  "profile": "arduino",
+  "text": "make it blink faster and add a buzzer on pin 8 and put it in wiring.md",
+  "route": "recipe",
+  "reason": "several requests in one message",
+  "recipe": null,
+  "parts": [
+   {
+    "part": "make it blink faster",
+    "route": "recipe",
+    "intent": "change_blink_speed",
+    "score": 1.0,
+    "recipe": "arduino.change_blink_speed",
+    "result": "success",
+    "stepped_aside": null
+   },
+   {
+    "part": "add a buzzer on pin 8",
+    "route": "normal",
+    "intent": "add_buzzer",
+    "score": 0.873,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "put it in wiring.md",
+    "route": "recipe",
+    "intent": "add_buzzer",
+    "score": 0.9253,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   }
+  ],
+  "remaining": [
+   "add a buzzer on pin 8",
+   "put it in wiring.md"
+  ],
+  "reply": "The light is on for 250 ms and off for 250 ms now -- it was 500 and 500. I compiled it and it compiles cleanly."
+ },
+ {
+  "set": "labels.json",
+  "profile": "arduino",
+  "text": "i want the led to fade instead of blink, and also print the time to the serial thing, and can the readme say what it does",
+  "route": "guide",
+  "reason": "several requests, none of them one a recipe makes",
+  "recipe": null,
+  "parts": [
+   {
+    "part": "i want the led to fade instead of blink",
+    "route": "normal",
+    "intent": "read_sensor",
+    "score": 0.6533,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "print the time to the serial thing",
+    "route": "normal",
+    "intent": "add_serial_message",
+    "score": 0.3432,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "can the readme say what it does",
+    "route": "guide",
+    "intent": "add_serial_message",
+    "score": 0.6867,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   }
+  ],
+  "remaining": [
+   "i want the led to fade instead of blink",
+   "print the time to the serial thing",
+   "can the readme say what it does"
+  ],
+  "reply": ""
+ },
+ {
+  "set": "labels.json",
+  "profile": "raspberry_pi",
+  "text": "make it blink 20 times, use pin 23, and add a buzzer that beeps at the end",
+  "route": "recipe",
+  "reason": "several requests in one message",
+  "recipe": null,
+  "parts": [
+   {
+    "part": "make it blink 20 times",
+    "route": "recipe",
+    "intent": "change_blink_count",
+    "score": 1.0,
+    "recipe": "pi.change_blink_count",
+    "result": "success",
+    "stepped_aside": null
+   },
+   {
+    "part": "use pin 23",
+    "route": "recipe",
+    "intent": "change_led_pin",
+    "score": 1.0,
+    "recipe": "pi.change_led_pin",
+    "result": "success",
+    "stepped_aside": null
+   },
+   {
+    "part": "add a buzzer that beeps at the end",
+    "route": "normal",
+    "intent": "add_buzzer",
+    "score": 1.0,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   }
+  ],
+  "remaining": [
+   "add a buzzer that beeps at the end"
+  ],
+  "reply": "I set BLINKS to 20 -- it was 3. I ran it on this Mac with pretend pins, and it printed every blink -- 20 of them. On the Pi it will light the real LED.\n\nThe LED is on BCM pin 23 now, not 17. Move its wire to match before you run it on the Pi. I ran it on this Mac with pretend pins, and it printed every blink -- 20 of them. On the Pi it will light the real LED."
+ },
+ {
+  "set": "labels.json",
+  "profile": "research",
+  "text": "Graph this and tell me what changed the most.",
+  "route": "recipe",
+  "reason": "two parts, and one recipe draws the chart the other asks for",
+  "recipe": "analysis.biggest_change",
+  "parts": [],
+  "remaining": null,
+  "reply": "I added a step that works out how much water_ml changed for each plant, and a chart of it in charts/water_ml_change_by_plant.png.\n\nI ran it, and it printed:\n\n    How much water_ml changed from the first day to the last:\n    plant\n    Fern     20\n    Basil    10\n    Bean     10\n    Mint    -20\n    The biggest change was Fern: +20.00"
+ },
+ {
+  "set": "labels_heldout.json",
+  "profile": "games",
+  "text": "change the square to green, give me a score in the corner, and make the window bigger",
+  "route": "guide",
+  "reason": "several requests, none of them one a recipe makes",
+  "recipe": null,
+  "parts": [
+   {
+    "part": "change the square to green",
+    "route": "guide",
+    "intent": "change_player_colour",
+    "score": 0.6667,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "give me a score in the corner",
+    "route": "normal",
+    "intent": "add_score",
+    "score": 1.0,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "make the window bigger",
+    "route": "normal",
+    "intent": "change_background",
+    "score": 0.893,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   }
+  ],
+  "remaining": [
+   "change the square to green",
+   "give me a score in the corner",
+   "make the window bigger"
+  ],
+  "reply": ""
+ },
+ {
+  "set": "labels_heldout.json",
+  "profile": "games",
+  "text": "add a start screen and also make my guy a cat and can there be music",
+  "route": "guide",
+  "reason": "several requests, none of them one a recipe makes",
+  "recipe": null,
+  "parts": [
+   {
+    "part": "add a start screen",
+    "route": "recipe",
+    "intent": "add_game_rules",
+    "score": 1.0,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "make my guy a cat",
+    "route": "normal",
+    "intent": "change_player_look",
+    "score": 1.0,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "can there be music",
+    "route": "normal",
+    "intent": "add_score",
+    "score": 0.6541,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   }
+  ],
+  "remaining": [
+   "add a start screen",
+   "make my guy a cat",
+   "can there be music"
+  ],
+  "reply": ""
+ },
+ {
+  "set": "labels_heldout.json",
+  "profile": "website",
+  "text": "can you change the title to Leo's Lab, make the cards purple and add a button that makes a fart noise",
+  "route": "recipe",
+  "reason": "several requests in one message",
+  "recipe": null,
+  "parts": [
+   {
+    "part": "can you change the title to Leo's Lab",
+    "route": "recipe",
+    "intent": "change_heading",
+    "score": 1.0,
+    "recipe": "website.change_heading",
+    "result": "success",
+    "stepped_aside": null
+   },
+   {
+    "part": "make the cards purple",
+    "route": "normal",
+    "intent": "add_card",
+    "score": 0.3333,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "add a button that makes a fart noise",
+    "route": "normal",
+    "intent": "add_button",
+    "score": 1.0,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   }
+  ],
+  "remaining": [
+   "make the cards purple",
+   "add a button that makes a fart noise"
+  ],
+  "reply": "The headline says \"Leo's Lab\" now. The browser tab says the same. I checked the files: every tag is closed and nothing loads from the internet. I can't see the page myself, so press Preview Website and have a look."
+ },
+ {
+  "set": "labels_heldout.json",
+  "profile": "website",
+  "text": "1. add a 4th card 2. make the font comic sans 3. put a clock at the bottom",
+  "route": "recipe",
+  "reason": "several requests in one message",
+  "recipe": null,
+  "parts": [
+   {
+    "part": "add a 4th card",
+    "route": "recipe",
+    "intent": "add_card",
+    "score": 1.0,
+    "recipe": "website.add_card",
+    "result": "success",
+    "stepped_aside": null
+   },
+   {
+    "part": "make the font comic sans",
+    "route": "normal",
+    "intent": "change_font_size",
+    "score": 1.0,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "put a clock at the bottom",
+    "route": "normal",
+    "intent": "restyle_page",
+    "score": 0.3607,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   }
+  ],
+  "remaining": [
+   "make the font comic sans",
+   "put a clock at the bottom"
+  ],
+  "reply": "I put \"Card 4\" into the list of cards. The grid makes room for them by itself. I checked the files: every tag is closed and nothing loads from the internet. I can't see the page myself, so press Preview Website and have a look."
+ },
+ {
+  "set": "labels_heldout.json",
+  "profile": "research",
+  "text": "make the lines thicker and use nicer colours",
+  "route": "guide",
+  "reason": "several requests, none of them one a recipe makes",
+  "recipe": null,
+  "parts": [
+   {
+    "part": "make the lines thicker",
+    "route": "recipe",
+    "intent": "restyle_chart",
+    "score": 1.0,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "use nicer colours",
+    "route": "normal",
+    "intent": "restyle_chart",
+    "score": 1.0,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   }
+  ],
+  "remaining": [
+   "make the lines thicker",
+   "use nicer colours"
+  ],
+  "reply": ""
+ },
+ {
+  "set": "labels_heldout.json",
+  "profile": "research",
+  "text": "find the windiest day and print it",
+  "route": "normal",
+  "reason": "several requests, none of them one a recipe makes",
+  "recipe": null,
+  "parts": [
+   {
+    "part": "find the windiest day",
+    "route": "normal",
+    "intent": "biggest_change",
+    "score": 1.0,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "print it",
+    "route": "normal",
+    "intent": "biggest_change",
+    "score": 0.4656,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   }
+  ],
+  "remaining": [
+   "find the windiest day",
+   "print it"
+  ],
+  "reply": ""
+ },
+ {
+  "set": "labels_heldout.json",
+  "profile": "research",
+  "text": "add the rainiest day, change the chart to red and tell me how many days were over 20 degrees",
+  "route": "guide",
+  "reason": "several requests, none of them one a recipe makes",
+  "recipe": null,
+  "parts": [
+   {
+    "part": "add the rainiest day",
+    "route": "normal",
+    "intent": "filter_rows",
+    "score": 0.3957,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "change the chart to red",
+    "route": "recipe",
+    "intent": "restyle_chart",
+    "score": 1.0,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "tell me how many days were over 20 degrees",
+    "route": "normal",
+    "intent": "filter_rows",
+    "score": 0.3338,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   }
+  ],
+  "remaining": [
+   "add the rainiest day",
+   "change the chart to red",
+   "tell me how many days were over 20 degrees"
+  ],
+  "reply": ""
+ },
+ {
+  "set": "labels_heldout.json",
+  "profile": "research",
+  "text": "why does it only use weather.csv, what happens if i put another file in there",
+  "route": "normal",
+  "reason": "several requests, none of them one a recipe makes",
+  "recipe": null,
+  "parts": [
+   {
+    "part": "why does it only use weather.csv",
+    "route": "normal",
+    "intent": "other",
+    "score": 0.6667,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "what happens if i put another file in there",
+    "route": "normal",
+    "intent": "other",
+    "score": 0.7936,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   }
+  ],
+  "remaining": [
+   "why does it only use weather.csv",
+   "what happens if i put another file in there"
+  ],
+  "reply": ""
+ },
+ {
+  "set": "labels_heldout.json",
+  "profile": "arduino",
+  "text": "make the light blink faster, add a buzzer on pin 8, and print how many blinks in the serial monitor",
+  "route": "recipe",
+  "reason": "several requests in one message",
+  "recipe": null,
+  "parts": [
+   {
+    "part": "make the light blink faster",
+    "route": "recipe",
+    "intent": "change_blink_speed",
+    "score": 1.0,
+    "recipe": "arduino.change_blink_speed",
+    "result": "success",
+    "stepped_aside": null
+   },
+   {
+    "part": "add a buzzer on pin 8",
+    "route": "normal",
+    "intent": "add_buzzer",
+    "score": 0.8223,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "print how many blinks in the serial monitor",
+    "route": "normal",
+    "intent": "add_serial_message",
+    "score": 1.0,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   }
+  ],
+  "remaining": [
+   "add a buzzer on pin 8",
+   "print how many blinks in the serial monitor"
+  ],
+  "reply": "The light is on for 250 ms and off for 250 ms now -- it was 500 and 500. I compiled it and it compiles cleanly."
+ },
+ {
+  "set": "labels_heldout.json",
+  "profile": "arduino",
+  "text": "can you do rainbow lights and also write in the wiring file what i need to buy",
+  "route": "normal",
+  "reason": "several requests, none of them one a recipe makes",
+  "recipe": null,
+  "parts": [
+   {
+    "part": "can you do rainbow lights",
+    "route": "normal",
+    "intent": "make_traffic_light",
+    "score": 0.6667,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "write in the wiring file what i need to buy",
+    "route": "normal",
+    "intent": "make_traffic_light",
+    "score": 0.7166,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   }
+  ],
+  "remaining": [
+   "can you do rainbow lights",
+   "write in the wiring file what i need to buy"
+  ],
+  "reply": ""
+ },
+ {
+  "set": "labels_heldout.json",
+  "profile": "raspberry_pi",
+  "text": "change to pin 23, blink 5 times, and add a buzzer on 24",
+  "route": "recipe",
+  "reason": "several requests in one message",
+  "recipe": null,
+  "parts": [
+   {
+    "part": "change to pin 23",
+    "route": "recipe",
+    "intent": "change_led_pin",
+    "score": 1.0,
+    "recipe": "pi.change_led_pin",
+    "result": "success",
+    "stepped_aside": null
+   },
+   {
+    "part": "blink 5 times",
+    "route": "recipe",
+    "intent": "change_blink_count",
+    "score": 1.0,
+    "recipe": "pi.change_blink_count",
+    "result": "success",
+    "stepped_aside": null
+   },
+   {
+    "part": "add a buzzer on 24",
+    "route": "normal",
+    "intent": "add_buzzer",
+    "score": 1.0,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   }
+  ],
+  "remaining": [
+   "add a buzzer on 24"
+  ],
+  "reply": "The LED is on BCM pin 23 now, not 17. Move its wire to match before you run it on the Pi. I ran it on this Mac with pretend pins, and it printed every blink -- 3 of them. On the Pi it will light the real LED.\n\nBLINKS is 5 now, from 3. I ran it on this Mac with pretend pins, and it printed every blink -- 5 of them. On the Pi it will light the real LED."
+ },
+ {
+  "set": "labels_heldout.json",
+  "profile": "raspberry_pi",
+  "text": "make it blink faster also what does BCM mean and can i have a second light",
+  "route": "recipe",
+  "reason": "several requests in one message",
+  "recipe": null,
+  "parts": [
+   {
+    "part": "make it blink faster",
+    "route": "recipe",
+    "intent": "change_blink_speed",
+    "score": 1.0,
+    "recipe": "pi.change_blink_speed",
+    "result": "success",
+    "stepped_aside": null
+   },
+   {
+    "part": "what does BCM mean",
+    "route": "normal",
+    "intent": "change_led_pin",
+    "score": 0.9997,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   },
+   {
+    "part": "can i have a second light",
+    "route": "normal",
+    "intent": "add_led",
+    "score": 1.0,
+    "recipe": null,
+    "result": null,
+    "stepped_aside": null
+   }
+  ],
+  "remaining": [
+   "what does BCM mean",
+   "can i have a second light"
+  ],
+  "reply": "ON_SECONDS is 0.15 and OFF_SECONDS is 0.15 now, from 0.3 and 0.3. I ran it on this Mac with pretend pins, and it printed every blink -- 3 of them. On the Pi it will light the real LED."
+ }
+]

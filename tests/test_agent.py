@@ -622,7 +622,31 @@ def test_a_tool_call_the_model_never_finished_is_answered_honestly(project, pros
 
     assert turn.text.startswith("I haven't changed anything yet.")
     assert "<tool_call>" not in turn.text and "second square" not in turn.text
-    assert len(provider.calls) == 1 and calls == []
+    # One attempt, then one call asking for a plan -- which came back with no steps, so
+    # nothing more was spent.
+    assert len(provider.calls) == 2 and calls == []
+    assert "too much to build in one go" in provider.calls[1][0].content
+
+
+def test_a_request_too_big_to_write_says_so_and_offers_a_first_step(project) -> None:
+    """The owner's first test drive: a whole isometric game in one sentence, the model ran
+    out of room writing it, and the child was told to "tell me again what you want
+    different". Now: why, when it is known, and a step this project type handles."""
+    controller, _ = make(project, [Reply(text="I'll build it.", dropped_tool_call=True)])
+    _verdicts(controller)
+    turn = controller.send("make an isometric eagle game that poops on cars")
+    assert "too much for me to write in one go" in turn.text
+    assert "\u201cMake a game where you fly around and avoid cars\u201d" in turn.text
+    assert "what you want different" not in turn.text
+
+
+def test_a_claimed_change_names_no_cause_it_has_not_checked(project) -> None:
+    claim = Reply(text="I added the eagle and the cars.")
+    controller, _ = make(project, [claim, claim])
+    turn = controller.send("i need to see an eagle flying over a car lot")
+    assert turn.text.startswith("I haven't changed anything yet.")
+    assert "too much" not in turn.text                # the cause is not known here
+    assert "for example" in turn.text
 
 
 def test_a_dropped_call_after_a_real_change_does_not_hide_the_change(project) -> None:
@@ -679,3 +703,118 @@ def test_a_crash_repair_that_only_got_the_game_launched_says_it_starts(project) 
         controller.toolbox.stop_running()
     assert turn.text.startswith("That took a few tries, but it starts now.")
     assert "works" not in turn.text
+
+
+# ------------------------------------------- a request too big for one go (pre-13)
+
+_PLAN = Reply(text="Add cars that drive along the bottom\nMake the player look like an "
+                   "eagle\nLet the eagle drop things on the cars")
+
+
+def test_a_too_big_request_is_split_and_gary_starts_on_the_first_step(project) -> None:
+    """The owner's first test drive, as it should have gone: not "ask for something
+    smaller", but a plan, the first step made, and the rest offered with "next"."""
+    controller, provider = make(project, [
+        Reply(text="I'll build it.", dropped_tool_call=True),   # the whole thing: too big
+        _PLAN,
+        _write(1), Reply(text="I added a part."),                # the first step
+        _write(2), Reply(text="Done the next one."),             # after "next"
+    ])
+    _verdicts(controller, playtest.PASSED, playtest.PASSED)
+    turn = controller.send("make an eagle game where the eagle poops on cars")
+
+    assert turn.fastpath["plan"][0] == "Add cars that drive along the bottom"
+    assert turn.text.startswith("That was a lot to build in one go")
+    assert "I added a part." in turn.text
+    assert "Still to do:" in turn.text and "\u201cnext\u201d" in turn.text
+    assert "Now do only this step: \u201cAdd cars that drive along the bottom\u201d" in \
+        provider.calls[2][-1].content
+    assert provider.calls[1][0].role == "system"      # the plan call had no tools...
+    assert len(provider.calls) == 4                   # ...and nothing looped
+
+    turn = controller.send("next")
+    assert turn.text == "Done the next one."
+    assert controller.history[len(controller.history) - 4].content == \
+        "Make the player look like an eagle"
+
+
+def test_when_even_the_steps_come_to_nothing_the_plan_is_offered(project) -> None:
+    controller, _ = make(project, [
+        Reply(text="I'll build it.", dropped_tool_call=True), _PLAN,
+        Reply(text="I'll add cars.", dropped_tool_call=True),
+    ])
+    _verdicts(controller)
+    turn = controller.send("make an eagle game where the eagle poops on cars")
+    assert turn.text.startswith("I haven't changed anything yet")
+    assert "1. Add cars that drive along the bottom" in turn.text
+    assert controller._pending[0] == "Add cars that drive along the bottom"
+
+
+def test_a_claim_in_the_step_is_still_caught(project) -> None:
+    """Gary's step is honesty-guarded on its own: nothing changed means he is not
+    believed, whatever he says."""
+    claim = Reply(text="I added the cars.")
+    controller, _ = make(project, [claim, claim, _PLAN, claim, claim])
+    _verdicts(controller)
+    turn = controller.send("make an eagle game where the eagle poops on cars")
+    assert "I added the cars" not in turn.text
+    assert turn.text.startswith("I haven't changed anything yet")
+
+
+def test_anything_but_next_sets_the_offered_steps_aside(project) -> None:
+    controller, _ = make(project, [Reply(text="Hi.")])
+    controller._pending = ["Add cars that drive along the bottom"]
+    controller.send("what does PLAYER_SPEED do")
+    assert controller._pending == []
+
+
+def test_a_bare_next_with_nothing_offered_is_answered_without_the_model(project) -> None:
+    controller, provider = make(project, [])
+    turn = controller.send("next")
+    assert "don't have a next step" in turn.text and provider.calls == []
+
+
+def test_the_same_edit_refused_three_times_becomes_steps_not_twelve_calls(project) -> None:
+    """Measured on the acceptance run: six refusals in a row, all twelve calls spent."""
+    miss = Reply(tool_calls=(ToolCall("edit_file", {"path": "src/game.py",
+                                                    "old_text": "NOT IN THE FILE",
+                                                    "new_text": "x"}),))
+    controller, provider = make(project, [miss, miss, miss, _PLAN, miss, miss, miss])
+    _verdicts(controller)
+    turn = controller.send("make an eagle game where the eagle poops on cars")
+    assert turn.fastpath["plan"][0] == "Add cars that drive along the bottom"
+    assert len(provider.calls) == 7                   # 3 + the plan + 3, then it stopped
+    assert "1. Add cars that drive along the bottom" in turn.text
+
+
+@pytest.mark.parametrize("claim", [
+    "I moved the nervous behaviour inside the car loop. It jitters now.",
+    "The cars jitter when close. I tested it without a window: it runs.",
+])
+def test_a_claim_in_the_recipes_words_is_still_a_claim(project, claim) -> None:
+    """The pre-13 acceptance run: two edits refused, nothing changed, and the model --
+    copying the recipes' replies in its history -- said it had tested the change."""
+    controller, _ = make(project, [Reply(text=claim), Reply(text=claim)])
+    _verdicts(controller)
+    turn = controller.send("make the cars act nervous, like they're scared of me")
+    assert "jitter" not in turn.text and "tested it" not in turn.text
+
+
+def test_saying_it_ran_is_fine_when_it_did_run(project) -> None:
+    controller, _ = make(project, [
+        Reply(tool_calls=(ToolCall("run_project", {}),)), Reply(text="I ran it: it opens.")])
+    controller.toolbox.dispatch = _fake_run(controller.toolbox.dispatch)
+    turn = controller.send("what does my game do?")
+    assert turn.text == "I ran it: it opens."
+
+
+def _fake_run(real):
+    from opennest.agent.tools import ToolResult
+    from opennest.execution.python_runner import RunResult
+
+    def dispatch(name, arguments):
+        if name == "run_project":
+            return ToolResult(True, "ran", run=RunResult(exit_code=0, stdout="", stderr="",
+                                                         seconds=0.1, timed_out=False))
+        return real(name, arguments)
+    return dispatch

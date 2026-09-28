@@ -1,0 +1,26 @@
+{
+  "id": "game.change_background",
+  "intent": "change_background",
+  "describe": "change the background colour",
+  "requires": [
+    "background"
+  ],
+  "op": "set_colour",
+  "params": {
+    "fact": "background",
+    "question": "Which colour do they want the background to be?"
+  },
+  "guide": [
+    "Change the colour the screen is filled with each frame -- usually a BACKGROUND constant used by screen.fill(...)."
+  ],
+  "verify": [
+    "value_set",
+    "playtest_passes"
+  ],
+  "report": [
+    "I changed the background to $colour. $name is $new now.",
+    "The background is $colour now -- $name is $new.",
+    "$name is $new now, so the whole window fills with $colour each frame."
+  ],
+  "teach": "screen.fill paints the whole window this colour at the start of every frame, before anything else is drawn."
+}

@@ -1,0 +1,12 @@
+{
+  "id": "arduino.add_servo",
+  "intent": "add_servo",
+  "describe": "add a servo or a motor",
+  "requires": [],
+  "op": null,
+  "params": {},
+  "guide": [
+    "Never choose a pin. If the message does not say which pin, ask. Pins 0 and 1 are the USB connection; never use them for a part.",
+    "A small servo uses #include <Servo.h>, a Servo object, servo.attach(PIN) in setup() and servo.write(angle) in loop(). Do not power a servo or motor from a board pin: it needs its own supply with the grounds connected. Say so before writing the code."
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "id": "game.make_catch_game",
+  "intent": "make_catch_game",
+  "describe": "make a whole game where you catch falling things",
+  "needs_words": [
+    "\\bgames?\\b"
+  ],
+  "requires": [
+    "loop",
+    "fill",
+    "flip",
+    "player"
+  ],
+  "op": "add_things",
+  "params": {
+    "motion": "fall",
+    "noun": "block",
+    "many": true,
+    "on_touch": "collect",
+    "score": "per_touch"
+  },
+  "guide": [
+    "A new thing needs three pieces in three places, and with only two it does nothing: create it once ABOVE the game loop, move it INSIDE the loop, and draw it inside the loop AFTER screen.fill(...). Give its speed, size and colour named constants at the top.",
+    "For a catching game, make things fall from the top, and when the player touches one, add a point and send it back to the top."
+  ],
+  "verify": [
+    "playtest_passes",
+    "moves_by_itself",
+    "drawn_after_fill"
+  ],
+  "report": [
+    "I added $what, and a score in the top left corner. $touch Move with the arrow keys to catch them.",
+    "It's a catching game now: $what. $touch The score is in the top left.",
+    "There are $what, and a score to count your catches. $touch"
+  ],
+  "teach": "Each block moves down a little every frame. When one touches the player, the score goes up and the block goes back to the top.",
+  "whole": true,
+  "_note": "needs_words: a whole game is only built when the child asks for a game. Measured (SPIKES.md section 25N): as one part of a longer message, 'add some walls i have to get around' was read as this recipe at 1.00."
+}

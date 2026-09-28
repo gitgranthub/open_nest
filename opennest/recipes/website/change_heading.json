@@ -1,0 +1,24 @@
+{
+  "id": "website.change_heading",
+  "intent": "change_heading",
+  "describe": "change the big title or headline at the top of the page",
+  "requires": [
+    "h1"
+  ],
+  "op": "set_heading",
+  "params": {},
+  "guide": [
+    "The big title is the <h1 id=\"headline\"> in src/index.html. Change only the words between <h1 ...> and </h1>. If the <title> in <head> said the same thing, change it to match."
+  ],
+  "verify": [
+    "added_present",
+    "html_balanced",
+    "offline"
+  ],
+  "report": [
+    "The headline says \"$words\" now.$tab",
+    "I changed the big title from \"$old\" to \"$words\".$tab",
+    "\"$words\" is the headline now.$tab"
+  ],
+  "teach": "The <h1> is the most important heading on the page, and there should only be one."
+}

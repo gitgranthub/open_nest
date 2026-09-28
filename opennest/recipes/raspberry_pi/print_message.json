@@ -1,0 +1,11 @@
+{
+  "id": "pi.print_message",
+  "intent": "print_message",
+  "describe": "print a message each time it blinks, or show what is happening",
+  "guide": [
+    "Add print() lines inside blink(), next to lights.on() and lights.off(). It already prints \"Blink N of M\"; say so if that is what they asked for."
+  ],
+  "requires": [],
+  "op": null,
+  "params": {}
+}

@@ -1,0 +1,24 @@
+{
+  "id": "pi.change_led_pin",
+  "intent": "change_led_pin",
+  "describe": "change which pin the LED is on",
+  "requires": [
+    "led_pin"
+  ],
+  "op": "led_pin",
+  "params": {},
+  "guide": [
+    "LED_PIN at the top of src/main.py is the BCM pin number. Never choose a pin: if they have not said which, ask. BCM 0 and 1 are reserved."
+  ],
+  "verify": [
+    "value_set",
+    "runs_on_mac",
+    "prints_blinks"
+  ],
+  "report": [
+    "The LED is on BCM pin $pin now, not $old. Move its wire to match before you run it on the Pi.",
+    "LED_PIN is $pin now, from $old -- move the LED's wire to BCM $pin on the Pi.",
+    "I moved the LED to BCM pin $pin. On the Pi, connect it there through its resistor."
+  ],
+  "teach": "BCM numbers are the Pi's own names for its pins, not their positions on the header -- a pinout diagram shows both."
+}

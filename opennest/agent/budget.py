@@ -50,6 +50,8 @@ REPAIR = "repair"
 CORRECTION = "correction"
 RECOVERY = "recovery"
 ROLLOVER = "rollover"
+#: Splitting a request too big for one go into steps (``AgentController._reduce``).
+PLAN = "plan"
 
 
 class BudgetExhausted(ProviderError):

@@ -1,0 +1,21 @@
+{
+  "id": "game.set_title",
+  "intent": "set_title",
+  "describe": "change the name or title of the game",
+  "requires": [],
+  "op": "set_caption",
+  "params": {},
+  "guide": [
+    "The name shown on the game window comes from pygame.display.set_caption(\"...\"). Change the text inside it -- a comment does not change the window."
+  ],
+  "verify": [
+    "caption_set",
+    "playtest_passes"
+  ],
+  "report": [
+    "The game window is called \"$title\" now. You will see it at the top of the window when you press Run Game.",
+    "\"$title\" is the name on the window now.",
+    "I set the window title to \"$title\"."
+  ],
+  "teach": "pygame.display.set_caption sets the text in the window's title bar."
+}

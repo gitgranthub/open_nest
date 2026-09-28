@@ -16,6 +16,7 @@ Two things here come straight out of Phase 1 (SPIKES.md section 4):
 from __future__ import annotations
 
 import contextlib
+import difflib
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -58,6 +59,49 @@ class ToolResult:
     #: Which bounded repair made an edit land, empty when the text matched exactly.
     #: Phase 12.2 measures the recovery path's usage through this.
     recovered: str = ""
+
+
+@dataclass(frozen=True)
+class Step:
+    """One thing happening in a turn, as it happens -- for the Workbench to show.
+
+    Reported by the application at the moment it does something, never by the model:
+    "changing src/game.py" is said as the edit is dispatched, "changed" only once the file
+    on disk has changed, with what is in it now. Gary's own words are deliberately not
+    streamed, because the honesty guard can replace a reply that claimed a change nobody
+    made (Phase 12.1) -- showing it as it arrived would put the claim on screen first.
+    """
+
+    #: ``thinking``, ``recipe``, ``tool``, ``changed``, ``refused``, ``testing``,
+    #: ``undone``.
+    kind: str
+    #: For a child, lower case, present tense: "changing src/game.py".
+    text: str
+    #: Project-relative, when the step is about one file.
+    path: str = ""
+    #: The whole file as it now is, for ``changed`` and ``undone``.
+    content: str | None = None
+    #: 0-based lines of ``content`` that are new or different. Empty for a new file.
+    changed_lines: tuple[int, ...] = ()
+    created: bool = False
+
+
+def changed_lines(before: str | None, after: str) -> tuple[int, ...]:
+    """The 0-based lines of ``after`` that differ from ``before``; none for a new file."""
+    if before is None:
+        return ()
+    matcher = difflib.SequenceMatcher(a=before.split("\n"), b=after.split("\n"),
+                                      autojunk=False)
+    return tuple(line for tag, _i1, _i2, j1, j2 in matcher.get_opcodes()
+                 if tag in ("replace", "insert") for line in range(j1, j2))
+
+
+_DOING = {
+    "read_file": "reading {path}",
+    "edit_file": "changing {path}",
+    "run_project": "running the project",
+    "compile_project": "compiling the sketch",
+}
 
 
 def normalise_tool_name(name: str | None) -> str | None:
@@ -151,6 +195,24 @@ class Toolbox:
         #: None means no -- the same fail-closed default the sandbox has always had.
         self.network_policy = network_policy
         self.last_run: RunResult | None = None
+        #: Told each :class:`Step` as it happens, or None. Set for one turn by
+        #: ``AgentController.send(on_progress=...)``; the Workbench shows the steps.
+        self.observer: Callable[[Step], None] | None = None
+
+    def report(self, step: Step) -> None:
+        """Tell the observer. Showing progress must never be what breaks a turn."""
+        if self.observer is None:
+            return
+        with contextlib.suppress(Exception):
+            self.observer(step)
+
+    def _file_text(self, relative: str) -> str | None:
+        """A project file's text, or None -- read for a Step, so never raises."""
+        try:
+            path = resolve_in_project(self.project.directory, relative)
+            return path.read_text(encoding="utf-8") if path.is_file() else None
+        except (PathNotAllowed, OSError, UnicodeDecodeError, ValueError):
+            return None
 
     def _network_allowed(self) -> bool:
         if self.network_policy is None:
@@ -181,14 +243,56 @@ class Toolbox:
                               reason="bad_arguments")
 
         handler: Callable[[dict], ToolResult] = getattr(self, f"_{tool}")
+        path = args.get("path") if isinstance(args.get("path"), str) else ""
+        before = self._file_text(path) if path and tool in ("edit_file", "write_file") \
+            else None
+        if self.observer is not None:
+            self._report_start(tool, path, before)
         try:
-            return handler(args)
+            result = handler(args)
         except PathNotAllowed as exc:
-            return ToolResult(False, str(exc), reason="outside_project")
+            result = ToolResult(False, str(exc), reason="outside_project")
         except ToolError as exc:
-            return ToolResult(False, str(exc), reason=exc.reason)
+            result = ToolResult(False, str(exc), reason=exc.reason)
         except OSError as exc:
-            return ToolResult(False, f"That did not work: {exc}", reason="os_error")
+            result = ToolResult(False, f"That did not work: {exc}", reason="os_error")
+        if self.observer is not None:
+            self._report_end(tool, path, before, result)
+        return result
+
+    def _report_start(self, tool: str, path: str, before: str | None) -> None:
+        # A path the model made up outside the project is not repeated to the child.
+        shown = path if path and self._inside(path) else "a file"
+        if tool == "write_file":
+            text = f"{'writing' if before is not None else 'creating'} {shown}"
+        else:
+            text = _DOING.get(tool, "using " + tool.replace("_", " ")).format(path=shown)
+        self.report(Step("tool", text, path=path if shown != "a file" else ""))
+
+    def _report_end(self, tool: str, path: str, before: str | None,
+                    result: ToolResult) -> None:
+        for changed in result.changed_files:
+            content = self._file_text(changed)
+            if content is None:
+                continue
+            # edit_file and write_file change the one file they were given, however the
+            # model spelled its path.
+            old = before if len(result.changed_files) == 1 else None
+            self.report(Step("changed", f"{'created' if old is None else 'changed'} {changed}",
+                             path=changed, content=content,
+                             changed_lines=changed_lines(old, content),
+                             created=old is None))
+        if not result.ok and tool in ("edit_file", "write_file"):
+            shown = path if path and self._inside(path) else "the file"
+            self.report(Step("refused", f"that change didn't fit {shown}, so it was left "
+                                        "as it was", path=path))
+
+    def _inside(self, relative: str) -> bool:
+        try:
+            resolve_in_project(self.project.directory, relative)
+        except (PathNotAllowed, ValueError, OSError):
+            return False
+        return True
 
     # -- individual tools ---------------------------------------------------
 
@@ -369,6 +473,7 @@ class Toolbox:
             return None
         if not self.project.entrypoint_path.is_file():
             return None
+        self.report(Step("testing", "testing the game without a window"))
         return playtest.run(
             self.project.directory,
             profile.run_command,

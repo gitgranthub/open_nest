@@ -1,0 +1,17 @@
+{
+  "_note": "See opennest/recipes/games/index.json for what each field is.",
+  "profile": "arduino",
+  "building": "an Arduino sketch that runs on a board",
+  "other": "anything else: a question, several changes at once, or something not listed",
+  "order": [
+    "arduino.change_blink_speed",
+    "arduino.add_serial_message",
+    "arduino.add_led",
+    "arduino.add_button",
+    "arduino.add_servo",
+    "arduino.read_sensor",
+    "arduino.add_buzzer",
+    "arduino.make_traffic_light",
+    "arduino.change_blink_pattern"
+  ]
+}

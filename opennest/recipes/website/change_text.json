@@ -1,0 +1,25 @@
+{
+  "id": "website.change_text",
+  "intent": "change_text",
+  "describe": "change some words on the page, including on a button, a card, the tagline or the footer",
+  "_note": "Deterministic for the three parts a child names most -- the tagline, the footer, the one button -- when the words are spelled out. Measured need: three certain requests in the first label set went to Gary only because this recipe guided. Everything else (a card, a paragraph, words not given) is still Gary's, with the guide.",
+  "requires": [
+    "page"
+  ],
+  "op": "set_text",
+  "params": {},
+  "guide": [
+    "Find the exact words in src/index.html and change only the text between the tags. Keep the tags themselves exactly as they are, and use edit_file with the one line that holds the words."
+  ],
+  "verify": [
+    "html_balanced",
+    "added_present",
+    "links_resolve"
+  ],
+  "report": [
+    "Now $part says “$words” -- it said “$old”.",
+    "I changed the words of $part to “$words”.",
+    "Done: $part reads “$words” instead of “$old”."
+  ],
+  "teach": "The words sit between the opening and closing tags in index.html; the tags themselves say what kind of thing it is."
+}

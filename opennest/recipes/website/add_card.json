@@ -1,0 +1,24 @@
+{
+  "id": "website.add_card",
+  "intent": "add_card",
+  "describe": "add another card or item to the list of things",
+  "requires": [
+    "cards_end"
+  ],
+  "op": "add_card",
+  "params": {},
+  "guide": [
+    "The cards are <li class=\"card\"> items inside <ul class=\"cards\">. Copy one whole card -- <li>, the <h3>, the <p> and </li> -- and change its words. The grid arranges them by itself."
+  ],
+  "verify": [
+    "added_present",
+    "html_balanced",
+    "offline"
+  ],
+  "report": [
+    "I added $count card$plural: $cards. Change the words in index.html to make them yours.",
+    "The Things list has $cards in it now.",
+    "I put $cards into the list of cards. The grid makes room for them by itself."
+  ],
+  "teach": "The cards sit in a CSS grid, which fits as many across as the window has room for."
+}

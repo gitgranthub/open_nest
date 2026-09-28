@@ -1,0 +1,12 @@
+{
+  "id": "website.add_gallery",
+  "intent": "add_gallery",
+  "describe": "add a gallery or grid of several pictures",
+  "requires": [],
+  "op": null,
+  "params": {},
+  "guide": [
+    "A gallery is a <section> holding one <figure> per picture: <figure><img src=\"../assets/name.png\" alt=\"...\"><figcaption>...</figcaption></figure>. In styles.css, give the section display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); so the pictures arrange themselves.",
+    "Only use pictures that are really in the project, and do not describe what they show unless the child told you."
+  ]
+}

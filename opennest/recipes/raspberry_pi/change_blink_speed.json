@@ -1,0 +1,24 @@
+{
+  "id": "pi.change_blink_speed",
+  "intent": "change_blink_speed",
+  "describe": "make the LED blink faster or slower",
+  "requires": [
+    "blink_times"
+  ],
+  "op": "blink_timing",
+  "params": {},
+  "guide": [
+    "The blink is ON_SECONDS and OFF_SECONDS at the top of src/main.py. Smaller numbers blink faster."
+  ],
+  "verify": [
+    "value_set",
+    "runs_on_mac",
+    "prints_blinks"
+  ],
+  "report": [
+    "The LED is on for $on s and off for $off s now -- it was $old_on and $old_off.",
+    "ON_SECONDS is $on and OFF_SECONDS is $off now, from $old_on and $old_off.",
+    "It blinks $on s on and $off s off now."
+  ],
+  "teach": "time.sleep waits that many seconds, so the two numbers are how long the LED stays on and off."
+}

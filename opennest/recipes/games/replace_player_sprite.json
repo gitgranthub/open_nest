@@ -1,0 +1,27 @@
+{
+  "id": "game.replace_player_sprite",
+  "intent": "replace_player_sprite",
+  "describe": "use a picture for the player",
+  "requires": [
+    "player",
+    "player_draw"
+  ],
+  "op": "use_sprite",
+  "params": {},
+  "guide": [
+    "Load the picture once after the window is made: pygame.image.load(\"assets/name.png\").convert_alpha(), scaled to the player's size. Then draw it with screen.blit where the player's rectangle was drawn. Use the exact path from the files they added.",
+    "Nobody has looked at the picture. Do not say what it shows."
+  ],
+  "verify": [
+    "playtest_passes"
+  ],
+  "report": [
+    "I put $picture where the square was, sized to the player. I haven't seen the picture itself, so tell me if it needs turning or resizing.",
+    "The player is drawn with $picture now, scaled to the player's size. I can't see the picture, so tell me if it looks wrong way round or too small."
+  ],
+  "teach": "pygame.image.load reads the picture once, and screen.blit draws it at the player's position every frame.",
+  "attachment_confirms": true,
+  "attachment_covers": [
+    "change_player_look"
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "id": "arduino.add_led",
+  "intent": "add_led",
+  "describe": "add another LED",
+  "requires": [
+    "setup",
+    "loop"
+  ],
+  "op": "add_led",
+  "params": {},
+  "guide": [
+    "Never choose a pin. If the message does not say which pin, ask. Pins 0 and 1 are the USB connection; never use them for a part.",
+    "An LED needs a named pin constant at the top, pinMode(PIN, OUTPUT) in setup(), and digitalWrite in loop(). Wire it through a 220 ohm resistor, and add a row to the Connections table in wiring.md."
+  ],
+  "verify": [
+    "added_present",
+    "wiring_noted",
+    "compiles"
+  ],
+  "report": [
+    "I added the $led on pin $pin ($name) -- it $how. wiring.md says how to connect it, and it needs a 220 ohm resistor.",
+    "The $led is on pin $pin now and $how. Check wiring.md before you plug it in: it goes through a resistor.",
+    "$name is pin $pin, and the $led $how. The wiring, resistor included, is in wiring.md."
+  ],
+  "teach": "pinMode(..., OUTPUT) tells the board this pin sends power out; digitalWrite HIGH turns it on and LOW turns it off."
+}

@@ -1,0 +1,26 @@
+{
+  "id": "website.add_section",
+  "intent": "add_section",
+  "describe": "add a new section or part to the page",
+  "requires": [
+    "main_end",
+    "nav_end"
+  ],
+  "op": "add_section",
+  "params": {},
+  "guide": [
+    "A new part of the page is a <section id=\"...\"> with an <h2> inside <main>, before </main>. Give it a short id with no spaces, and add a link to it in the <nav>: <a href=\"#the-id\">Title</a>. A list of favourites wants a <ul> of <li>; steps want an <ol>."
+  ],
+  "verify": [
+    "added_present",
+    "html_balanced",
+    "links_resolve",
+    "offline"
+  ],
+  "report": [
+    "I added a section called \"$title\", with $what, and a link to it in the menu at the top.",
+    "There is a \"$title\" section now, linked from the menu. It has $what.",
+    "I made a new \"$title\" part of the page -- it has $what, and the menu links straight to it."
+  ],
+  "teach": "The menu link href=\"#$id\" jumps to the section whose id is \"$id\", so the two always have to match."
+}

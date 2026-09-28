@@ -1,0 +1,18 @@
+{
+  "_note": "See opennest/recipes/games/index.json for what each field is.",
+  "profile": "raspberry_pi",
+  "building": "a Raspberry Pi Python project that can be tested on a Mac",
+  "other": "anything else: a question, several changes at once, or something not listed",
+  "order": [
+    "pi.change_blink_speed",
+    "pi.change_blink_count",
+    "pi.change_led_pin",
+    "pi.add_button",
+    "pi.add_motor",
+    "pi.read_sensor",
+    "pi.add_led",
+    "pi.add_buzzer",
+    "pi.print_message",
+    "pi.blink_forever"
+  ]
+}

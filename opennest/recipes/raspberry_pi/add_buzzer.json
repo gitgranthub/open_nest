@@ -1,0 +1,11 @@
+{
+  "id": "pi.add_buzzer",
+  "intent": "add_buzzer",
+  "describe": "add a buzzer, or make it beep or play sounds",
+  "guide": [
+    "Never choose a pin: ask which BCM pin the buzzer is on. Put it behind a small class like Lights, which prints on the Mac and uses RPi.GPIO on the Pi, so the project still runs here."
+  ],
+  "requires": [],
+  "op": null,
+  "params": {}
+}

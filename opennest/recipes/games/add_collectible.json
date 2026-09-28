@@ -1,0 +1,32 @@
+{
+  "id": "game.add_collectible",
+  "intent": "add_collectible",
+  "describe": "add something to collect for points, like coins",
+  "requires": [
+    "loop",
+    "fill",
+    "flip",
+    "player"
+  ],
+  "op": "add_things",
+  "params": {
+    "motion": "still",
+    "noun": "coin",
+    "on_touch": "collect",
+    "score": "per_touch"
+  },
+  "guide": [
+    "A new thing needs three pieces in three places, and with only two it does nothing: create it once ABOVE the game loop, move it INSIDE the loop, and draw it inside the loop AFTER screen.fill(...). Give its speed, size and colour named constants at the top.",
+    "When the player's rect collides with it (player.colliderect(coin)), add one to the score and move the coin somewhere new. Draw the score with a font after screen.fill."
+  ],
+  "verify": [
+    "playtest_passes",
+    "drawn_after_fill"
+  ],
+  "report": [
+    "I added $what, and a score in the top left corner. $touch",
+    "There is $what now, with a score in the top left. $touch",
+    "I added $what and a score to count them. $touch"
+  ],
+  "teach": "player.colliderect checks whether two rectangles overlap -- that is how the game knows you touched it."
+}

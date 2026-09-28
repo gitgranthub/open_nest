@@ -1,0 +1,23 @@
+{
+  "id": "arduino.add_serial_message",
+  "intent": "add_serial_message",
+  "describe": "print messages to the serial monitor",
+  "requires": [
+    "setup",
+    "loop"
+  ],
+  "op": "add_serial",
+  "params": {},
+  "guide": [
+    "Start the serial port once in setup() with Serial.begin(9600); then Serial.println(\"...\"); wherever something happens in loop()."
+  ],
+  "verify": [
+    "added_present",
+    "compiles"
+  ],
+  "report": [
+    "The sketch prints \"LED on\" and \"LED off\" to the serial monitor now$extra. Open Nest can't show the serial monitor yet; in the Arduino IDE it is Tools > Serial Monitor, at 9600 baud.",
+    "It talks to the computer now: \"LED on\" and \"LED off\"$extra, at 9600 baud. You can read it in the Arduino IDE's Serial Monitor -- Open Nest doesn't have one yet."
+  ],
+  "teach": "Serial.begin(9600) opens the USB connection at 9600 bits a second, and Serial.println sends one line of text down it."
+}

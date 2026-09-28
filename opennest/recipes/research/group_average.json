@@ -1,0 +1,28 @@
+{
+  "id": "analysis.group_average",
+  "intent": "group_average",
+  "describe": "work out the average of a number for each group",
+  "requires": [
+    "table",
+    "anchor",
+    "frame"
+  ],
+  "op": "group_summary",
+  "params": {
+    "measure": "average"
+  },
+  "guide": [
+    "frame.groupby(group_column)[number_column].mean(), sorted, printed.",
+    "Never state a finding the code has not computed: write code that prints the result, run it, then quote what it printed."
+  ],
+  "verify": [
+    "runs_clean",
+    "printed_result"
+  ],
+  "report": [
+    "I added $what to the analysis.",
+    "The analysis works out $what now.",
+    "I added a step that works out $what."
+  ],
+  "teach": "The average hides how spread out the values are -- a group can have the same average and very different rows."
+}

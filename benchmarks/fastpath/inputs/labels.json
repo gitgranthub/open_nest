@@ -1,0 +1,1633 @@
+[
+ {
+  "profile": "games",
+  "text": "make the square go faster",
+  "previous": null,
+  "gold": "change_player_speed",
+  "accept": [
+   "change_player_speed"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "can my player be blue insted of orange",
+  "previous": null,
+  "gold": "change_player_colour",
+  "accept": [
+   "change_player_colour"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "make the player bigger",
+  "previous": null,
+  "gold": "change_player_size",
+  "accept": [
+   "change_player_size"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "change the backround to black",
+  "previous": null,
+  "gold": "change_background",
+  "accept": [
+   "change_background"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "change the title from My Game to Blob Escape",
+  "previous": null,
+  "gold": "set_title",
+  "accept": [
+   "set_title"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "its way too fast i cant control it, slow it down a little",
+  "previous": null,
+  "gold": "change_player_speed",
+  "accept": [
+   "change_player_speed"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "make my guy a circle not a square",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "change_player_look"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "i want to use WASD instead of the arrow keys cuz thats what i use in minecraft",
+  "previous": null,
+  "gold": "change_controls",
+  "accept": [
+   "change_controls"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "add a score in the top corner",
+  "previous": null,
+  "gold": "add_score",
+  "accept": [
+   "add_score"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "add enemys that chase you",
+  "previous": null,
+  "gold": "add_enemy",
+  "accept": [
+   "add_enemy"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "can you put coins in the game that i can collect",
+  "previous": null,
+  "gold": "add_collectible",
+  "accept": [
+   "add_collectible"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "make it so when i press space the square jumps",
+  "previous": null,
+  "gold": "add_jump",
+  "accept": [
+   "add_jump"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "the square goes off the screen and disapears!! make it stop at the edges",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "fix_problem"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "add a timer that counts down from 60",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "add_game_rules"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "i want 3 lives and you lose one every time an enemy touches you",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "add_collision",
+   "add_game_rules"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "add a game over screen with a play again button",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "add_game_rules"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "turn it into a whole platformer like mario with 5 levels and a boss at the end and power ups",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "make it a snake game",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "make it spookier",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "its kinda boring make it more exciting",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "can it feel like ur in space",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "make the player green and add a score and can the background be purple",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "add some walls i have to get around, put music in, and change the name to Maze Runner",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "how does the speed work?",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "theyre too fast i keep dying lol",
+  "previous": "add some bad guys",
+  "gold": "change_thing_speed",
+  "accept": [
+   "change_thing_speed"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "lighter",
+  "previous": "change the player colour to pink",
+  "gold": "change_player_colour",
+  "accept": [
+   "change_player_colour"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "change My Website to Luna's Page",
+  "previous": null,
+  "gold": "change_heading",
+  "accept": [
+   "change_heading"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "make the tagline say i like cats and minecraft",
+  "previous": null,
+  "gold": "change_text",
+  "accept": [
+   "change_text"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "change the green to purple",
+  "previous": null,
+  "gold": "change_colours",
+  "accept": [
+   "change_colours"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "make the background dark",
+  "previous": null,
+  "gold": "change_colours",
+  "accept": [
+   "change_colours"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "the words are too small make them bigger",
+  "previous": null,
+  "gold": "change_font_size",
+  "accept": [
+   "change_font_size"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "rename the cards to Dogs, Cats and Fish",
+  "previous": null,
+  "gold": "change_text",
+  "accept": [
+   "change_text"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "change the button to say Surprise me!",
+  "previous": null,
+  "gold": "change_text",
+  "accept": [
+   "change_text"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "change the footer to made by jayden 2026",
+  "previous": null,
+  "gold": "change_text",
+  "accept": [
+   "change_text"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "add a picture of my dog at the top",
+  "previous": null,
+  "gold": "add_image",
+  "accept": [
+   "add_image"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "can you add a contact page",
+  "previous": null,
+  "gold": "add_section",
+  "accept": [
+   "add_section"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "add a 4th card",
+  "previous": null,
+  "gold": "add_card",
+  "accept": [
+   "add_card"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "put a dark mode switch in the corner",
+  "previous": null,
+  "gold": "add_button",
+  "accept": [
+   "add_button",
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "make a quiz about me with 3 questions and it tells you your score at the end",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "make a counter that counts how many times people click the button",
+  "previous": null,
+  "gold": "add_button",
+  "accept": [
+   "add_button"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "can the cards flip over when you put your mouse on them",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "restyle_page"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "make it into a whole fan website for my favourite band, with a page for each member and a page for there songs",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "turn it into a shop website for my slime buisness",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "make it look cooler",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "make it feel like summer",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "change_colours"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "it looks kinda babyish can it look more grown up",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "change the title to Epic Facts, make the cards blue and add a video",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "make the menu stay at the top when you scroll and also add a joke of the day and make the font comic sans",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "what does script.js even do",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "how do i show this to my friend on her computer",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "actually no put it back how it was",
+  "previous": "make the header orange",
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "website",
+  "text": "put it before the About bit",
+  "previous": "add a section about my favourite animals",
+  "gold": "other",
+  "accept": [
+   "other",
+   "restyle_page"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "make the chart bigger",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "restyle_chart"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "make the chart green",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "restyle_chart"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "can the chart have a title that says My Plant Experiment",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "restyle_chart"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "i only want the summary, get rid of the other stuff it prints",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "change_printout"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "label the axes properly it should say Day and Height (cm)",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "restyle_chart"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "make it a line graph instead",
+  "previous": null,
+  "gold": "line_chart",
+  "accept": [
+   "line_chart"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "round all the numbers to 1 decimal",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "change_printout"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "save the chart as a picture so i can put it in my slides",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "make a line graph of how tall each plant got every day",
+  "previous": null,
+  "gold": "line_chart",
+  "accept": [
+   "line_chart"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "do plants in full sun grow faster than the shade ones",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "group_average",
+   "biggest_change",
+   "bar_chart"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "i want to see if more water = taller plants. can you make a scatter plot",
+  "previous": null,
+  "gold": "scatter_plot",
+  "accept": [
+   "scatter_plot"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "work out the average height for each plant",
+  "previous": null,
+  "gold": "group_average",
+  "accept": [
+   "group_average"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "find the days where i forgot to measure something",
+  "previous": null,
+  "gold": "filter_rows",
+  "accept": [
+   "filter_rows",
+   "describe_data"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "draw a seperate little chart for each plant",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "restyle_chart"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "make a table of how much each plant grew each week",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "biggest_change"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "add a trend line to the graph",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "restyle_chart"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "can you do the whole thing for my science fair, all the graphs and a conclusion, its due monday",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "make the graphs look more fun",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "restyle_chart"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "make it look professional like a real scientist made it",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "my charts are ugly",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "restyle_chart"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "make the chart purple, tell me which plant is tallest, and also basil is spelled wrong in some rows can you fix it",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "add a pie chart of the sunlight types and make the writing bigger and print how many plants there are",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "what does empty cells mean",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "what is std in the summary",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "show me that on a chart",
+  "previous": "which plant grew the most?",
+  "gold": "biggest_change",
+  "accept": [
+   "biggest_change",
+   "bar_chart"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "research",
+  "text": "sort it biggest to smallest",
+  "previous": "make a bar chart of how much water each plant got",
+  "gold": "other",
+  "accept": [
+   "other",
+   "restyle_chart"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "make it blink faster",
+  "previous": null,
+  "gold": "change_blink_speed",
+  "accept": [
+   "change_blink_speed"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "can the light stay on longer and off shorter",
+  "previous": null,
+  "gold": "change_blink_speed",
+  "accept": [
+   "change_blink_speed",
+   "change_blink_pattern"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "change it so it blinks once every 2 seconds",
+  "previous": null,
+  "gold": "change_blink_speed",
+  "accept": [
+   "change_blink_speed"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "set ON_MILLISECONDS to 100",
+  "previous": null,
+  "gold": "change_blink_speed",
+  "accept": [
+   "change_blink_speed"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "make it blink realllly slow",
+  "previous": null,
+  "gold": "change_blink_speed",
+  "accept": [
+   "change_blink_speed"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "make it blink 5 times and then stop",
+  "previous": null,
+  "gold": "change_blink_pattern",
+  "accept": [
+   "change_blink_pattern",
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "make it do a double blink like a heartbeat",
+  "previous": null,
+  "gold": "change_blink_pattern",
+  "accept": [
+   "change_blink_pattern"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "can you make the notes in the code easier to understand",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "i plugged a red led into pin 9, make that one blink too",
+  "previous": null,
+  "gold": "add_led",
+  "accept": [
+   "add_led"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "add a button on pin 2 that turns the light on when i press it",
+  "previous": null,
+  "gold": "add_button",
+  "accept": [
+   "add_button"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "add a buzzer that beeps when the light is on",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "add_buzzer"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "i have a servo motor, can you make it sweep back and forth",
+  "previous": null,
+  "gold": "add_servo",
+  "accept": [
+   "add_servo"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "make a traffic light with red yellow and green leds on pins 11, 10 and 9",
+  "previous": null,
+  "gold": "make_traffic_light",
+  "accept": [
+   "make_traffic_light"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "i got a potentiometer on A0, make it control how fast it blinks",
+  "previous": null,
+  "gold": "read_sensor",
+  "accept": [
+   "read_sensor",
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "add a light sensor so the led comes on when its dark",
+  "previous": null,
+  "gold": "read_sensor",
+  "accept": [
+   "read_sensor"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "i have an ultrasonic sensor with trig on 7 and echo on 8, make it beep faster when something gets close",
+  "previous": null,
+  "gold": "read_sensor",
+  "accept": [
+   "read_sensor",
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "make it into a whole alarm for my bedroom door so it goes off when my sister comes in",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "turn it into a robot car that drives around and doesnt crash into stuff",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "make the blinking look happier",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "change_blink_pattern"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "make it like a spooky haunted house light",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "change_blink_pattern"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "make it cooler",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "make it blink faster and add a buzzer on pin 8 and put it in wiring.md",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "i want the led to fade instead of blink, and also print the time to the serial thing, and can the readme say what it does",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "what does LED_BUILTIN mean",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "can it be faster",
+  "previous": "make it play happy birthday on my piezo",
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "arduino",
+  "text": "now make it go rainbow",
+  "previous": "hook up an rgb led on pins 3 5 and 6",
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "make it blink 10 times",
+  "previous": null,
+  "gold": "change_blink_count",
+  "accept": [
+   "change_blink_count"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "blink faster pls",
+  "previous": null,
+  "gold": "change_blink_speed",
+  "accept": [
+   "change_blink_speed"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "change the pin to 18 thats where i put my led",
+  "previous": null,
+  "gold": "change_led_pin",
+  "accept": [
+   "change_led_pin"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "make it keep blinking forever not just 3 times",
+  "previous": null,
+  "gold": "blink_forever",
+  "accept": [
+   "blink_forever"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "make it stay on for 1 second each time",
+  "previous": null,
+  "gold": "change_blink_speed",
+  "accept": [
+   "change_blink_speed"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "slow it down",
+  "previous": null,
+  "gold": "change_blink_speed",
+  "accept": [
+   "change_blink_speed"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "can it print blink! every time it blinks",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "print_message"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "make the gap between the blinks longer",
+  "previous": null,
+  "gold": "change_blink_speed",
+  "accept": [
+   "change_blink_speed"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "add a button on GPIO 27 that starts the blinking",
+  "previous": null,
+  "gold": "add_button",
+  "accept": [
+   "add_button"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "i have a second led on pin 22, can they take turns",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "add_led"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "add a buzzer",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "add_buzzer"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "i got a temperature sensor can you make it print the temperature",
+  "previous": null,
+  "gold": "read_sensor",
+  "accept": [
+   "read_sensor"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "i want a motion sensor that turns the light on when someone walks by",
+  "previous": null,
+  "gold": "read_sensor",
+  "accept": [
+   "read_sensor"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "make a traffic light with 3 leds",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "add a servo on pin 12 that moves when the light turns on",
+  "previous": null,
+  "gold": "add_motor",
+  "accept": [
+   "add_motor"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "make the led fade in and out slowly instead of just on off",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "make it into a whole smart home thing that controls the lights in every room of my house",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "build a reaction game where the led turns on at a random time and you hit the button as fast as you can and it tells you how fast you were",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "make it more magical",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "make it like a disco",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "can it be calming like a night light",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "make it blink 20 times, use pin 23, and add a buzzer that beeps at the end",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "can you make the led do morse code for my name, also make a button that stops it, and explain what GPIO means",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "how does it work without a real raspberry pi?",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "make it play a song instead of just beeping",
+  "previous": "i wired a buzzer to pin 24",
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "raspberry_pi",
+  "text": "and then a really long one at the end",
+  "previous": "can it count down from 5 with blinks",
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "independent"
+ },
+ {
+  "profile": "games",
+  "text": "Make a game where a spaceship moves around and avoids asteroids.",
+  "previous": null,
+  "gold": "make_avoid_game",
+  "accept": [
+   "make_avoid_game"
+  ],
+  "source": "phase12"
+ },
+ {
+  "profile": "games",
+  "text": "Make the asteroids move faster.",
+  "previous": "Make a game where a spaceship moves around and avoids asteroids.",
+  "gold": "change_thing_speed",
+  "accept": [
+   "change_thing_speed"
+  ],
+  "source": "phase12"
+ },
+ {
+  "profile": "games",
+  "text": "Add a ball that bounces around the screen.",
+  "previous": null,
+  "gold": "add_moving_thing",
+  "accept": [
+   "add_moving_thing"
+  ],
+  "source": "phase12"
+ },
+ {
+  "profile": "games",
+  "text": "Make the square fall down the screen and start again at the top.",
+  "previous": null,
+  "gold": "player_moves_itself",
+  "accept": [
+   "player_moves_itself",
+   "add_moving_thing"
+  ],
+  "source": "phase12"
+ },
+ {
+  "profile": "games",
+  "text": "Add a second square that slides left and right on its own.",
+  "previous": null,
+  "gold": "add_moving_thing",
+  "accept": [
+   "add_moving_thing"
+  ],
+  "source": "phase12"
+ },
+ {
+  "profile": "games",
+  "text": "Make a game where you catch falling blocks.",
+  "previous": null,
+  "gold": "make_catch_game",
+  "accept": [
+   "make_catch_game"
+  ],
+  "source": "phase12"
+ },
+ {
+  "profile": "games",
+  "text": "Add an enemy that chases the player.",
+  "previous": null,
+  "gold": "add_enemy",
+  "accept": [
+   "add_enemy"
+  ],
+  "source": "phase12"
+ },
+ {
+  "profile": "games",
+  "text": "Add a coin that you can collect for points.",
+  "previous": null,
+  "gold": "add_collectible",
+  "accept": [
+   "add_collectible"
+  ],
+  "source": "phase12"
+ },
+ {
+  "profile": "games",
+  "text": "Add stars that drift down the background.",
+  "previous": null,
+  "gold": "add_moving_thing",
+  "accept": [
+   "add_moving_thing"
+  ],
+  "source": "phase12"
+ },
+ {
+  "profile": "games",
+  "text": "Add a score that goes up every second.",
+  "previous": null,
+  "gold": "add_score",
+  "accept": [
+   "add_score"
+  ],
+  "source": "phase12"
+ },
+ {
+  "profile": "games",
+  "text": "Make the player bigger.",
+  "previous": null,
+  "gold": "change_player_size",
+  "accept": [
+   "change_player_size"
+  ],
+  "source": "phase12"
+ },
+ {
+  "profile": "games",
+  "text": "Change the background colour to dark blue.",
+  "previous": null,
+  "gold": "change_background",
+  "accept": [
+   "change_background"
+  ],
+  "source": "phase12"
+ },
+ {
+  "profile": "games",
+  "text": "Call my game Space Rocks.",
+  "previous": null,
+  "gold": "set_title",
+  "accept": [
+   "set_title"
+  ],
+  "source": "phase12"
+ },
+ {
+  "profile": "games",
+  "text": "Make the player move faster.",
+  "previous": null,
+  "gold": "change_player_speed",
+  "accept": [
+   "change_player_speed"
+  ],
+  "source": "phase12"
+ },
+ {
+  "profile": "games",
+  "text": "Change the background to dark green.",
+  "previous": null,
+  "gold": "change_background",
+  "accept": [
+   "change_background"
+  ],
+  "source": "phase12"
+ },
+ {
+  "profile": "games",
+  "text": "Add a score in the top left corner.",
+  "previous": null,
+  "gold": "add_score",
+  "accept": [
+   "add_score"
+  ],
+  "source": "phase12"
+ },
+ {
+  "profile": "games",
+  "text": "Now make it blue.",
+  "previous": "Make the player bigger.",
+  "gold": "change_player_colour",
+  "accept": [
+   "change_player_colour"
+  ],
+  "source": "phase12"
+ },
+ {
+  "profile": "games",
+  "text": "Use this picture for my spaceship.",
+  "previous": null,
+  "gold": "replace_player_sprite",
+  "accept": [
+   "replace_player_sprite"
+  ],
+  "source": "phase12"
+ },
+ {
+  "profile": "games",
+  "text": "add a moving asteroid",
+  "previous": null,
+  "gold": "add_moving_thing",
+  "accept": [
+   "add_moving_thing"
+  ],
+  "source": "workorder"
+ },
+ {
+  "profile": "games",
+  "text": "add movement",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other",
+   "change_controls",
+   "player_moves_itself"
+  ],
+  "source": "workorder"
+ },
+ {
+  "profile": "games",
+  "text": "add score",
+  "previous": null,
+  "gold": "add_score",
+  "accept": [
+   "add_score"
+  ],
+  "source": "workorder"
+ },
+ {
+  "profile": "games",
+  "text": "add collision",
+  "previous": null,
+  "gold": "add_collision",
+  "accept": [
+   "add_collision"
+  ],
+  "source": "workorder"
+ },
+ {
+  "profile": "games",
+  "text": "create a simple spaceship game",
+  "previous": null,
+  "gold": "make_avoid_game",
+  "accept": [
+   "make_avoid_game",
+   "other"
+  ],
+  "source": "workorder"
+ },
+ {
+  "profile": "games",
+  "text": "Make this feel more mysterious.",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "workorder"
+ },
+ {
+  "profile": "games",
+  "text": "Make the enemies scared of the player.",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "workorder"
+ },
+ {
+  "profile": "games",
+  "text": "Turn this into something weird.",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "workorder"
+ },
+ {
+  "profile": "games",
+  "text": "Make the game feel like you're lost inside an old television.",
+  "previous": null,
+  "gold": "other",
+  "accept": [
+   "other"
+  ],
+  "source": "workorder"
+ },
+ {
+  "profile": "games",
+  "text": "make the asteroids red and bigger",
+  "previous": "Make a game where a spaceship moves around and avoids asteroids.",
+  "gold": "change_thing_look",
+  "accept": [
+   "change_thing_look"
+  ],
+  "source": "workorder"
+ },
+ {
+  "profile": "research",
+  "text": "Graph this and tell me what changed the most.",
+  "previous": null,
+  "gold": "biggest_change",
+  "accept": [
+   "biggest_change"
+  ],
+  "source": "workorder"
+ }
+]

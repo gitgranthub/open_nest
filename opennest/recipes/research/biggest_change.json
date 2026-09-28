@@ -1,0 +1,38 @@
+{
+  "id": "analysis.biggest_change",
+  "intent": "biggest_change",
+  "describe": "find what changed the most, or which one grew or dropped the most",
+  "_note": "needs_words: measured in SPIKES.md section 25 -- 'find the windiest day and print it' was read as this at 1.00 in every ordering. A superlative is not a change, so the child's words must say something changed, grew, rose or fell (in this message or the one before) before this recipe is taken.",
+  "needs_words": [
+    "\\bchanged\\b",
+    "\\bchange[sd]?\\s+(over|from|between|since)\\b",
+    "\\b(did|does|do|has|have)\\b[^.?!]{0,40}\\bchange\\b",
+    "\\b(biggest|largest|most|least|smallest)\\s+(change|increase|decrease|drop|rise|growth|difference|jump|fall)",
+    "\\b(grew|grow|grows|growing|grown|growth|rose|risen|dropped|fell|increased|decreased|improved|shrank|declined)\\b",
+    "\\b(went|go|goes|gone)\\s+(up|down)\\b",
+    "\\bgot\\s+(bigger|smaller|higher|lower|taller|shorter|hotter|colder|wetter)\\b"
+  ],
+  "requires": [
+    "table",
+    "anchor",
+    "frame",
+    "chart_dir"
+  ],
+  "op": "biggest_change",
+  "params": {},
+  "guide": [
+    "Put the rows in time order -- sort by the time column when it is a number or a date; month or day names are already in order in the file, and sorting them would put April first. Then for each group take the last value minus the first. Sort the changes, print them, say which is biggest, and draw them as a bar chart.",
+    "Never state a finding the code has not computed: write code that prints the result, run it, then quote what it printed."
+  ],
+  "verify": [
+    "runs_clean",
+    "chart_written",
+    "printed_result"
+  ],
+  "report": [
+    "I added a step that works out $what, and a chart of it in $chart.",
+    "The analysis works out $what now, and draws it in $chart.",
+    "I added $what, with a chart in $chart."
+  ],
+  "teach": "Change is the last value minus the first, so a negative number means it went down."
+}

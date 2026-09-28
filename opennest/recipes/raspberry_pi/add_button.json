@@ -1,0 +1,11 @@
+{
+  "id": "pi.add_button",
+  "intent": "add_button",
+  "describe": "add a button",
+  "requires": [],
+  "op": null,
+  "params": {},
+  "guide": [
+    "Never choose a pin: ask which BCM pin the button is on. Put the button behind a small class like Lights, with RPi.GPIO setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP) on a Pi and a pretend version on the Mac (for example, pressed every other time), so the project still runs here. Label which code runs on the Mac and which on the Pi."
+  ]
+}

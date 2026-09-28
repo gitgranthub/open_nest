@@ -1,0 +1,31 @@
+{
+  "id": "game.add_enemy",
+  "intent": "add_enemy",
+  "describe": "add an enemy that chases the player",
+  "requires": [
+    "loop",
+    "fill",
+    "flip",
+    "player"
+  ],
+  "op": "add_things",
+  "params": {
+    "motion": "chase",
+    "noun": "enemy"
+  },
+  "guide": [
+    "A new thing needs three pieces in three places, and with only two it does nothing: create it once ABOVE the game loop, move it INSIDE the loop, and draw it inside the loop AFTER screen.fill(...). Give its speed, size and colour named constants at the top.",
+    "To chase, move the enemy a little toward the player's x and y every frame. Keep it slower than the player so it can be escaped."
+  ],
+  "verify": [
+    "playtest_passes",
+    "moves_by_itself",
+    "drawn_after_fill"
+  ],
+  "report": [
+    "I added $what. $speed near the top sets how fast it follows -- it starts slower than you.",
+    "There is $what now. It moves a little slower than you, and $speed at the top changes that.",
+    "I added $what. Keep moving -- $speed decides how quickly it catches up."
+  ],
+  "teach": "Every frame it compares its position with the player's and takes one small step closer."
+}

@@ -1,0 +1,6 @@
+You sort one message from a child into the kind of change it asks for. They are building {building}.
+
+The kinds:
+{options}
+
+Reply with the one letter of the best match, and nothing else.

@@ -1,0 +1,34 @@
+{
+  "id": "game.change_thing_speed",
+  "intent": "change_thing_speed",
+  "describe": "make something other than the player move faster or slower, like the asteroids or enemies",
+  "requires": [
+    "thing_speed"
+  ],
+  "op": "set_number",
+  "params": {
+    "fact": "thing_speed",
+    "question": "Does the message want it to end up faster or slower?",
+    "up": "faster",
+    "down": "slower",
+    "up_word": "raised",
+    "down_word": "lowered",
+    "factor": 1.6,
+    "min": 1,
+    "max": 30
+  },
+  "guide": [
+    "Find the number that thing moves by each frame. If it is written straight into the movement code, give it a named constant at the top (like ASTEROID_SPEED) and use that, then change it."
+  ],
+  "verify": [
+    "value_set",
+    "playtest_passes",
+    "moves_by_itself"
+  ],
+  "report": [
+    "I $direction $name from $old to $new.",
+    "$name is $new now, from $old.",
+    "They move $new pixels a frame now -- $name was $old."
+  ],
+  "teach": "$name is how many pixels it moves every frame."
+}

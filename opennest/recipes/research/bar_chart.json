@@ -1,0 +1,30 @@
+{
+  "id": "analysis.bar_chart",
+  "intent": "bar_chart",
+  "describe": "make a bar chart that compares groups",
+  "requires": [
+    "table",
+    "anchor",
+    "frame",
+    "chart_dir"
+  ],
+  "op": "chart",
+  "params": {
+    "chart": "bar"
+  },
+  "guide": [
+    "Group the rows by the text column and take the mean of the number column, sort it, and draw axes.bar. Label both axes, give the chart a title computed from the numbers, and save it with figure.savefig into the chart folder. Print the numbers too.",
+    "Never state a finding the code has not computed: write code that prints the result, run it, then quote what it printed."
+  ],
+  "verify": [
+    "runs_clean",
+    "chart_written",
+    "printed_result"
+  ],
+  "report": [
+    "I added $what, saved as $chart.",
+    "There is $what now -- it is in $chart.",
+    "I drew $what and saved it to $chart."
+  ],
+  "teach": "groupby puts rows with the same value together, and mean() gives one average for each group -- one bar each."
+}

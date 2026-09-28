@@ -15,7 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QColor, QPixmap, QTextCursor, QTextFormat
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSplitter,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -63,6 +64,10 @@ from opennest.versioning.git_manager import GitError, SecretsFound
 #: own list of good labels.
 SHOW_DETAILS = "Show technical details"
 HIDE_DETAILS = "Hide technical details"
+#: After a turn that changed code and then ran it, the panel shows the result and this
+#: swaps to the code (and back), so every project type ends with both one click apart.
+SHOW_CODE = "Show the code that changed"
+SHOW_RESULT = "Show the result"
 
 
 def _first_bytes(source: Path, count: int = 64) -> bytes:
@@ -390,6 +395,12 @@ class Workbench(QWidget):
             self._web = web_preview_ui.WebPreview(self.project, self)
             layout.addWidget(self._web, 3)
 
+        # Which file the code below is, while a turn is building it (``_show_code``).
+        self._code_caption = QLabel()
+        self._code_caption.setProperty("role", "mono")
+        self._code_caption.hide()
+        layout.addWidget(self._code_caption)
+
         self._output = QPlainTextEdit()
         self._output.setReadOnly(True)
         self._output.setProperty("role", "mono")
@@ -410,8 +421,17 @@ class Workbench(QWidget):
         self._details_button.setToolTip("See the exact error the project produced")
         self._details_button.clicked.connect(self._toggle_details)
         self._details_button.hide()
+        self._code_button = QPushButton(SHOW_CODE)
+        self._code_button.setToolTip("Switch between the code this turn changed and what "
+                                     "running it showed")
+        self._code_button.clicked.connect(self._toggle_code)
+        self._code_button.hide()
+        #: This turn's last changed file, and the result view a run left, for the toggle.
+        self._turn_code = None
+        self._run_view = None
         details_row = QHBoxLayout()
         details_row.addWidget(self._details_button)
+        details_row.addWidget(self._code_button)
         details_row.addStretch(1)
         layout.addLayout(details_row)
         #: Raw text for the run on screen, revealed only if asked for.
@@ -868,7 +888,11 @@ class Workbench(QWidget):
         # own diagram does. Off by default, so this is "" for a normal child session.
         self._review_branch = self._begin_review_branch()
 
+        self._last_step = ""
+        self._turn_code = self._run_view = None
+        self._code_button.hide()
         worker = AgentWorker(self.controller, text, attachments)
+        worker.progress.connect(self._progress)
         worker.finished.connect(self._turn_finished)
         worker.failed.connect(self._turn_failed)
         self._thread = run_in_thread(self, worker)
@@ -880,10 +904,17 @@ class Workbench(QWidget):
     def _turn_finished(self, turn) -> None:
         self._busy(False)
         self.working("")
+        self._page_back()
         self.set_model_status("ready", "Ready")
         for _name, result in turn.tool_results:
             if result.run is not None:
                 self._show_run(result)
+        self._show_still(turn)
+        if self._turn_code is not None and self._run_view is not None:
+            # A run replaced the code on screen at the end: the result stays first, and
+            # the code that changed is one click away -- in every project type alike.
+            self._code_button.setText(SHOW_CODE)
+            self._code_button.show()
         if turn.text:
             self._say(ASSISTANT_NAME, turn.text)
         self.refresh_files()
@@ -975,12 +1006,14 @@ class Workbench(QWidget):
         """
         self._busy(False)
         self.working("")
+        self._page_back()
         self.set_model_status("attention", "Problem")
         self._say(SYSTEM_NAME, message)
 
     def _show_run(self, result) -> None:
         run = result.run
         self._clear_details()
+        self._clear_code_marks()
         self._mark_first_success(run)
         if run.still_running:
             # Not "close its window": a Raspberry Pi test loop is a console program and
@@ -995,6 +1028,8 @@ class Workbench(QWidget):
             self._headline = headline_failure(run)
             self._output.setPlainText(self._headline)
             self._details_button.setVisible(bool(run.failure_text.strip()))
+        self._run_view = (self._output.toPlainText(), self._technical_detail, self._headline,
+                          not self._details_button.isHidden())
         self._show_any_chart()
 
     # -- section 30's technical detail --------------------------------------
@@ -1007,7 +1042,108 @@ class Workbench(QWidget):
         stderr of some earlier run behind it.
         """
         self._clear_details()
+        self._clear_code_marks()
+        self._code_button.hide()
         self._output.setPlainText(text)
+
+    # -- the turn as it happens ---------------------------------------------
+
+    def _progress(self, step) -> None:
+        """One step of a turn, as Open Nest does it: a line in the chat, and the code.
+
+        The steps are the application's own report of what it is doing (``tools.Step``)
+        -- never Gary's words streamed as they arrive, which the honesty guard may yet
+        replace. "changed" is not said in the chat, because "changing ..." already was;
+        it puts the file, as it now is, in the Build / Preview panel instead.
+        """
+        if step.kind in ("changed", "undone") and step.content is not None:
+            self._turn_code = step
+            self._show_code(step)
+        if step.kind == "changed":
+            return
+        if step.kind in ("thinking", "recipe", "tool", "testing"):
+            # Something he is doing now. A refusal or an undo is something that
+            # happened, and "Gary is that change didn't fit" is not a sentence.
+            self.working(f"{ASSISTANT_NAME} is {step.text}\u2026")
+        if step.text != getattr(self, "_last_step", ""):
+            self._last_step = step.text
+            self._transcript.appendPlainText(f"   \u2026 {step.text}")
+
+    def _show_code(self, step) -> None:
+        """A file as it is right now, its new lines marked, scrolled to the first one."""
+        if self._web is not None and not self._web.isHidden():
+            # The page is about to change; while it is being built, the code is the thing
+            # to watch. ``_page_back`` puts the page back when the turn ends.
+            self._web.hide()
+            self._output.setMaximumHeight(16777215)
+        self._panel_text(step.content)
+        if step.kind == "undone":
+            what = "put back as it was"
+        elif step.created:
+            what = "new file"
+        else:
+            count = len(step.changed_lines)
+            what = f"{count} line{'' if count == 1 else 's'} changed"
+        self._code_caption.setText(f"{step.path} \u2014 {what}")
+        self._code_caption.show()
+        colour = QColor(theme.resolve_palette().accent)
+        colour.setAlpha(55)
+        marks = []
+        for line in step.changed_lines:
+            block = self._output.document().findBlockByNumber(line)
+            if not block.isValid():
+                continue
+            mark = QTextEdit.ExtraSelection()
+            mark.format.setBackground(colour)
+            mark.format.setProperty(QTextFormat.Property.FullWidthSelection, True)
+            mark.cursor = QTextCursor(block)
+            marks.append(mark)
+        self._output.setExtraSelections(marks)
+        if step.changed_lines:
+            first = self._output.document().findBlockByNumber(step.changed_lines[0])
+            if first.isValid():
+                self._output.setTextCursor(QTextCursor(first))
+                self._output.centerCursor()
+
+    def _show_still(self, turn) -> None:
+        """The last frame of the invisible test, after a turn that changed the game.
+
+        A still, not the game: the child's own window is still Run Game (a playing preview
+        is Phase 13). Only from a test that passed -- a picture of a game that crashed or
+        froze would say it worked.
+        """
+        tests = getattr(turn, "playtests", ())
+        test = tests[-1] if tests else None
+        if getattr(turn, "checkpoint", None) is None or test is None or not test.still:
+            return
+        self._show_any_chart(test.still)
+        self._chart_caption.setText("How it looked when Open Nest tested it, with no "
+                                    "window -- press Run Game to play it")
+
+    def _toggle_code(self) -> None:
+        """Swap between this turn's changed code and the result its run left."""
+        if self._code_button.text() == SHOW_CODE and self._turn_code is not None:
+            self._show_code(self._turn_code)
+            self._code_button.setText(SHOW_RESULT)
+            self._code_button.show()
+        elif self._run_view is not None:
+            text, detail, headline, has_details = self._run_view
+            self._clear_details()
+            self._clear_code_marks()
+            self._output.setPlainText(text)
+            self._technical_detail, self._headline = detail, headline
+            self._details_button.setVisible(has_details)
+            self._code_button.setText(SHOW_CODE)
+
+    def _clear_code_marks(self) -> None:
+        self._code_caption.hide()
+        self._output.setExtraSelections([])
+
+    def _page_back(self) -> None:
+        """After a turn, the page goes back where it was, if code had taken its place."""
+        if self._web is not None and self._web.isHidden():
+            self._web.show()
+            self._output.setMaximumHeight(110)
 
     def _clear_details(self) -> None:
         self._technical_detail = ""

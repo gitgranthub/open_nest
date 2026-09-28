@@ -45,6 +45,66 @@ the owner has chosen and nobody has started. Two user-facing fallbacks 12.4 expo
 fixed: raw tool-call JSON never reaches the child, and "It works." is no longer said
 because a game merely launched. PHASE_12_HANDOFF §12 and SPIKES §24 have all of it.
 
+**Phase 12.5 — the Fast Path — is implemented, measured, and worth keeping. It is not yet
+committed and is waiting for the owner's review.** Before Gary writes anything, the model
+already in memory answers two closed questions -- which kind of change is this, and is it
+exactly one change? -- and a confident one is made by a recipe: small edits through the
+Toolbox, checked by the playtest, a compile or a run, and reported from what was actually
+set. Everything else goes to Gary as before. The measured state:
+
+- **Games, Phase 12's own requests: 4/18 → 17/18 working. All 44 conversations, five
+  project types: 14/44 → 33/44. Median message: 20.1 s → 3.2 s.** Blind graders found
+  Gary truthful in every recipe turn.
+- **The classifier is about keyword-level on accuracy (68% vs 67% held-out). Its value is
+  the gate -- knowing when to defer**: keyword rules would make 30 wrong edits of 51; the
+  final gate made 1 partial in 20.
+- **62 recipes: 39 deterministic, 23 guidance-only.**
+- **~210 MB** of scoring cache is held while a project is open -- real on an 8 GB Mac.
+- **The coverage bottleneck is the one-change gate**: 18 of 60 held-out change requests
+  take a recipe; most of the rest have the right intent and are stopped there.
+- **Known missing cases**: motion-pattern changes ("zigzag instead" became a speed change),
+  button behaviour ("turns the light on" gets a blink), and the compound Research request
+  "Graph this and tell me what changed the most".
+- **Evidence outside Games is thinner**: 5-6 end-to-end conversations per project type.
+- **The real UI walk is 40/41** -- the Phase 12 app walk, unchanged, through MainWindow;
+  the remaining miss is that compound Research request.
+- **No second classifier model was added** -- no Open-Jev, no tiny classifier. The model
+  Gary already has loaded answers every question.
+- **Then a closure pass, and a freeze (SPIKES §25M).** Blank projects gain recipes from
+  their files (only the matching family is scored; a recipe edits only where the project
+  can run its check). The three known misses are handled: a motion change ("zigzag
+  instead") that rewrites only recipe-written code; the Arduino button on while held /
+  blink / toggle; and "graph this and <one change>" taken by the one recipe that draws
+  the chart, with a veto against the "windiest day" confusion. One website gap filled
+  (the tagline, footer or button words). **UI walk 41/41.** Label sets: held-out
+  unchanged (18 by recipe, 1 wrong), dev 44 → 48 (2 wrong, unchanged); every gate
+  relaxation measured added wrong edits, so the gate is unchanged. A 23-conversation
+  cross-project acceptance set: 18 working, 0 wrong recipe edits. **63 recipes: 41
+  deterministic, 22 guidance-only.**
+- **The owner's first test drive** (a whole isometric eagle game in one sentence) led to
+  three demo fixes, none touching the classifier or gate: a nothing-changed reply that
+  offers a measured first step, "it already is" answered instead of handed to Gary, and
+  the turn shown as it happens -- steps in the chat, each changed file in Build /
+  Preview with its new lines marked (`tools.Step`). PHASE_12_HANDOFF §13.
+- **Then a pre-13 interaction pass (SPIKES §25N)**: a picture described in the child's
+  own words, several requests in one message made one by one (recipes for the
+  predictable pieces, Gary for the rest in the same turn), project facts and patterns
+  for Gary when no recipe fits, a fallback that plans a too-big request into steps
+  instead of asking the child to, and the invisible test's last frame in the Build panel.
+- **Fast Path and classifier development is frozen before Phase 13.** No
+  second classifier, no prompt experiments, no embeddings, no new taxonomy. The
+  remaining gaps are recorded in §25M, not queued.
+
+PHASE_12_HANDOFF §13 is the summary; SPIKES §25 has every number, §25L the spike's final
+state and §25M the closure pass. The drivers and results are kept in git in
+**`benchmarks/fastpath/`** (`inputs/`, `results/`; full runs with every project file stay
+in the ignored `results/raw/`). The authoritative results: `e2e_summary.json` and
+`e2e_tables.md` (the spike's end-to-end run), `blind/`, `decide_dev5.json` and
+`decide_heldout4.json` (the final decision benchmarks; `decide_dev3/heldout2` with
+`gate4_*` are the baseline they are compared to), `closure_summary.json` (the acceptance
+set) and `app_walk_closure.txt` (the 41/41 walk). The Phase 12 app walk itself is still
+in the gitignored `spikes/`. Phase 12 itself stays open until the owner has driven it.
+
 **`edit_file` was the previous suspect and is now measured NOT to be the dominant problem.** Across
 the three Phase 12.1 walks **18 of 18 `edit_file` calls the 4B model produced were
 refused** — every one because its `old_text` did not match `src/game.py` byte-for-byte,
@@ -176,6 +236,7 @@ it belongs in section 4.
 | 12.2 — editing reliability | **closed.** 18 of 18 `edit_file` calls were refused; measured the distribution (47% the model editing code it imagined, 33% wrong indent, 20% a newline written as two characters) and added a bounded deterministic recovery that refuses ambiguity. 3 of 4 real edits now land. Also: one project runs one copy of itself, and the approval mark is no longer awarded for the starter launching. 1044 tests, ruff clean. SPIKES §22 |
 | 12.3 — does the child get a game? | **measured, and the answer is no.** 1 of 24 conversations produced the game that was asked for. 4B vs 8B did not solve it, prompt tuning did not solve it, starter markers made it worse, and tool execution is no longer the dominant problem. `RunResult.ok` is True for any game that merely launched, so the repair loop cannot react to "runs but does not work". SPIKES §23 |
 | 12.4 — Playability Feedback Loop | **closed.** A headless playtest after every change feeds crashed / no picture / closed itself / frozen to the repair loop, sharing its three attempts and the call budget. The 12.3 spike graded 7 of 10 working games frozen and was rebuilt, not wired in. 14 real conversations: 0 false failures, 0 crashes reaching the child as "done". 1104 tests, ruff clean. PHASE_12_HANDOFF §12, SPIKES §24 |
+| **12.5 — The Fast Path** | **implemented, closed out and frozen; not committed, awaiting the owner's review.** A classifier on whichever local model Gary is -- closed questions, no generation, no second model -- routes a recognised single change to a recipe that edits through the Toolbox, is checked, and reports truthfully; everything else goes to Gary as before. Games (Phase 12 requests) 4/18 → 17/18; all 44 conversations 14/44 → 33/44; median 20.1 s → 3.2 s; tokens −73%. Closure pass: Blank eligibility from files, the three known misses, one website gap; UI walk 41/41. Pre-13 pass: natural wording, several requests per message, a planning fallback, the test's still frame. 63 recipes (41 deterministic, 22 guidance-only). ~210 MB cache. 1256 tests, ruff clean. PHASE_12_HANDOFF §13, SPIKES §25-25N |
 | 13 — The game preview in the workbench | **not started.** Specified in PHASE_12_HANDOFF §6; feasibility measured |
 | 14 — Getting work out of Open Nest (export / PDF / share) | **not started.** Specified in PHASE_12_HANDOFF §7. Nothing can currently leave the app |
 
@@ -197,7 +258,7 @@ turn cloud on, and the child can switch to Claude or OpenAI after a warning, or 
 pictures with an image model. Everything except Image Creation still works with cloud off,
 which is the default.
 
-1104 tests pass, ruff is clean.
+1256 tests pass, ruff is clean.
 
 **The application icon is deliberately unresolved, and that is a ruling rather than a
 gap.** Phase 10D was told not to design or simplify one: it needs a separately approved
@@ -230,7 +291,7 @@ privileged-action pattern in §5, not a new mechanism.
 ## 2. Get running in five minutes
 
 ```bash
-.venv/bin/python -m pytest -q      # 1104 passing, about 110 seconds
+.venv/bin/python -m pytest -q      # 1256 passing, about 2 minutes
 ```
 
 It is slower than it was (7 s at Phase 6, 55 s at Phase 12.2). Phase 12.4 made every Games
@@ -302,6 +363,18 @@ opennest/
 │   ├── controller.py       the loop: prompt, tools, repair, checkpoints, rollover
 │   ├── budget.py           ONE call budget per turn; every subsystem spends from it
 │   └── tools.py            read_file / edit_file / write_file / run_project
+├── fastpath/               Phase 12.5 spike: recognise a common request, make it with a
+│   │                       recipe, check it, or step aside for Gary. SPIKES.md section 25
+│   ├── classifier.py       closed questions to the loaded model -- no generation
+│   ├── registry.py         loads opennest/recipes/<profile>/*.json, strictly
+│   ├── router.py           scores -> recipe / guidance / normal. The only thresholds
+│   ├── executor.py         applies a recipe THROUGH Toolbox.dispatch; exact rollback
+│   ├── verifier.py         pass / fail / unavailable -- never "unavailable" as a pass
+│   ├── edits.py            a whole-file change as small anchored edit_file hunks
+│   ├── slots.py            numbers, colours, titles, pins -- a pin is never inferred
+│   └── kinds/              per project type: facts (read with a parser), OPS, CHECKS,
+│                           and which family a Blank project's files are (family_for)
+├── recipes/                the recipes, one JSON file each, per profile (data, not code)
 ├── assets/
 │   ├── kinds.py            what a file is, and which directory it belongs in
 │   ├── describe.py         derived facts. The honesty rule lives here.
@@ -360,13 +433,18 @@ opennest/
 │   └── permissions.py      parent controls. Unanswered means no.
 ├── diagnostics.py          the Export Diagnostic Log report, scanned before it is returned
 ├── config/                 models.json, profiles.json   (data, not code)
-└── prompts/                base + per-profile + build-style   (data, not code)
+└── prompts/                base + per-profile + build-style, and the Fast Path's two
+                            closed-question templates   (data, not code)
 ```
 
 `ui/github_sync.py` drives the push queue on a timer and a worker thread;
 `ui/github_connect.py` is the device-flow window. `ui/settings.py` is the six sections of §32; `ui/consent.py` is the three places Open
 Nest stops and asks (cloud warning, parent PIN, permission prompt); `ui/new_project.py`
 is the name-it-and-pick-an-idea dialog (§27's idea cards).
+
+`benchmarks/fastpath/` (outside `opennest/`) is the Fast Path's measurement drivers,
+inputs and results, kept in git; `results/raw/` inside it is ignored because full runs
+carry every project file. Ruff excludes it, as it excludes `spikes/`.
 
 `bootstrap/` is separate and **must stay Python 3.9-compatible** — it runs before a modern
 interpreter exists. A test enforces this, and another enforces that it never imports
@@ -656,6 +734,73 @@ does.** Do not "clean up" these without re-measuring:
 - **Temperature 0 on MLX is not bit-for-bit repeatable across runs.** The same
   conversation crash-repaired and gave up in one run and passed cleanly in the next.
   Report per-run results; do not average a single rerun into a claim.
+
+**Phase 12.5 traps — the Fast Path (SPIKES.md section 25):**
+
+- **A lettered question's share is not a confidence.** The 4B model put 1.000 on wrong
+  answers as readily as right ones. What separates them is whether the winner survives
+  the options being reordered, which is why every question is asked in fixed orderings
+  and `agreement` is the number that gates a recipe. Do not relabel `score` a probability.
+- **The "exactly one change?" gate is load-bearing.** Without it, 10 of 33 held-out fast
+  routes were wrong edits -- a multi-part ask done one-third, a question answered by
+  editing. With it, 0 of 15; with the final version (a tweak gets a second, narrower
+  question) 1 partial of 20. It is also the coverage bottleneck -- most missed changes had
+  the right intent and were stopped there. Improve it by measurement on both label sets;
+  do not delete it for coverage.
+- **Keyword rules tie the classifier on accuracy and are the wrong thing to ship.** 67% vs
+  68% on held-out, but routed on, the rules would have made 30 wrong edits out of 51. The
+  classifier's value is abstention. `spikes/fastpath/lexical.py` exists to keep that
+  comparison honest, not as a fallback.
+- **The scoring cache must hold every prefix one decision uses.** Three intent orderings
+  and two gate orderings are five prefixes; at four cache entries every decision
+  re-prefilled (2.05 s instead of 0.44 s). Add a question or an ordering and you must
+  raise `_SCORE_CACHE_ENTRIES` -- and re-measure memory: 210 MB for five prefixes on
+  Qwen3 4B, held while a project is open.
+- **What Open Nest knows about the project goes in the question, never in the fixed
+  prompt.** The fixed part is the cached prefix; anything per-project there defeats the
+  cache. It still has to be *there*: without "the player is the orange square", "make the
+  square go faster" went to the asteroids.
+- **Option order in `recipes/<profile>/index.json` assigns the letters**, and position
+  bias is real (the first gate design was ruined by it). Reordering is a behaviour change:
+  rerun `spikes/fastpath/bench_decide.py` on both label sets.
+- **Checks read code with the parser.** A regex check over lines broke the moment the
+  drawings gained a first line, and every add-a-thing recipe rolled itself back. Found by
+  a unit test; the live runs had predated the change.
+- **A rolled-back recipe must leave nothing in the Turn.** Its playtest, left behind,
+  made the repair loop chase a crash Gary's untouched code never had -- three attempts.
+- **A pin comes from the child's words or not at all.** `NeedsAnswer` is the recipe
+  knowing what must never be guessed; it routes to Gary with "ask them" in his guidance.
+- **New options go at the end of `index.json`.** Inserted mid-list, the motion option
+  moved most Games letters and turned "shoot little lasers" into a confident wrong route
+  on held-out; appended, it left every held-out result as it was (SPIKES §25M).
+- **`needs_words` is a veto, never a trigger.** It exists for one measured confusion
+  ("the windiest day" read as "what changed the most"). Do not use it to *add* routes.
+- **The compound rule is narrow on purpose.** Only "graph this and <one thing>", where
+  the one thing goes to a recipe that itself draws the chart. Its part gets the recipe's
+  own question because the general gate calls "tell me what changed the most" a
+  question, measured; do not widen that to whole messages -- every such relaxation
+  measured added wrong edits.
+- **A recipe edits only where its check can run** (`kind.verifiable`). A game in a Blank
+  project has no playtest, so there it is guidance. Do not make it deterministic without
+  giving Blank a way to test a game.
+- **`Turn.gary_from` is where Gary's share of a turn begins.** When recipes made part of a
+  message, the honesty guard, "nothing changed" and the fallback description look only
+  from there. Anything new that judges "did Gary change something" must use it, or a
+  recipe's real change will cover a claim of his.
+- **A message is split only when every piece stands alone** (`router.split_parts`), and
+  each piece uses the ordinary gate. Measured: letting pieces use the recipe-specific
+  question added wrong pieces ("print how many blinks" became serial LED messages).
+- **An attached picture means the message is read without the one before it.** The
+  previous message pulled "make this the player" to a whole new game at 1.00.
+- **The planning fallback runs once per turn** (`Turn.reduced`), from the one budget. Do
+  not let it run for Gary's share of a split message, or on its own steps.
+- **Progress is the application's report, never Gary's words.** `Toolbox.observer`
+  gets a `Step` when something is actually done; Gary's reply is not streamed because
+  the honesty guard may replace it. A new tool that changes files must go through
+  `dispatch` or it will not be shown.
+- **The Phase 12 walk's step-34 check looked in `outputs/`, which nothing writes.** It
+  could never pass; corrected in `spikes/phase12/app_walk.py` (local). Check a grader
+  against a known-good run before believing its failure.
 
 **Phase 11 traps:**
 
@@ -1453,6 +1598,7 @@ From `CLAUDE.md` and from the developer directly:
 | D8 | **Whether image generation shows its cost.** ~800 KB and 10–15 s per image, billed per image, with no count or total anywhere. A parent who turned cloud on for chat has also turned this on | before real use |
 | D10 | **Whether a one-click in-app updater is wanted at all**, and if so what it does about local modifications, a moved model pin, and restarting a running app. Phase 8 deliberately stopped at "notice and report" — see §6D | after V1 |
 | **D12** | **What "Ask before using cloud AI" should actually require, and how often.** Today it is a child-answerable dialog shown once per model switch. Two independent questions: (a) should it take the parent PIN, making it a real approval rather than an awareness prompt? (b) should it fire per cloud *request* rather than per selection, as `cloud_needs_confirmation`'s docstring already claims? A PIN on every turn makes cloud unusable; a PIN on none is the current state. A likely answer is PIN once per session or per project, but that is a product call. See the defect in §6B | before V1 |
+| **D13** | **Which model classifies for the Fast Path when Gary is not a local model.** Today: Gary's own model if it can answer a closed question (any local MLX model -- measured on Qwen3 4B and 8B), otherwise no Fast Path, so a cloud Gary gets the normal path. Wired and tested but off: `FastPathRouter(classifier_provider=<local provider>)`, which lets the installed local model classify for a cloud Gary -- ~2.3 GB of memory while a project is open, private and free, and a recipe turn then costs no cloud call at all. The stronger form, requiring Qwen3 4B at setup so every install has a classifier, reverses WORKORDER_01 section 35A's "skipping local AI should be allowed" (2.28 GB). The work order's own future option is a dedicated tiny classifier -- **none has been added** (no Open-Jev, no second model). SPIKES.md section 25 | before the Fast Path merges |
 | — | Only one model is verified and downloaded. The other three local ones are pinned and described but untested | — |
 | — | All measurements are from a 48 GB Mac. The target is 8 GB | before V1 |
 

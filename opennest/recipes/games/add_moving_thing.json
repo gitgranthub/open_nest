@@ -1,0 +1,30 @@
+{
+  "id": "game.add_moving_thing",
+  "intent": "add_moving_thing",
+  "describe": "add something new that moves by itself: an asteroid, a ball, stars, falling blocks, another square",
+  "requires": [
+    "loop",
+    "fill",
+    "flip"
+  ],
+  "op": "add_things",
+  "params": {
+    "motion": "choose",
+    "noun": "thing"
+  },
+  "guide": [
+    "A new thing needs three pieces in three places, and with only two it does nothing: create it once ABOVE the game loop, move it INSIDE the loop, and draw it inside the loop AFTER screen.fill(...). Give its speed, size and colour named constants at the top.",
+    "For something that falls, add to its y each frame; when it goes off the bottom, put it back at the top. For something that bounces, keep a speed for x and y and flip the sign when it reaches an edge."
+  ],
+  "verify": [
+    "playtest_passes",
+    "moves_by_itself",
+    "drawn_after_fill"
+  ],
+  "report": [
+    "I added $what. $tune",
+    "There are $what now. $tune",
+    "I put in $what. $tune"
+  ],
+  "teach": "Each one is made once above the game loop, moved inside it, and drawn after screen.fill. All three are needed -- skip one and it never shows up."
+}

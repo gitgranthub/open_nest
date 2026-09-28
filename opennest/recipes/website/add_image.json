@@ -1,0 +1,26 @@
+{
+  "id": "website.add_image",
+  "intent": "add_image",
+  "describe": "put a picture on the page",
+  "requires": [
+    "first_section_end"
+  ],
+  "op": "add_image",
+  "params": {},
+  "guide": [
+    "Pictures the child imported are in the project's assets folder, one level up from the page: <img src=\"../assets/name.png\" alt=\"...\">. Use the exact file name from the files they added.",
+    "The alt text says what the picture shows for someone who cannot see it. Nobody has looked at the picture: use their words for it, or ask them."
+  ],
+  "verify": [
+    "added_present",
+    "picture_exists",
+    "html_balanced",
+    "offline"
+  ],
+  "report": [
+    "I put $picture on the page, in the first section. $ask",
+    "Your picture ($picture) is on the page now, near the top. $ask"
+  ],
+  "teach": "src=\"../$picture\" means \"go up one folder from the page, then into assets\" -- that is where imported pictures live.",
+  "attachment_confirms": true
+}

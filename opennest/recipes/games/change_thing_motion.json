@@ -1,0 +1,30 @@
+{
+  "_note": "Known failure 1 of SPIKES.md section 25J: with no option for this, 'make the asteroids zigzag instead of going straight' became a speed change. The operation only rewrites a thing's setup and movement code when both are exactly what a recipe wrote; anything else is Gary's, with this guide.",
+  "id": "game.change_thing_motion",
+  "intent": "change_thing_motion",
+  "describe": "change how something already in the game moves, like making the asteroids zigzag, bounce or go round in circles",
+  "requires": [
+    "thing_speed",
+    "loop",
+    "fill",
+    "flip"
+  ],
+  "op": "thing_motion",
+  "params": {},
+  "guide": [
+    "Find the lines inside the game loop that move that thing -- the for loop over its list, before screen.fill(...) -- and change only those. Keep its drawing, its colour and size constants, and what happens when the player touches it exactly as they are.",
+    "To zigzag, keep moving it across and add a small up-and-down speed that flips sign at the top and bottom edges. To bounce, give each one an x and y speed and flip each at the edges. If each one needs to remember its own direction, make that list once above the loop, next to where the things are made."
+  ],
+  "verify": [
+    "motion_set",
+    "playtest_passes",
+    "moves_by_itself",
+    "drawn_after_fill"
+  ],
+  "report": [
+    "The $things $how now.",
+    "I changed how the $things move: they $how now.",
+    "Now the $things $how -- before, they would $was."
+  ],
+  "teach": "How something moves is the few lines inside the game loop that change its x and y every frame. Change those lines and the motion changes; ${prefix}_SPEED at the top still sets how fast."
+}

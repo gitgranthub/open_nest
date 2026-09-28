@@ -1,0 +1,266 @@
+{
+ "case-001-df01": {
+  "id": "A1",
+  "arm": "fast",
+  "auto": true,
+  "judged": "auto"
+ },
+ "case-002-fcff": {
+  "id": "G2",
+  "arm": "fast",
+  "auto": true,
+  "judged": "auto-partial"
+ },
+ "case-003-f729": {
+  "id": "G12",
+  "arm": "fast",
+  "auto": true,
+  "judged": "auto"
+ },
+ "case-004-e273": {
+  "id": "G9",
+  "arm": "fast",
+  "auto": true,
+  "judged": "auto-partial"
+ },
+ "case-005-1d7e": {
+  "id": "G8",
+  "arm": "fast",
+  "auto": true,
+  "judged": "auto-partial"
+ },
+ "case-006-fd5f": {
+  "id": "G5",
+  "arm": "current",
+  "auto": true,
+  "judged": "auto-partial"
+ },
+ "case-007-90d1": {
+  "id": "G20",
+  "arm": "current",
+  "auto": null,
+  "judged": "blind"
+ },
+ "case-008-56a7": {
+  "id": "G12",
+  "arm": "current",
+  "auto": true,
+  "judged": "auto"
+ },
+ "case-009-1871": {
+  "id": "G1",
+  "arm": "current",
+  "auto": false,
+  "judged": "auto-partial"
+ },
+ "case-010-d10a": {
+  "id": "P5",
+  "arm": "current",
+  "auto": null,
+  "judged": "blind"
+ },
+ "case-011-c0ed": {
+  "id": "G9",
+  "arm": "current",
+  "auto": false,
+  "judged": "auto-partial"
+ },
+ "case-012-ea1a": {
+  "id": "P5",
+  "arm": "fast",
+  "auto": null,
+  "judged": "blind"
+ },
+ "case-013-0973": {
+  "id": "G19",
+  "arm": "current",
+  "auto": null,
+  "judged": "blind"
+ },
+ "case-014-f4bc": {
+  "id": "A3",
+  "arm": "fast",
+  "auto": true,
+  "judged": "auto"
+ },
+ "case-015-7072": {
+  "id": "G2",
+  "arm": "current",
+  "auto": false,
+  "judged": "auto-partial"
+ },
+ "case-016-dbc0": {
+  "id": "G3",
+  "arm": "current",
+  "auto": false,
+  "judged": "auto-partial"
+ },
+ "case-017-b36f": {
+  "id": "A5",
+  "arm": "current",
+  "auto": null,
+  "judged": "blind"
+ },
+ "case-018-20dd": {
+  "id": "G6",
+  "arm": "current",
+  "auto": false,
+  "judged": "auto-partial"
+ },
+ "case-019-429d": {
+  "id": "R2",
+  "arm": "current",
+  "auto": false,
+  "judged": "auto"
+ },
+ "case-020-3fda": {
+  "id": "G19",
+  "arm": "fast",
+  "auto": null,
+  "judged": "blind"
+ },
+ "case-021-2f6c": {
+  "id": "R6",
+  "arm": "current",
+  "auto": null,
+  "judged": "blind"
+ },
+ "case-022-77c9": {
+  "id": "P3",
+  "arm": "fast",
+  "auto": true,
+  "judged": "auto"
+ },
+ "case-023-5ff2": {
+  "id": "G3",
+  "arm": "fast",
+  "auto": true,
+  "judged": "auto-partial"
+ },
+ "case-024-4528": {
+  "id": "G4",
+  "arm": "fast",
+  "auto": false,
+  "judged": "auto-partial"
+ },
+ "case-025-705f": {
+  "id": "R6",
+  "arm": "fast",
+  "auto": null,
+  "judged": "blind"
+ },
+ "case-026-4b4f": {
+  "id": "G6",
+  "arm": "fast",
+  "auto": true,
+  "judged": "auto-partial"
+ },
+ "case-027-bf7a": {
+  "id": "G10",
+  "arm": "current",
+  "auto": false,
+  "judged": "auto"
+ },
+ "case-028-6be3": {
+  "id": "G20",
+  "arm": "fast",
+  "auto": null,
+  "judged": "blind"
+ },
+ "case-029-559c": {
+  "id": "W6",
+  "arm": "fast",
+  "auto": null,
+  "judged": "blind"
+ },
+ "case-030-e765": {
+  "id": "G4",
+  "arm": "current",
+  "auto": false,
+  "judged": "auto-partial"
+ },
+ "case-031-bd11": {
+  "id": "G1",
+  "arm": "fast",
+  "auto": true,
+  "judged": "auto-partial"
+ },
+ "case-032-9b88": {
+  "id": "A5",
+  "arm": "fast",
+  "auto": null,
+  "judged": "blind"
+ },
+ "case-033-b9b8": {
+  "id": "W4",
+  "arm": "fast",
+  "auto": true,
+  "judged": "auto"
+ },
+ "case-034-fd45": {
+  "id": "G7",
+  "arm": "fast",
+  "auto": true,
+  "judged": "auto-partial"
+ },
+ "case-035-fe0f": {
+  "id": "G21",
+  "arm": "current",
+  "auto": false,
+  "judged": "auto-partial"
+ },
+ "case-036-ea3f": {
+  "id": "G5",
+  "arm": "fast",
+  "auto": true,
+  "judged": "auto-partial"
+ },
+ "case-037-eeff": {
+  "id": "P1",
+  "arm": "current",
+  "auto": true,
+  "judged": "auto"
+ },
+ "case-038-d807": {
+  "id": "W6",
+  "arm": "current",
+  "auto": null,
+  "judged": "blind"
+ },
+ "case-039-e582": {
+  "id": "A4",
+  "arm": "fast",
+  "auto": false,
+  "judged": "auto"
+ },
+ "case-040-c098": {
+  "id": "G8",
+  "arm": "current",
+  "auto": false,
+  "judged": "auto-partial"
+ },
+ "case-041-b5b7": {
+  "id": "R5",
+  "arm": "current",
+  "auto": false,
+  "judged": "auto"
+ },
+ "case-042-38b0": {
+  "id": "G7",
+  "arm": "current",
+  "auto": false,
+  "judged": "auto-partial"
+ },
+ "case-043-86ff": {
+  "id": "G21",
+  "arm": "fast",
+  "auto": true,
+  "judged": "auto-partial"
+ },
+ "case-044-d5a3": {
+  "id": "W4",
+  "arm": "current",
+  "auto": true,
+  "judged": "auto"
+ }
+}

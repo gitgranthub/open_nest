@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from opennest.execution.python_runner import RunResult, run_project
@@ -52,6 +52,10 @@ HARNESS = Path(__file__).with_name("playtest_harness.py")
 #: sandbox lets a run write, and under ``.opennest/tmp`` because that is git-ignored and
 #: hidden from the file list the model is shown.
 RECORD = ".opennest/tmp/playtest.jsonl"
+#: The last frame of a test that ran to the end, shown in the Build panel after a change.
+#: Beside the record, for the same reason: inside the project, git-ignored, and not one of
+#: the child's files.
+STILL = ".opennest/tmp/playtest.png"
 
 #: The harness ends every run itself within ten seconds. This is only the backstop.
 TIMEOUT_SECONDS = 20
@@ -98,6 +102,8 @@ class Playtest:
     #: Diagnostics, never a verdict: whether anything moved with nobody touching it,
     #: and which inputs changed the picture.
     moved_by_itself: bool = False
+    #: The project-relative picture of its last frame, when it passed. Empty otherwise.
+    still: str = ""
     responded_to: tuple[str, ...] = ()
 
     @property
@@ -188,6 +194,8 @@ def run(
         record = project_dir / RECORD
         record.parent.mkdir(parents=True, exist_ok=True)
         record.unlink(missing_ok=True)
+        still = project_dir / STILL
+        still.unlink(missing_ok=True)
         try:
             result = run_project(
                 project_dir,
@@ -198,6 +206,7 @@ def run(
                     "SDL_VIDEODRIVER": "dummy",
                     "SDL_AUDIODRIVER": "dummy",
                     "OPENNEST_PLAYTEST_RECORD": str(record),
+                    "OPENNEST_PLAYTEST_STILL": str(still),
                 },
             )
             records = _read(record)
@@ -207,7 +216,10 @@ def run(
         # A test that could not be set up says nothing about the game, and must never
         # be the thing that breaks the child's turn.
         return Playtest(UNAVAILABLE, entry=entry)
-    return classify(records, result, entry=entry)
+    verdict = classify(records, result, entry=entry)
+    if verdict.verdict == PASSED and still.is_file():
+        return replace(verdict, still=STILL)
+    return verdict
 
 
 def _read(record: Path) -> list[dict]:

@@ -1,0 +1,11 @@
+{
+  "id": "pi.read_sensor",
+  "intent": "read_sensor",
+  "describe": "read a sensor, like distance, temperature or motion",
+  "requires": [],
+  "op": null,
+  "params": {},
+  "guide": [
+    "Ask which sensor they have -- never invent a model or its wiring. Put reading it behind a class that returns pretend values on the Mac, so the logic can be tested here. Mention voltage: most Pi sensors must be 3.3V."
+  ]
+}

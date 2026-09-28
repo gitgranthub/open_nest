@@ -1,0 +1,26 @@
+{
+  "id": "game.change_player_colour",
+  "intent": "change_player_colour",
+  "describe": "change the colour of the player",
+  "requires": [
+    "player_colour"
+  ],
+  "op": "set_colour",
+  "params": {
+    "fact": "player_colour",
+    "question": "Which colour do they want the player to be?"
+  },
+  "guide": [
+    "Change the colour constant the player is drawn with -- usually PLAYER_COLOUR, three numbers for red, green and blue from 0 to 255."
+  ],
+  "verify": [
+    "value_set",
+    "playtest_passes"
+  ],
+  "report": [
+    "I made the player $colour. $name is $new now.",
+    "The player is $colour now: $name went from $old to $new.",
+    "$name is $new now, which is $colour."
+  ],
+  "teach": "A colour here is three numbers -- how much red, green and blue -- each from 0 to 255."
+}

@@ -1,0 +1,11 @@
+{
+  "id": "arduino.add_buzzer",
+  "intent": "add_buzzer",
+  "describe": "add a buzzer, or make it beep or play sounds",
+  "guide": [
+    "Never choose a pin: ask which pin the buzzer is on if they have not said. A piezo buzzer uses tone(BUZZER_PIN, frequency, milliseconds) and noTone(BUZZER_PIN). Name the pin with a constant at the top and add it to wiring.md."
+  ],
+  "requires": [],
+  "op": null,
+  "params": {}
+}

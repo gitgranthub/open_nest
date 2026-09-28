@@ -31,6 +31,7 @@ the game set up for itself, and graded seven of ten working games as frozen:
   any path built from ``__file__``.
 """
 
+import contextlib
 import hashlib
 import json
 import os
@@ -73,6 +74,8 @@ ACTIONS = (
 _TEXT = {"K_SPACE": " ", "K_RETURN": "\r", "K_1": "1"}
 
 RECORD = os.environ["OPENNEST_PLAYTEST_RECORD"]
+#: Where to leave a picture of the last frame of a test that ran to the end, or "".
+STILL = os.environ.get("OPENNEST_PLAYTEST_STILL", "")
 ENTRY = sys.argv[1]
 
 os.environ["SDL_VIDEODRIVER"] = "dummy"
@@ -182,6 +185,7 @@ class _Script:
         if _state["ended"]:
             os._exit(0)
         self.step, self.pressed = len(ACTIONS), False
+        _save_still()
         _end("done", "done")
         raise _Finished(0)
 
@@ -248,6 +252,15 @@ _real_get_pressed = pygame.key.get_pressed
 _real_mouse_pos = pygame.mouse.get_pos
 _real_mouse_pressed = pygame.mouse.get_pressed
 _to_bytes = getattr(pygame.image, "tobytes", None) or pygame.image.tostring
+
+
+def _save_still():
+    """The last frame of a test that ran to the end, for the Build panel. Never fails it."""
+    surface = pygame.display.get_surface()
+    if not STILL or surface is None:
+        return
+    with contextlib.suppress(Exception):   # a picture is never worth a verdict
+        pygame.image.save(surface, STILL)
 
 
 def _capture():

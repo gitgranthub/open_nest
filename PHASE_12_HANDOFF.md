@@ -95,9 +95,11 @@ of them is broken, and none of them is what was asked. That is why Phase 12 stay
 
 **Next: the Fast Path — a classifier plus known recipes.** Route common requests
 ("make it fall", "add an enemy", "add a score") through implementations known to work,
-rather than asking a 4B model to invent the whole thing each time. It is the next
-architecture experiment, owner-directed, and **not started** in the session that built
-12.4. The playtest stays as it is under it: a recipe's output still gets tested.
+rather than asking a 4B model to invent the whole thing each time. **Built and measured as
+a spike in Phase 12.5 (§13), closed out and frozen, awaiting the owner's review and not
+committed.** On Phase 12's own Games requests it took working results from 4 of 18 to 17
+of 18, and the Phase 12 app walk now passes 41 of 41. The playtest
+stays as it is under it: a recipe's output still gets tested.
 
 **Recorded as future hardening, deliberately not built:**
 
@@ -807,3 +809,205 @@ same stripping would put tool protocol on screen for every call, not just a brok
 |---|---|
 | `spikes/phase12/playability_loop.py` | the acceptance run: controlled / extended / probe conversations, `--only kind:index` to re-drive one, everything persisted including the full message history |
 | `spikes/phase12/does_it_play.py` | kept as the 12.3 record. **Do not use it to grade anything new** |
+
+---
+
+## 13. SPIKE — Phase 12.5, the Fast Path
+
+**Implemented, measured, closed out and frozen (§13 "Closure pass" below). Not yet
+committed; awaiting the owner's review.** The FAST_PATH work order, widened by the owner in-session to every project
+type, with rich recipes rather than templates, and the classifier on whichever local
+model Gary is. **No second classifier model was added** -- no Open-Jev, no tiny
+classifier, no second process; every question is answered by the model Gary already has
+loaded. Full measurements in SPIKES.md §25 (§25L is the one-page final state); this is
+what a reader needs.
+
+### What it is
+
+`opennest/fastpath/` and `opennest/recipes/`, attached to `AgentController` as one
+optional collaborator (MainWindow attaches it). Before the model is asked anything:
+
+1. **Facts** about the project are read with a parser (`kinds/<profile>.facts`).
+2. **The loaded model answers closed questions** -- which kind of change, and "is it
+   exactly one change?" -- by next-token scores over lettered options, in fixed orderings.
+   No generation. ~0.44 s warm.
+3. **A confident single change with a deterministic recipe** is made by the recipe:
+   small anchored `edit_file` calls **through `Toolbox.dispatch`**, then checked
+   (playtest, compile, run, file checks), then reported in Gary's voice from the values
+   it set and the checks that passed. A failed check rolls back to the exact bytes.
+4. **Anything less certain** goes to Gary exactly as before -- with the recipe's strategy
+   and "where things are in this file right now" in his prompt when the intent is likely.
+5. The next turn, Gary is told what Open Nest just did.
+
+### The result
+
+| | today's path | Fast Path |
+|---|---:|---:|
+| Phase 12 Games requests working (18) | 4 | **17** |
+| all 44 conversations working, five project types | 14 | **33** |
+| median seconds per message | 20.1 | **3.2** |
+| generated tokens | 27,147 | **7,407** |
+| Gary truthful, blind-graded | 12/23 | **20/23** |
+| wrong edits a recipe made | -- | 2 of 34 recipe turns, both truthful and undoable |
+| real UI walk (Phase 12 app walk through MainWindow) | -- | **40/41**, then **41/41** after the closure pass |
+
+On 120 held-out requests written by an agent that never saw the categories: 19 recipe
+routes, 18 right, 1 partial; keyword rules would have made 30 wrong edits out of 51.
+**The classifier does not beat keywords on accuracy (68% vs 67%). It beats them on
+knowing when to step aside**, and the "exactly one change?" gate is what does that.
+
+The one failing walk check was DoD 33-34: "Graph this and tell me what changed the most"
+is read by the gate as two things, goes to Gary, and he runs out of calls. (The closure
+pass found that step 34's check looked in a folder nothing writes, so it could not have
+passed anyway; both are fixed below.)
+
+Recipes: **62 -- 39 deterministic, 23 guidance-only** (games 21 = 17 + 4, website 11 =
+7 + 4, research 11 = 8 + 3, arduino 9 = 4 + 5, raspberry_pi 10 = 3 + 7).
+
+### Recommendation: keep it, refine it
+
+The architecture works and the Games evidence is decisive. **The next work is refinement
+of the Fast Path, not a replacement of the architecture.** Before it merges:
+
+- **Coverage is the lever.** 18 of 60 held-out changes are made by a recipe; the gate
+  stops most of the rest with the right intent. The next measurement is a better gate,
+  not more recipes.
+- **Three known missing cases**: changing how an existing thing moves ("zigzag instead"
+  became a speed change); a button's behaviour (it blinks when "turns the light on" was
+  asked); and the compound Research request above. Every option added is a re-measure of
+  both label sets.
+- **Evidence outside Games is thinner** -- 5 or 6 end-to-end conversations per type. The
+  fallback is safe there too; the benefit is not yet as well shown.
+- **D13** (HANDOFF §8): who classifies for a cloud Gary.
+- **8 GB**: the scoring cache holds ~210 MB while a project is open (five prefixes, up to
+  eight entries at a 16-token KV step).
+- **Maintenance**: ~5,300 lines and 62 recipes. Do not grow the set without a measured
+  miss.
+
+### Closure pass (SPIKES.md §25M) -- then frozen
+
+The owner's closure instruction: fill only demonstrated gaps, let Blank projects gain
+recipes from their files, run a small cross-project acceptance set, do not buy coverage
+by weakening the gate, then **freeze Fast Path and classifier work until the owner's
+local demo**.
+
+- **Blank** gains a family from its files (`index.html` → Website, pygame → Games,
+  pandas + a CSV → Research, RPi/gpiozero → Pi, `.ino` → Arduino); only that family is
+  scored. Recipes make changes only where the project can run their check, so a game or
+  a sketch in a Blank project is guidance; a website or an analysis is made by recipe.
+- **The three known misses**: a motion change for things a recipe added ("zigzag
+  instead"), rewriting only recipe-written code; the Arduino button on while held /
+  blink while held / toggle, from the child's words; and "graph this and <one change>"
+  taken by one recipe that draws the chart, with `biggest_change` vetoed unless the child
+  says something changed (the "windiest day" confusion).
+- **One website gap**: the words of the tagline, the footer or the one button.
+- **Found in the inherited evidence**: step 34's check looked in `outputs/`; month names
+  were sorted alphabetically; `sunshine_hours` was read as a time column. All fixed.
+- **Label sets, final code**: held-out 18 changes by recipe, 1 wrong -- unchanged; dev
+  44 → 48, 2 wrong -- unchanged. Every gate relaxation measured added wrong edits, so the
+  gate is unchanged. The first placement of the new Games option added a wrong held-out
+  route and was reverted; new options go at the end of `index.json`.
+- **Acceptance, 23 conversations across six project types**: 18 working, 0 wrong recipe
+  edits, median 4.1 s. The five misses are the gate stopping right intents (3) and Blank
+  (2). **UI walk 41/41.**
+- **Remaining gaps** (recorded, not fixed): the gate is still the coverage bottleneck;
+  an unnamed Research column is the model's guess (the plants compound charted water,
+  not growth); Blank games; Blank's Run button runs `main.py` whatever Gary names the
+  file.
+
+Recipes: **63 -- 41 deterministic, 22 guidance-only.** The drivers and results are kept
+in git in `benchmarks/fastpath/` (full runs with file contents stay in the ignored
+`results/raw/`); the app walk is still in the gitignored `spikes/`.
+
+### The owner's first test drive (after the freeze)
+
+The first demo message was a whole isometric eagle game in one sentence. No recipe fits
+it; the model ran out of room writing the file, and on the next message described a game
+it had not written. The honesty guard answered both with "tell me again what you want
+different", which read as broken. Three owner-directed changes, no classifier or gate
+change:
+
+- **The nothing-changed reply says why when it is known** ("too much for me to write in
+  one go" only when the call was cut off) and offers a first step this project type is
+  measured to handle (`controller._FIRST_STEPS`).
+- **"It already is" is answered, not handed to Gary** (`kinds.AlreadyDone`): asked to
+  make zigzagging cars zigzag, the recipe stepped aside and Gary rewrote code that was
+  fine. Six cases -- a game colour, the title, a thing's motion, the Pi blink count and
+  pin, page words.
+- **The turn is shown as it happens.** `tools.Step`: Open Nest reports thinking, each
+  file read, changed, created or put back, each run and test -- through one Toolbox
+  observer, so Gary's tool calls and a recipe's edits are reported alike. The chat gets
+  a line per step; the Build / Preview panel shows each changed file as it now is, the
+  new lines marked. When the turn ends by running or compiling (Research, Arduino, a
+  game Gary ran), the result is shown first and "Show the code that changed" swaps to
+  the code and back -- checked through the real Workbench in every project type. The Pi
+  recipe's own check run reports itself too. **Gary's own words are still not streamed**: the honesty guard can
+  replace a claim after it arrives, and streaming would show the claim first.
+
+A demo that works: "Make a game where you fly around and avoid cars", "Call my game
+Eagle Patrol", "Make the background light blue", "Make the player bigger", "Make the
+cars move faster", and an attached picture with "Use this picture for my spaceship".
+Dropping things from the player, an isometric view, or any other whole game in one
+sentence is still Gary's, and the 4B model does not manage it.
+
+### Pre-13 interaction pass (SPIKES.md §25N) -- then frozen
+
+The owner's principle: recipes handle predictable mechanics; Gary, on whichever model is
+selected, handles understanding, adaptation and anything new; a child needs no magic
+wording and is never the orchestration layer. No new recipe, no gate change:
+
+- **A picture in the child's words**: with a picture attached, the player's look and a
+  picture for the player are one capability, and the message is read without the one
+  before it. "use this as my eagle", "make this the player", "make my eagle look like
+  this" all reach the picture recipe.
+- **Several requests, one by one**: "the cars are too slow, speed them up and give me a
+  score" -- the speed by recipe, the score by Gary, in the same turn. Only a message whose
+  every piece stands alone is split (21 of 279 labelled requests; all genuinely several).
+  On those, 13 pieces were made by recipes, all right; the rest went to Gary.
+- **Building blocks for Gary**: project facts, how it will be checked, and a likely
+  recipe's pattern when the gate stopped it.
+- **A fallback that plans**: when Gary's whole attempt changes nothing (or three edits in
+  a row are refused), one call splits it into up to three steps; recipes make theirs,
+  Gary does the next, the rest are offered with "next".
+- **The still frame** of the invisible test in the Build panel after a game change.
+- Guards the acceptance run found: whole games must say "game" in this message, a leading
+  "and" is dropped before classifying, "faster and slower at once" defers, and the honesty
+  guard now also catches "I tested it" with nothing run and "I moved ...".
+
+Owner-style acceptance with natural wording: 9 of 10 turns right plus both Undos; the
+miss is Gary describing a parking lot his code does not have. Remaining issues (Undo
+toggles on a second press, unverified descriptions once Gary has changed something, the
+4B model's refused edits) are in §25N and are **not** the start of another iteration.
+
+### Things to know before touching it
+
+HANDOFF §4 "Phase 12.5 traps" has the list. The short version: the share is not a
+confidence (stability is); the gate is load-bearing; option order in `index.json` assigns
+letters; checks read code with the parser; a rolled-back recipe leaves nothing in the
+Turn; a pin comes from the child's words or not at all.
+
+### The drivers, and where the results are
+
+**Since the closure pass these are kept in git in `benchmarks/fastpath/`** (`inputs/`,
+`results/`, and the drivers below with the same names; full runs with every file stay in
+the ignored `results/raw/`). The app walk and `app_walk_fastpath.py` remain in the
+gitignored `spikes/`. Originally they existed only in the working copy on the measuring
+Mac, in `spikes/fastpath/`. The authoritative results
+are `e2e.json` + `e2e_tables.md` (the final end-to-end run), `blind/` (the blind grades,
+their key, and exactly what the graders saw), `decide_dev3.json` + `decide_heldout2.json`
++ `gate4_decide_*.json` (the final decision benchmarks), `labels*.json` and the two raw
+request sets, and `log_app_walk.txt` (the final 40/41 walk). SPIKES §25L lists them, and
+the superseded files beside them.
+
+| | |
+|---|---|
+| `spikes/fastpath/bench_decide.py` + `analyse_decide.py` | the whole decision on a labelled set (`labels.json`, `labels_heldout.json`); strict gate only |
+| `spikes/fastpath/analyse_final_gate.py` | routing under the final gate, from stored answers -- the 19-right / 1-partial held-out figure |
+| `spikes/fastpath/bench_e2e.py` + `analyse_e2e.py` | the §14 comparison, both arms, everything persisted (`e2e.json`, `e2e_run1.json`, `e2e_tables.md`) |
+| `spikes/fastpath/blind_cases.py` | anonymised, shuffled cases for blind grading |
+| `spikes/fastpath/app_walk_fastpath.py` | the Phase 12 app walk, unchanged, with each turn's Fast Path record |
+| `spikes/fastpath/smoke_*.py` | every operation of every kind through the real playtest, compile or run, no model |
+| `spikes/fastpath/lexical.py` | the keyword baseline -- a comparison, never a router |
+| `benchmarks/fastpath/analyse_routes.py` | scores the router's own decisions from a closure-era `decide_*.json` (every rule applied, nothing re-derived) |
+| `benchmarks/fastpath/bench_e2e.py --set closure --arm fast` + `analyse_closure.py` | the closure pass's 23-conversation cross-project acceptance set |
+

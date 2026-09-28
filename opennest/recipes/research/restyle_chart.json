@@ -1,0 +1,12 @@
+{
+  "id": "analysis.restyle_chart",
+  "intent": "restyle_chart",
+  "describe": "change how an existing chart looks: its title, labels, colours, size, sorting, or add a trend line",
+  "guide": [
+    "Change the chart that is already drawn rather than adding a new one: find its axes.set_title, set_xlabel/set_ylabel, figsize, colours or sort in analysis.py and edit those lines. The house style comes from matplotlibrc -- never call sns.set_theme() or plt.style.use().",
+    "A trend line needs `import numpy as np` at the top of the file (check it is there before using np), then slope, start = np.polyfit(x, y, 1) and axes.plot(x, slope * x + start). Rotated labels are plt.setp(axes.get_xticklabels(), rotation=45, ha=\"right\")."
+  ],
+  "requires": [],
+  "op": null,
+  "params": {}
+}

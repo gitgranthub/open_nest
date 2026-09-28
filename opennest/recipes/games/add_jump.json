@@ -1,0 +1,12 @@
+{
+  "id": "game.add_jump",
+  "intent": "add_jump",
+  "describe": "make the player jump, or add gravity",
+  "requires": [],
+  "op": null,
+  "params": {},
+  "guide": [
+    "Jumping needs a vertical speed: make velocity_y = 0 and GRAVITY and JUMP_SPEED constants above the loop. Every frame add GRAVITY to velocity_y and velocity_y to the player's y. When the player reaches the ground, stop there and set velocity_y = 0. When SPACE is pressed and the player is on the ground, set velocity_y = -JUMP_SPEED.",
+    "Remove the up and down arrow movement, or it will fight the gravity."
+  ]
+}

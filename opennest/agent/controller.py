@@ -15,12 +15,15 @@ loop itself behaves identically either way, which is what keeps them separately 
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from opennest import paths
 from opennest.agent.budget import (
     CORRECTION,
+    PLAN,
     PRIMARY,
     RECOVERY,
     REPAIR,
@@ -30,10 +33,11 @@ from opennest.agent.budget import (
     MeteredProvider,
     TurnUsage,
 )
-from opennest.agent.tools import Toolbox, ToolResult, normalise_tool_name, schemas_for
+from opennest.agent.tools import Step, Toolbox, ToolResult, normalise_tool_name, schemas_for
 from opennest.ai.provider import (
     Message,
     ModelProvider,
+    ProviderError,
     Settings,
     ToolCall,
     TruncatedReply,
@@ -50,6 +54,9 @@ from opennest.versioning.checkpoint import (
     LABEL_BEFORE_CHANGE,
     VersionHistory,
 )
+
+if TYPE_CHECKING:
+    from opennest.fastpath.router import FastPathRouter
 
 #: WORKORDER_01 section 28: "Maximum automatic repair attempts: 3". Per turn, and shared
 #: between a run that crashed and a game that failed its headless test -- one repair
@@ -116,7 +123,25 @@ _CHANGE_VERBS = (
     ("renamed", "renamed", "renaming"),
     ("created", "created", "creating"),
     ("wrote", "written", "writing"),
+    # Added after the pre-13 acceptance run, where "I moved the nervous behavior inside
+    # the car loop" went to the child about a file nothing had changed.
+    ("moved", "moved", "moving"),
+    ("put", "put", "putting"),
+    ("inserted", "inserted", "inserting"),
+    ("adjusted", "adjusted", "adjusting"),
+    ("tweaked", "tweaked", "tweaking"),
+    ("raised", "raised", "raising"),
+    ("lowered", "lowered", "lowering"),
+    ("swapped", "swapped", "swapping"),
+    ("rewrote", "rewritten", "rewriting"),
+    ("drew", "drawn", "drawing"),
 )
+
+#: Saying it was run or tested. Only a claim when nothing ran in Gary's share of the
+#: turn: the recipes' replies say "I tested it without a window", and the model copied
+#: that into a turn where it had changed and run nothing (the pre-13 acceptance run).
+_CLAIMED_TEST = ("i tested it", "i've tested", "i have tested", "tested it without a window",
+                 "i ran it", "i've run it", "i have run it")
 
 
 def _claim_phrases() -> tuple[str, ...]:
@@ -136,6 +161,35 @@ def _claim_phrases() -> tuple[str, ...]:
 #: Phrases a model uses when it believes it edited something. Used to catch the failure
 #: above deterministically rather than trusting the prompt to have fixed it.
 _CLAIMED_CHANGE = _claim_phrases()
+
+#: A first step each project type is measured to handle -- every one of these went
+#: through the real model and a recipe (SPIKES.md sections 25G and 25M). Offered when a
+#: turn changed nothing and nothing was even attempted, so "one small piece" has an
+#: example a child can copy.
+_FIRST_STEPS: dict[str, tuple[str, ...]] = {
+    "games": ("Make a game where you fly around and avoid cars",
+              "Add a ball that bounces around the screen"),
+    "website": ("Make the background dark blue", "Change the title to My Dog Club"),
+    "research": ("Graph this and tell me what changed the most",),
+    "arduino": ("Make it blink faster",),
+    "raspberry_pi": ("Make it blink 10 times",),
+}
+
+#: How many refused edits, with nothing changed, before Open Nest stops Gary retrying the
+#: same change and splits it into steps instead. Measured on the pre-13 acceptance run:
+#: six refusals in a row, nothing landed, all twelve calls and 162 seconds spent.
+REFUSALS_BEFORE_STEPS = 3
+
+#: "next" when nothing is waiting: answered without a model call. Only the word "next" --
+#: a bare "yes" may be answering a question Gary asked, so it still goes to him.
+_JUST_NEXT = re.compile(r"^(?:next|next one|next step|the next one|do the next one)[.!]*$",
+                        re.IGNORECASE)
+
+#: A reply that means "do the next step you offered".
+_CARRY_ON = re.compile(
+    r"^(?:yes|yeah|yep|yup|ok|okay|sure|next|next one|next step|the next one|go on|"
+    r"go ahead|keep going|carry on|continue|do it|do that|do the next one|yes please|"
+    r"ok do it|ok next|sounds good)[.!]*$", re.IGNORECASE)
 
 #: ...and phrases that plainly say it did not. A reply holding one of these is not a
 #: completion claim whatever else it says, which matters for two reasons. It is exactly
@@ -179,6 +233,21 @@ class Turn:
     #: the profile has no test. For tests and for measuring the loop (SPIKES.md
     #: section 24).
     playtests: list[playtest.Playtest] = field(default_factory=list)
+    #: What the Fast Path decided and did: intent, score, route, recipe, result, changed
+    #: files, verification. None when no Fast Path is attached. For tests, logs and the
+    #: benchmark -- never shown to the child, who only ever hears Gary (SPIKES.md
+    #: section 25).
+    fastpath: dict | None = None
+    #: Where Gary's own share of this turn starts in ``tool_results``. Zero unless recipes
+    #: already made part of the message: the honesty guard, "nothing changed" and the
+    #: fallback description then look only at what *he* did, so a recipe's real change
+    #: can never cover a claim of his that did not happen.
+    gary_from: int = 0
+    #: Said before and after Gary's reply: what the recipes made, and what is still to do.
+    prefix: str = ""
+    suffix: str = ""
+    #: Whether a too-big request has already been broken into steps this turn. Once only.
+    reduced: bool = False
 
 
 def build_system_prompt(
@@ -188,12 +257,18 @@ def build_system_prompt(
     last_run: RunResult | None = None,
     memory: str = "",
     asset_context: str = "",
+    guidance: str = "",
 ) -> str:
     """The new-thread bootstrap of section 15A: base + profile + style + state + memory.
 
     ``asset_context`` is the imported files and what is honestly known about them
-    (WORKORDER_01 section 13). It comes last, nearest the conversation, because when it
-    is non-empty the child has usually just attached something and is talking about it.
+    (WORKORDER_01 section 13). It comes near the end, nearest the conversation, because
+    when it is non-empty the child has usually just attached something and is talking
+    about it.
+
+    ``guidance`` is the Fast Path's known way of doing what this one message asks, with
+    where the pieces go in this project's files -- present for one turn only, when the
+    request was recognised but Open Nest did not make the change itself.
     """
     base = (paths.prompts_dir() / "base.txt").read_text(encoding="utf-8").strip()
     profile_prompt = project.profile.system_prompt()
@@ -204,6 +279,8 @@ def build_system_prompt(
         parts.append(memory)
     if asset_context:
         parts.append(asset_context)
+    if guidance:
+        parts.append(guidance)
     return "\n\n".join(parts)
 
 
@@ -289,11 +366,28 @@ class AgentController:
         build_style: str = "build",
         versions: VersionHistory | None = None,
         memory: MemoryManager | None = None,
+        fastpath: FastPathRouter | None = None,
     ) -> None:
         self.project = project
         self.provider = provider
         self.toolbox = toolbox
         self.build_style = build_style
+        #: Recognises common requests and handles them with a known recipe before the
+        #: model is asked to write anything (``opennest.fastpath``). Optional, and the
+        #: loop is unchanged without it; with it, every request it does not handle
+        #: arrives at the loop exactly as it would have.
+        self.fastpath = fastpath
+        #: The Fast Path's guidance for the message being answered. One turn only, for
+        #: the same reason an attachment is: it describes *this* request.
+        self._guidance = ""
+        #: The child's previous message, so "now make it blue" can be classified.
+        self._last_request: str | None = None
+        #: What the Fast Path did on the last turn, for Gary on this one. Only ever one
+        #: turn old: after that the conversation history carries it.
+        self._recent_note = ""
+        #: Steps a too-big request was split into that are not done yet. "next" (or
+        #: "yes", "keep going") does the first; any other message sets them aside.
+        self._pending: list[str] = []
         #: Saved versions. Named `versions`, not `history`, because `self.history` is
         #: already the message list -- conflating the two silently broke checkpointing.
         #: Optional so tests and headless use do not require Git.
@@ -316,6 +410,7 @@ class AgentController:
                 build_style=self.build_style,
                 memory=self._memory_block(),
                 asset_context=self._asset_block(),
+                guidance=self._guidance,
             ))
         ]
 
@@ -347,6 +442,7 @@ class AgentController:
                 last_run=self.toolbox.last_run,
                 memory=self._memory_block(),
                 asset_context=self._asset_block(),
+                guidance=self._guidance,
             ),
         )
 
@@ -372,13 +468,39 @@ class AgentController:
         *,
         attachments: Sequence[assets.Asset] = (),
         on_text: Callable[[str], None] | None = None,
+        on_progress: Callable[[Step], None] | None = None,
     ) -> Turn:
         """One exchange: the child says something, the agent acts, and reports back.
 
         ``attachments`` are files the child dropped onto this message (WORKORDER_01
         sections 12 and 13). They are already imported into the project by the time they
         arrive here -- what this adds is that *these* are the ones being talked about.
+
+        ``on_progress`` is told each :class:`~opennest.agent.tools.Step` as it happens --
+        thinking, each file read or changed and what it now says, each run and test --
+        for this turn only. The Workbench shows them; nothing here depends on them.
         """
+        self.toolbox.observer = on_progress
+        try:
+            return self._send(text, attachments, on_text)
+        finally:
+            self.toolbox.observer = None
+
+    def _send(self, text: str, attachments: Sequence[assets.Asset],
+              on_text: Callable[[str], None] | None) -> Turn:
+        pending, self._pending = self._pending, []
+        if pending and _CARRY_ON.match(text.strip()):
+            # "next": the child is not made to retype the step Open Nest offered.
+            self._pending = pending[1:]
+            text = pending[0]
+        elif _JUST_NEXT.match(text.strip()):
+            # Measured on the acceptance run: "next" with nothing offered went to the model
+            # as a request, and twelve calls later nothing had changed.
+            turn = Turn(text="I don't have a next step lined up. Tell me what you'd like to "
+                             "add or change next.")
+            self.history.append(Message(role="user", content=text))
+            self.history.append(Message(role="assistant", content=turn.text))
+            return turn
         # Checkpoint whatever state exists before touching anything, so "undo" goes
         # back to what the child had rather than to some earlier assistant turn.
         self._checkpoint(LABEL_BEFORE_CHANGE)
@@ -407,10 +529,221 @@ class AgentController:
         #: How many of this turn's tool results the last headless test already covers.
         self._tested_through = 0
 
+        previous, self._last_request = self._last_request, text
+        recent, self._recent_note = self._recent_note, ""
+        if recent:
+            self._guidance = recent
+            self.refresh_state()
+        outcome = "gary"
+        if self.fastpath is not None:
+            outcome = self._fast_path(turn, text, previous, attachments, on_text)
+        if outcome == "handled":
+            return self._finish_turn(turn)
+        if outcome == "rest":
+            text = " and ".join(turn.fastpath.get("remaining") or ()) or text
+
         try:
-            return self._exchange(turn, text, on_text, challenged, corrected)
+            turn = self._exchange(turn, text, on_text, challenged, corrected)
         except BudgetExhausted:
-            return self._out_of_calls(turn)
+            turn = self._out_of_calls(turn)
+        return self._framed(turn)
+
+    def _framed(self, turn: Turn) -> Turn:
+        """Put what the recipes made before Gary's reply, and what is left after it."""
+        steps = (turn.fastpath or {}).get("plan") or []
+        if turn.reduced and steps and not any(result.changed_files
+                                              for _, result in turn.tool_results):
+            # Even the steps came to nothing. The plan is still worth having: it is the
+            # way in, and "next" starts it -- the child is not left to rewrite it.
+            self._pending = list(steps)
+            listed = "\n".join(f"{n}. {step}" for n, step in enumerate(steps, 1))
+            turn.text = ("I haven't changed anything yet. Here's a way to build it, one step "
+                         f"at a time:\n\n{listed}\n\nSay \u201cnext\u201d and I'll start with "
+                         "the first one.")
+            return turn
+        turn.text = "\n\n".join(part for part in (turn.prefix, turn.text, turn.suffix)
+                                if part)
+        return turn
+
+    @staticmethod
+    def _stuck_on_edits(turn: Turn) -> bool:
+        """Several edits refused in Gary's share of the turn, and nothing changed."""
+        mine = turn.tool_results[turn.gary_from:]
+        if any(result.changed_files for _, result in mine):
+            return False
+        refused = sum(1 for name, result in mine if not result.ok
+                      and normalise_tool_name(name) in ("edit_file", "write_file"))
+        return refused >= REFUSALS_BEFORE_STEPS
+
+    def _can_reduce(self, turn: Turn) -> bool:
+        """Once per turn, for the whole request, and only with calls left to spend."""
+        budget = getattr(self, "_budget", None)
+        left = budget.remaining if budget is not None else 0
+        return not turn.reduced and not turn.gary_from and left >= 2
+
+    def _reduce(self, turn: Turn, text: str, on_text, corrected: bool, *,
+                too_big: bool = False) -> Turn:
+        """Break a request Gary could not do in one go into steps, and start on them.
+
+        The fallback before this told the child to ask for something smaller, which
+        makes them the orchestration layer. Instead: one planning call to the model
+        Gary is (at most three steps, ``prompts/plan.txt``); the steps a recipe can make
+        are made and checked (``FastPathRouter.run_parts``); Gary then does the first of
+        the rest -- only that one, honesty-guarded from where his share begins -- and
+        the others are offered, with "next" to do them. Bounded twice over: this runs
+        once per turn, and every call it makes spends from the turn's one budget.
+        """
+        turn.reduced = True
+        steps = self._plan(text)
+        record = turn.fastpath if turn.fastpath is not None else {}
+        turn.fastpath = record
+        if len(steps) < 2:
+            # "Too much in one go" only where that is the checked cause (a cut-off call).
+            turn.text = self._nothing_changed_text(turn, too_big=too_big)
+            return self._finish_turn(turn)
+        record["plan"] = steps
+        rest, done_text, guidance = list(steps), "", ""
+        if self.fastpath is not None:
+            try:
+                result = self.fastpath.run_parts(
+                    self.project, self.toolbox, text, steps, provider=self.provider,
+                    attachments=tuple(self._attached), build_style=self.build_style)
+            except Exception as exc:  # noqa: BLE001 - the Fast Path must not break a turn
+                record["plan_error"] = repr(exc)
+            else:
+                record["plan_parts"] = result.record.get("parts")
+                guidance = result.guidance
+                if result.handled:
+                    self._take_in(turn, result)
+                    done_text, rest = result.text, list(result.remaining)
+        intro = "That was a lot to build in one go, so I started on it one step at a time."
+        turn.prefix = "\n\n".join(part for part in (intro, done_text) if part)
+        if not rest:
+            turn.text = ""
+            return self._finish_turn(turn)
+        first, later = rest[0], rest[1:]
+        self._pending = later
+        record["remaining"] = [first]
+        if later:
+            listed = ", ".join(f"\u201c{step}\u201d" for step in later)
+            turn.suffix = (f"Still to do: {listed}. Say \u201cnext\u201d and I'll do the "
+                           "next one.")
+        turn.gary_from = len(turn.tool_results)
+        self._tested_through = len(turn.tool_results)
+        if guidance:
+            self._guidance = "\n\n".join(part for part in (self._guidance, guidance) if part)
+        made = "; the first part is made above and checked" if done_text else ""
+        self.history.append(Message(role="user", content=(
+            f"That was too much for one go, so Open Nest split it into steps{made}. Now do "
+            f"only this step: \u201c{first}\u201d. Nothing else.")))
+        self.refresh_state()
+        return self._exchange(turn, first, on_text, False, corrected)
+
+    def _plan(self, text: str) -> list[str]:
+        """At most three small steps for a request, from one call. [] if none came back."""
+        self.toolbox.report(Step("thinking", "breaking it into smaller steps"))
+        provider = getattr(self, "_metered", None) or self.provider
+        if isinstance(provider, MeteredProvider):
+            provider.kind = PLAN
+        template = (paths.prompts_dir() / "plan.txt").read_text(encoding="utf-8").strip()
+        messages = [Message(role="system", content=template.replace(
+                        "{project}", self.project.profile.name.lower())),
+                    Message(role="user", content=text)]
+        try:
+            for _chunk in provider.chat(messages, tools=None,
+                                        settings=Settings(temperature=0.0, max_tokens=200)):
+                pass
+            reply = provider.finish()
+        except BudgetExhausted:
+            raise
+        except ProviderError:
+            return []
+        steps = []
+        for line in (reply.text or "").split("\n"):
+            step = re.sub(r"^\s*(?:[-*\u2022]|\d+[.)])\s*", "", line).strip().strip('"')
+            if 2 <= len(step.split()) <= 20 and len(step) <= 140:
+                steps.append(step.rstrip("."))
+        return steps[:3]
+
+    def _fast_path(self, turn: Turn, text: str, previous: str | None,
+                   attachments: Sequence[assets.Asset],
+                   on_text: Callable[[str], None] | None) -> str:
+        """Let the Fast Path take the turn if it can: "handled", "gary", or "rest".
+
+        "rest" is a message that was several requests, of which recipes made some: their
+        edits go into the history as below, and Gary does the rest in this same turn,
+        from the files as the recipes left them (``_hand_over_the_rest``).
+
+        When a recipe handled the request, the history gets what actually happened --
+        the edits as ``edit_file`` calls, their results, and Gary's reply -- so on the
+        next turn the model reads a change it can see was made, rather than a claim.
+        That is how Gary knows which recipe ran without being told a word about recipes.
+
+        When it did not, the only trace is the guidance in the system prompt for this
+        one turn, and the loop runs exactly as it would have. The Fast Path must never be
+        the thing that breaks a child's turn, so a failure inside it is recorded and the
+        turn goes to the model.
+        """
+        try:
+            result = self.fastpath.handle(
+                self.project, self.toolbox, text,
+                provider=self.provider, previous=previous,
+                attachments=tuple(attachments), build_style=self.build_style,
+            )
+        except Exception as exc:  # noqa: BLE001 - see the docstring
+            turn.fastpath = {"route": "normal", "reason": f"the Fast Path failed: {exc!r}"}
+            return "gary"
+        turn.fastpath = result.record
+        if not result.handled:
+            # A recipe that was rolled back tested code that no longer exists. Leaving
+            # that test in the turn would have the repair loop chase a crash Gary's code
+            # never had -- measured, it spent all three attempts doing so.
+            if result.guidance:
+                self._guidance = "\n\n".join(
+                    part for part in (self._guidance, result.guidance) if part)
+                self.refresh_state()
+            return "gary"
+        self._take_in(turn, result)
+        if result.remaining:
+            self._hand_over_the_rest(turn, result.remaining, result.text, result.guidance)
+            return "rest"
+        turn.text = result.text
+        if on_text is not None:
+            on_text(result.text)
+        self.refresh_state()
+        return "handled"
+
+    def _take_in(self, turn: Turn, result) -> None:
+        """What a recipe made goes into the history and the turn as what it was."""
+        self._recent_note = result.note
+        turn.playtests.extend(result.playtests)
+
+        if result.calls:
+            # An "it already is" answer made no calls, and an assistant message with no
+            # words and no calls is noise in the history the model reads next turn.
+            self.history.append(Message(
+                role="assistant", content="",
+                tool_calls=tuple(call for call, _ in result.calls),
+            ))
+        for call, tool_result in result.calls:
+            turn.tool_results.append((call.name, tool_result))
+            self.history.append(Message(role="tool", name=call.name, tool_call_id=call.id,
+                                        content=tool_result.content))
+        self.history.append(Message(role="assistant", content=result.text))
+
+    def _hand_over_the_rest(self, turn: Turn, rest, done_text: str, guidance: str) -> None:
+        """Gary does what the recipes did not, in this turn, knowing what they made."""
+        turn.prefix = done_text
+        turn.gary_from = len(turn.tool_results)
+        # The recipes' own checks already tested what they made.
+        self._tested_through = len(turn.tool_results)
+        if guidance:
+            self._guidance = "\n\n".join(part for part in (self._guidance, guidance) if part)
+        wanted = " and ".join(f"\u201c{part}\u201d" for part in rest)
+        self.history.append(Message(role="user", content=(
+            "Open Nest has already made the part above itself and checked it. Now do only "
+            f"the rest of what they asked: {wanted}. Do not redo or undo what was made.")))
+        self.refresh_state()
 
     def _out_of_calls(self, turn: Turn) -> Turn:
         """Stop cleanly at the ceiling, with something a child can act on.
@@ -445,13 +778,15 @@ class AgentController:
 
             if not reply.wants_tool:
                 if reply.dropped_tool_call and not self._changed_anything(turn):
+                    if self._can_reduce(turn):
+                        return self._reduce(turn, text, on_text, corrected, too_big=True)
                     # A call the model could not finish -- it ran out of output while
                     # writing it -- so nothing ran and nothing changed. The provider has
                     # already kept the raw protocol off the screen; without this the
                     # child would be told nothing at all, or a half-sentence that came
                     # before the call. Not retried: measured, it was a repetition loop,
                     # and at temperature 0 the same prompt loops the same way.
-                    turn.text = self._nothing_changed_text(turn)
+                    turn.text = self._nothing_changed_text(turn, too_big=True)
                     return self._finish_turn(turn)
                 # Checked against ``turn.text`` -- what the child will actually be told
                 # -- and not against ``reply.text``. The two differ whenever a reply
@@ -480,6 +815,8 @@ class AgentController:
                     # says that instead of relaying the claim -- the same move
                     # _describe_what_happened makes when the model says nothing at all,
                     # and it costs no further provider call.
+                    if self._can_reduce(turn):
+                        return self._reduce(turn, text, on_text, corrected)
                     turn.text = self._nothing_changed_text(turn)
                     return self._finish_turn(turn)
                 if not corrected:
@@ -501,6 +838,13 @@ class AgentController:
 
             self._metered.kind = PRIMARY
             should_continue = self._run_tools(reply.tool_calls, turn)
+            if should_continue and self._stuck_on_edits(turn):
+                # The same change will not land. Retrying it is what spent a whole turn's
+                # calls on the acceptance run; splitting it into steps is the next move.
+                if self._can_reduce(turn):
+                    return self._reduce(turn, text, on_text, corrected)
+                turn.text = self._nothing_changed_text(turn)
+                return self._finish_turn(turn)
             if not should_continue:
                 # The crash repair has had its go. A game it got running still has to
                 # pass the same test as any other.
@@ -512,7 +856,10 @@ class AgentController:
         """Save a checkpoint if the assistant changed anything, then update memory."""
         # The attachment belonged to the message just answered. The file stays in the
         # project and keeps appearing in the listing; only "they just added this" goes.
+        # The Fast Path's guidance was about this message too, and a rollover below must
+        # not carry it into the next thread's prompt.
         self._attached = ()
+        self._guidance = ""
         changed = any(result.changed_files for _, result in turn.tool_results)
         # State is refreshed before the checkpoint so the saved version contains both the
         # change and the note describing it.
@@ -532,7 +879,7 @@ class AgentController:
 
     @staticmethod
     def _changed_anything(turn: Turn) -> bool:
-        return any(result.changed_files for _, result in turn.tool_results)
+        return any(result.changed_files for _, result in turn.tool_results[turn.gary_from:])
 
     @staticmethod
     def _describe_what_happened(turn: Turn) -> str:
@@ -554,12 +901,9 @@ class AgentController:
         game that launched is described as having started -- which is all a launch
         shows -- and nothing here claims the child's feature was checked.
         """
-        changed = sorted({
-            path
-            for _, result in turn.tool_results
-            for path in result.changed_files
-        })
-        ran = [result for _, result in turn.tool_results if result.run is not None]
+        mine = turn.tool_results[turn.gary_from:]
+        changed = sorted({path for _, result in mine for path in result.changed_files})
+        ran = [result for _, result in mine if result.run is not None]
         last_run_ok = ran and ran[-1].ok
         only_launched = last_run_ok and ran[-1].run.still_running
 
@@ -662,15 +1006,18 @@ class AgentController:
         rule asks for a real tool call or a plain "I have not changed it yet", and this
         is what keeps the second one from being mistaken for the first.
         """
-        if any(result.changed_files for _, result in turn.tool_results):
+        mine = turn.tool_results[turn.gary_from:]
+        if any(result.changed_files for _, result in mine):
             return False
         lowered = (text or "").lower()
         if any(phrase in lowered for phrase in _DENIED_CHANGE):
             return False
-        return any(phrase in lowered for phrase in _CLAIMED_CHANGE)
+        if any(phrase in lowered for phrase in _CLAIMED_CHANGE):
+            return True
+        ran = any(result.run is not None for _, result in mine)
+        return not ran and any(phrase in lowered for phrase in _CLAIMED_TEST)
 
-    @staticmethod
-    def _nothing_changed_text(turn: Turn) -> str:
+    def _nothing_changed_text(self, turn: Turn, *, too_big: bool = False) -> str:
         """What the child is told when the model insists on a change that did not happen.
 
         Composed by the application from the tool results, never by the model, for the
@@ -693,13 +1040,23 @@ class AgentController:
           application knows a change was attempted and refused, so that is what it says.
 
         Brand guide section 9: an error is something unexpected, not a failure, and the
-        reply ends with the way forward rather than the fault.
+        reply ends with the way forward rather than the fault. When nothing was even
+        attempted, the way forward is a first step this project type is known to handle
+        (``_FIRST_STEPS``): the owner's first test drive asked for a whole isometric game
+        in one sentence and was told, twice, to "tell me again what you want different".
+        ``too_big`` is only ever passed when the model is known to have run out of room
+        writing a call -- the one case where "too much in one go" is a checked cause.
         """
         refused = {
             normalise_tool_name(name)
-            for name, result in turn.tool_results
+            for name, result in turn.tool_results[turn.gary_from:]
             if not result.ok
         }
+        if turn.gary_from and turn.prefix:
+            # Recipes made part of the message; this is about Gary's part only.
+            rest = " and ".join(f"\u201c{part}\u201d"
+                                for part in (turn.fastpath or {}).get("remaining", ()))
+            return f"I haven't done the rest yet{f' ({rest})' if rest else ''}."
         if refused & {"edit_file", "write_file"}:
             return (
                 "I haven't changed that yet. My edit didn't match the file cleanly, so "
@@ -710,10 +1067,14 @@ class AgentController:
                 "I haven't changed that yet. What I tried didn't work. "
                 "Tell me again what you want different."
             )
-        return (
-            "I haven't changed anything yet. Tell me again what you want different, or "
-            "ask for one small change to start with."
-        )
+        first = "I haven't changed anything yet."
+        if too_big:
+            first += " That was too much for me to write in one go."
+        steps = _FIRST_STEPS.get(self.project.profile.id)
+        if not steps:
+            return f"{first} Try asking for one small piece of it first."
+        examples = " or ".join(f"\u201c{step}\u201d" for step in steps)
+        return f"{first} Try one small piece of it first -- for example {examples}."
 
     def _generate(self, on_text: Callable[[str], None] | None, *, turn: Turn | None = None):
         """One provider call, metered, with one retry if the answer came back empty.
@@ -731,6 +1092,7 @@ class AgentController:
     def _call(self, on_text, settings: Settings, *, turn: Turn | None,
               retried: bool = False):
         provider = getattr(self, "_metered", None) or self.provider
+        self.toolbox.report(Step("thinking", "thinking"))
         tools = schemas_for(self.toolbox.allowed)
         try:
             for chunk in provider.chat(self.history, tools=tools, settings=settings):

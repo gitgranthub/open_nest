@@ -19,6 +19,9 @@ class AgentWorker(QObject):
     """Runs one agent turn off the UI thread."""
 
     chunk = Signal(str)        # streamed text as it arrives
+    #: Each Step as it happens -- thinking, a file changed and what it now says. Emitted
+    #: on this thread and delivered queued on the GUI thread, like the others.
+    progress = Signal(object)
     finished = Signal(object)  # Turn
     failed = Signal(str)       # message fit for a person to read
 
@@ -31,7 +34,8 @@ class AgentWorker(QObject):
     def run(self) -> None:
         try:
             turn: Turn = self.controller.send(
-                self.text, attachments=self.attachments, on_text=self.chunk.emit
+                self.text, attachments=self.attachments, on_text=self.chunk.emit,
+                on_progress=self.progress.emit,
             )
         except ProviderError as exc:
             self.failed.emit(str(exc))

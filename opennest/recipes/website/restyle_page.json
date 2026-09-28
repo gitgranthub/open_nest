@@ -1,0 +1,12 @@
+{
+  "id": "website.restyle_page",
+  "intent": "restyle_page",
+  "describe": "make something on the page move, flip, lift up or animate, or change the order or layout of the page",
+  "guide": [
+    "Movement on hover belongs in styles.css: a :hover rule with transform (for example .card:hover { transform: translateY(-4px); }) and a transition on the normal rule. Changing the order of sections is moving the whole <section>...</section> block in index.html, and the nav links with it.",
+    "You cannot see the page: say what you changed and ask them to press Preview Website."
+  ],
+  "requires": [],
+  "op": null,
+  "params": {}
+}

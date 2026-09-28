@@ -1,0 +1,30 @@
+{
+  "id": "analysis.line_chart",
+  "intent": "line_chart",
+  "describe": "make a line chart that shows how something changes over time",
+  "requires": [
+    "table",
+    "anchor",
+    "frame",
+    "chart_dir"
+  ],
+  "op": "chart",
+  "params": {
+    "chart": "line"
+  },
+  "guide": [
+    "Sort by the time column and draw axes.plot of the number against it. If several groups share the same times, draw one line per group with a legend. Label both axes and save into the chart folder.",
+    "Never state a finding the code has not computed: write code that prints the result, run it, then quote what it printed."
+  ],
+  "verify": [
+    "runs_clean",
+    "chart_written",
+    "printed_result"
+  ],
+  "report": [
+    "I added $what, saved as $chart.",
+    "There is $what now, in $chart.",
+    "I drew $what -- it is saved as $chart."
+  ],
+  "teach": "Sorting by time first matters: a line joins the points in order, so unsorted rows zig-zag."
+}

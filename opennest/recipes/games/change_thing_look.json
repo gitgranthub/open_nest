@@ -1,0 +1,23 @@
+{
+  "id": "game.change_thing_look",
+  "intent": "change_thing_look",
+  "describe": "change the colour or size of something already in the game, like the asteroids or enemies",
+  "requires": [
+    "thing_speed"
+  ],
+  "op": "thing_look",
+  "params": {},
+  "guide": [
+    "Find that thing's own colour and size constants near the top (like ASTEROID_COLOUR and ASTEROID_SIZE) and change those numbers. If it has none, give it named constants and use them where it is drawn."
+  ],
+  "verify": [
+    "playtest_passes",
+    "moves_by_itself"
+  ],
+  "report": [
+    "The $things are $how now.",
+    "I made the $things $how -- $changed at the top $were what changed.",
+    "Done: $how $things."
+  ],
+  "teach": "Every one of them is drawn from the same ${prefix}_ constants, so one change reaches them all."
+}

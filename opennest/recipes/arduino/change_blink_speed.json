@@ -1,0 +1,23 @@
+{
+  "id": "arduino.change_blink_speed",
+  "intent": "change_blink_speed",
+  "describe": "make the light blink faster or slower",
+  "requires": [
+    "blink_times"
+  ],
+  "op": "blink_timing",
+  "params": {},
+  "guide": [
+    "The blink is ON_MILLISECONDS and OFF_MILLISECONDS at the top of the sketch. Smaller numbers blink faster. Change both numbers and nothing else."
+  ],
+  "verify": [
+    "value_set",
+    "compiles"
+  ],
+  "report": [
+    "The light is on for $on ms and off for $off ms now -- it was $old_on and $old_off.",
+    "ON_MILLISECONDS is $on and OFF_MILLISECONDS is $off now, from $old_on and $old_off.",
+    "It blinks $on ms on, $off ms off now (1000 ms is one second)."
+  ],
+  "teach": "delay() waits that many milliseconds, so the two numbers are how long the light stays on and off."
+}

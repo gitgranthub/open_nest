@@ -1,0 +1,11 @@
+{
+  "id": "pi.blink_forever",
+  "intent": "blink_forever",
+  "describe": "make it keep going until it is stopped",
+  "requires": [],
+  "op": null,
+  "params": {},
+  "guide": [
+    "Replace the fixed count with a while True: loop around the blink, and keep the finally: lights.finish() so the pins are cleaned up when Stop is pressed. Say that on the Mac it runs until Stop."
+  ]
+}

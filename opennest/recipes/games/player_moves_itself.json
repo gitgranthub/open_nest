@@ -1,0 +1,23 @@
+{
+  "id": "game.player_moves_itself",
+  "intent": "player_moves_itself",
+  "describe": "make the player move by itself, like falling down the screen or bouncing",
+  "requires": [
+    "player",
+    "fill"
+  ],
+  "op": "player_motion",
+  "params": {},
+  "guide": [
+    "Move the player a little every frame inside the loop, before the screen is drawn. To fall and start again, add to its y and put it back at the top when it reaches the bottom."
+  ],
+  "verify": [
+    "playtest_passes",
+    "moves_by_itself"
+  ],
+  "report": [
+    "The player $how now. $name at the top sets how fast.",
+    "Now the player $how on its own. Change $name at the top to speed it up or slow it down."
+  ],
+  "teach": "It moves a little every frame, so it keeps going without any keys pressed."
+}

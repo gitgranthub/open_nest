@@ -1,0 +1,26 @@
+{
+  "id": "arduino.add_button",
+  "intent": "add_button",
+  "describe": "add a button",
+  "requires": [
+    "setup",
+    "loop"
+  ],
+  "op": "add_button",
+  "params": {},
+  "guide": [
+    "Never choose a pin. If the message does not say which pin, ask. Pins 0 and 1 are the USB connection; never use them for a part.",
+    "Use pinMode(BUTTON_PIN, INPUT_PULLUP) so no resistor is needed: the pin reads LOW while the button is pressed. Do what they said pressing it should do -- on while held, blink while held, or each press switching the light on or off (remember the last reading, so one press is one change). Wire one leg to the pin and the other to GND, and add it to wiring.md."
+  ],
+  "verify": [
+    "added_present",
+    "wiring_noted",
+    "compiles"
+  ],
+  "report": [
+    "I added a button on pin $pin: $how. wiring.md says how to connect it.",
+    "The button goes on pin $pin, and $how. The wiring is in wiring.md.",
+    "Pin $pin is the button now -- $how. One leg to the pin, one to GND, as wiring.md says."
+  ],
+  "teach": "INPUT_PULLUP holds the pin HIGH until the button connects it to GND, so pressed reads LOW -- which looks backwards until you see why."
+}

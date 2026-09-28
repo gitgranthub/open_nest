@@ -1,0 +1,19 @@
+{
+  "_note": "The Website recipes. See opennest/recipes/games/index.json for what each field is.",
+  "profile": "website",
+  "building": "a website out of plain HTML, CSS and JavaScript files",
+  "other": "anything else: a creative idea, a feeling or style, several changes at once, or a question",
+  "order": [
+    "website.change_colours",
+    "website.change_heading",
+    "website.change_text",
+    "website.add_section",
+    "website.add_card",
+    "website.add_image",
+    "website.add_button",
+    "website.change_font_size",
+    "website.restyle_page",
+    "website.remove_element",
+    "website.add_gallery"
+  ]
+}

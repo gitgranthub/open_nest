@@ -1,0 +1,23 @@
+{
+  "id": "website.change_font_size",
+  "intent": "change_font_size",
+  "describe": "make the writing bigger or smaller",
+  "requires": [
+    "body_font"
+  ],
+  "op": "change_font_size",
+  "params": {},
+  "guide": [
+    "The page's writing size is font-size in the body rule of src/styles.css. The headings are sized relative to it, so change that one number."
+  ],
+  "verify": [
+    "font_size_set",
+    "offline"
+  ],
+  "report": [
+    "The writing is $direction now: the body font size went from ${old}px to ${new}px.",
+    "I set the page's font size to ${new}px, from ${old}px. Headings grow and shrink with it.",
+    "Everything is written at ${new}px now instead of ${old}px."
+  ],
+  "teach": "Most sizes on the page are measured from the body's font size, so changing it scales the page."
+}

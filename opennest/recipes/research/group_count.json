@@ -1,0 +1,28 @@
+{
+  "id": "analysis.group_count",
+  "intent": "group_count",
+  "describe": "count how many there are of each kind",
+  "requires": [
+    "table",
+    "anchor",
+    "frame"
+  ],
+  "op": "group_summary",
+  "params": {
+    "measure": "count"
+  },
+  "guide": [
+    "frame[column].value_counts(), printed.",
+    "Never state a finding the code has not computed: write code that prints the result, run it, then quote what it printed."
+  ],
+  "verify": [
+    "runs_clean",
+    "printed_result"
+  ],
+  "report": [
+    "I added $what to the analysis.",
+    "The analysis counts that now: $what.",
+    "I added $what."
+  ],
+  "teach": "value_counts() counts how many rows have each different value in a column."
+}

@@ -1,0 +1,11 @@
+{
+  "id": "pi.add_led",
+  "intent": "add_led",
+  "describe": "add another LED",
+  "guide": [
+    "Never choose a pin: ask which BCM pin the new LED is on. Make a second Lights(pin) object and turn it on and off in blink(), alongside or opposite the first, and say which pin and resistor it needs."
+  ],
+  "requires": [],
+  "op": null,
+  "params": {}
+}

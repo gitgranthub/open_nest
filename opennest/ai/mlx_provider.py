@@ -42,6 +42,22 @@ _THINK_BLOCK = re.compile(r"<think>.*?(?:</think>|$)", re.DOTALL)
 #: was shown to the child as Gary's reply.
 _UNCLOSED_TOOL_CALL = re.compile(r"<tool_call>.*\Z", re.DOTALL)
 
+#: How many scoring prefixes stay prefilled. One Fast Path decision asks the intent
+#: question in three orderings and the "one change?" question in two, so five prefixes
+#: are reused every turn -- measured in SPIKES.md section 25, four entries thrashed and
+#: every decision cost 2.05 s instead of 0.44 s. Three more are room for a tweak's second
+#: gate question and a detail question; those prefixes are short. ``unload`` frees all.
+_SCORE_CACHE_ENTRIES = 8
+
+#: KV space is reserved in steps of this many tokens. mlx_lm's default is 256, which for
+#: a 363-token prefix reserves 512 -- measured at ~300 MB for the five prefixes a
+#: decision uses. A prefix never grows past its suffix, so a fine step wastes nothing.
+_SCORE_CACHE_STEP = 16
+
+#: Stands in for the user's text while the fixed part of a scoring prompt is rendered, so
+#: the rendered string can be split where the variable part begins.
+_SCORE_SENTINEL = "⁣OPENNEST-SCORE⁣"
+
 
 def resolve_local_model(model_id: str, revision: str | None = None) -> Path:
     """Find an installed model on disk without any network access.
@@ -79,6 +95,8 @@ class MLXProvider(ModelProvider):
         self._model: Any = None
         self._tokenizer: Any = None
         self._reply = Reply()
+        #: Prefilled scoring prefixes, most recently used last: (prefix ids, KV cache).
+        self._score_cache: list[tuple[list[int], Any]] = []
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -108,6 +126,7 @@ class MLXProvider(ModelProvider):
         """Give the memory back. Reloading costs about a third of a second."""
         self._model = None
         self._tokenizer = None
+        self._score_cache = []
         try:
             import mlx.core as mx
 
@@ -156,6 +175,83 @@ class MLXProvider(ModelProvider):
 
     def finish(self) -> Reply:
         return self._reply
+
+    # -- scoring, for the Fast Path -----------------------------------------
+
+    def score_choices(self, system: str, user: str, labels: Sequence[str]) -> list[float]:
+        """How likely each label is as the first token of the answer. Nothing generated.
+
+        The Fast Path's classifier (``opennest.fastpath.classifier``) asks the model a
+        closed question -- "which of these kinds of change is it? A, B, C..." -- and
+        reads the next-token distribution at the point the answer would begin. One
+        forward pass over the prompt, no sampling, no decoding loop. Measured in SPIKES.md
+        section 25: ~50 ms with the fixed part cached, against 15-76 s for a generative
+        turn.
+
+        Returns natural-log probabilities over the **whole vocabulary**, one per label, so
+        a caller can see how much of the model's mass the offered labels received at all
+        and is not handed something already renormalised. Every label must be a single
+        token; a label that is not is refused rather than scored on its first piece.
+
+        The fixed part of the prompt -- everything before ``user`` -- is prefilled once
+        and reused, then trimmed back after each question. Same weights, same thread as
+        generation: nothing extra is loaded.
+        """
+        self.load()
+        import mlx.core as mx
+        from mlx_lm.models.cache import make_prompt_cache, trim_prompt_cache
+
+        label_ids = []
+        for label in labels:
+            encoded = self._tokenizer.encode(label, add_special_tokens=False)
+            if len(encoded) != 1:
+                raise ProviderError(f"A scoring label must be one token: {label!r}")
+            label_ids.append(encoded[0])
+
+        rendered = self._render(
+            [Message(role="system", content=system),
+             Message(role="user", content=user)], None,
+        )
+        ids = self._tokenizer.encode(rendered, add_special_tokens=False)
+
+        template = self._render(
+            [Message(role="system", content=system),
+             Message(role="user", content=_SCORE_SENTINEL)], None,
+        )
+        split = template.find(_SCORE_SENTINEL)
+        prefix = (self._tokenizer.encode(template[:split], add_special_tokens=False)
+                  if split > 0 else [])
+
+        # A tokenizer may merge across the boundary; then the cached prefix is not a
+        # prefix of this prompt and the whole thing is simply run uncached.
+        if prefix and ids[:len(prefix)] == prefix and len(ids) > len(prefix):
+            cache = self._cached_prefix(prefix, make_prompt_cache, mx)
+            suffix = ids[len(prefix):]
+            logits = self._model(mx.array([suffix]), cache=cache)[0, -1]
+            logprobs = logits - mx.logsumexp(logits)
+            chosen = mx.take(logprobs, mx.array(label_ids))
+            mx.eval(chosen)
+            trim_prompt_cache(cache, len(suffix))
+        else:
+            logits = self._model(mx.array([ids]))[0, -1]
+            logprobs = logits - mx.logsumexp(logits)
+            chosen = mx.take(logprobs, mx.array(label_ids))
+            mx.eval(chosen)
+        return [float(value) for value in chosen.tolist()]
+
+    def _cached_prefix(self, prefix: list[int], make_prompt_cache, mx):
+        for index, (ids, cache) in enumerate(self._score_cache):
+            if ids == prefix:
+                self._score_cache.append(self._score_cache.pop(index))
+                return cache
+        cache = make_prompt_cache(self._model)
+        for layer in cache:
+            if hasattr(layer, "step"):
+                layer.step = _SCORE_CACHE_STEP
+        mx.eval(self._model(mx.array([prefix]), cache=cache))
+        self._score_cache.append((prefix, cache))
+        del self._score_cache[:-_SCORE_CACHE_ENTRIES]
+        return cache
 
     def _render(self, messages: Sequence[Message], tools: Sequence[dict] | None) -> str:
         """Build the prompt, with reasoning switched off where the template offers it.

@@ -1,0 +1,30 @@
+{
+  "id": "analysis.scatter_plot",
+  "intent": "scatter_plot",
+  "describe": "make a scatter plot of two numbers against each other, to see if they go together",
+  "requires": [
+    "table",
+    "anchor",
+    "frame",
+    "chart_dir"
+  ],
+  "op": "chart",
+  "params": {
+    "chart": "scatter"
+  },
+  "guide": [
+    "Draw axes.scatter of one number column against another, and print their correlation with .corr(). Say that moving together does not show that one causes the other.",
+    "Never state a finding the code has not computed: write code that prints the result, run it, then quote what it printed."
+  ],
+  "verify": [
+    "runs_clean",
+    "chart_written",
+    "printed_result"
+  ],
+  "report": [
+    "I added $what, saved as $chart.",
+    "There is $what in $chart now.",
+    "I drew $what and saved it to $chart."
+  ],
+  "teach": "The correlation is a number from -1 to 1: near 1 they rise together, near -1 one rises as the other falls, near 0 there is no pattern."
+}

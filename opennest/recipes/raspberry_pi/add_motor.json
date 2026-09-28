@@ -1,0 +1,11 @@
+{
+  "id": "pi.add_motor",
+  "intent": "add_motor",
+  "describe": "add a motor or a servo",
+  "requires": [],
+  "op": null,
+  "params": {},
+  "guide": [
+    "Never drive a motor straight from a GPIO pin: it needs a motor driver board and its own power supply, with the grounds connected. Say so first, ask which driver and motor they have, and put the motor code behind a class that pretends on the Mac."
+  ]
+}

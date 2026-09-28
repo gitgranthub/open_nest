@@ -1,0 +1,12 @@
+{
+  "id": "game.fix_problem",
+  "intent": "fix_problem",
+  "describe": "fix something that is broken or not working the way they expected",
+  "guide": [
+    "Read the file first and find the exact lines causing what they describe. Change only those lines, then say what was wrong in plain words.",
+    "The game is tested after your change, so say what they should see rather than that it works."
+  ],
+  "requires": [],
+  "op": null,
+  "params": {}
+}

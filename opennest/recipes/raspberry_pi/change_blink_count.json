@@ -1,0 +1,24 @@
+{
+  "id": "pi.change_blink_count",
+  "intent": "change_blink_count",
+  "describe": "change how many times the LED blinks",
+  "requires": [
+    "blinks"
+  ],
+  "op": "blink_count",
+  "params": {},
+  "guide": [
+    "BLINKS at the top of src/main.py is how many times it blinks. Change that number."
+  ],
+  "verify": [
+    "value_set",
+    "runs_on_mac",
+    "prints_blinks"
+  ],
+  "report": [
+    "It blinks $count times now, not $old.",
+    "BLINKS is $count now, from $old.",
+    "I set BLINKS to $count -- it was $old."
+  ],
+  "teach": "blink() repeats once for every number from 1 to BLINKS."
+}

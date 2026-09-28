@@ -1,0 +1,26 @@
+{
+  "id": "website.change_colours",
+  "intent": "change_colours",
+  "describe": "change the colours of the site",
+  "requires": [
+    "css_vars"
+  ],
+  "op": "set_colour",
+  "params": {},
+  "guide": [
+    "Colours live in the variables in :root at the top of src/styles.css: --bg is the page, --ink the writing, --accent links and buttons, --card the boxes. Change the value there, not a colour written into one rule -- one change there changes the whole site.",
+    "There is a second :root inside @media (prefers-color-scheme: dark). Change it too, or the colour only shows in light mode.",
+    "Check the writing is still easy to read against the new background."
+  ],
+  "verify": [
+    "css_value_set",
+    "html_balanced",
+    "offline"
+  ],
+  "report": [
+    "I made $part $colour ($hex) -- that is $var in styles.css, in light and dark mode. $note",
+    "$part is $colour now: $var went from $old to $hex, in both light and dark mode. $note",
+    "Done: $var is $hex, which is $colour, so $part $changes everywhere it is used. $note"
+  ],
+  "teach": "Every rule that says var($var) picks up the new value, which is why one line changes the whole site."
+}

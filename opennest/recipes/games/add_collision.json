@@ -1,0 +1,26 @@
+{
+  "id": "game.add_collision",
+  "intent": "add_collision",
+  "describe": "make something happen when the player touches something that is already in the game",
+  "requires": [
+    "loop",
+    "fill",
+    "flip",
+    "player",
+    "things"
+  ],
+  "op": "add_collision",
+  "params": {},
+  "guide": [
+    "Inside the loop, after things have moved, check player.colliderect(thing) -- or player.collidelist(list) for many -- and do what should happen right there."
+  ],
+  "verify": [
+    "playtest_passes"
+  ],
+  "report": [
+    "Now when the player touches a $noun, $what.",
+    "Touching a $noun does something now: $what.",
+    "I added a check for the player touching a $noun -- when it happens, $what."
+  ],
+  "teach": "colliderect is true when two rectangles overlap, so the check runs every frame and fires the moment they touch."
+}

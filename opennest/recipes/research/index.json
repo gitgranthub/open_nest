@@ -1,0 +1,19 @@
+{
+  "_note": "The Research recipes. See opennest/recipes/games/index.json for what each field is.",
+  "profile": "research",
+  "building": "a Python research project that analyses a table of data from a CSV file",
+  "other": "anything else: a question about what the results mean, a new research question, notes, several things at once, or something not listed",
+  "order": [
+    "analysis.describe_data",
+    "analysis.bar_chart",
+    "analysis.line_chart",
+    "analysis.scatter_plot",
+    "analysis.histogram",
+    "analysis.group_average",
+    "analysis.group_count",
+    "analysis.biggest_change",
+    "analysis.filter_rows",
+    "analysis.restyle_chart",
+    "analysis.change_printout"
+  ]
+}

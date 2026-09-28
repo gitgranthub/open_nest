@@ -1,0 +1,30 @@
+{
+  "_note": "The Games recipes. 'order' decides which letter each option gets in the classifier's question and is the ordering its other orderings are defined from. 'building' and 'other' are the words the classifier is given. SPIKES.md section 25. New options go at the end: that keeps every existing option's letter in two of the three orderings. Inserted in the middle, change_thing_motion moved most letters and made one held-out request a confident wrong route (SPIKES.md section 25M).",
+  "profile": "games",
+  "building": "a Python game with Pygame",
+  "other": "anything else: a creative idea, a feeling or mood, how things behave, several changes at once, or a question",
+  "order": [
+    "game.change_player_speed",
+    "game.change_player_size",
+    "game.change_player_colour",
+    "game.change_background",
+    "game.set_title",
+    "game.add_moving_thing",
+    "game.add_enemy",
+    "game.change_thing_speed",
+    "game.change_thing_look",
+    "game.fix_problem",
+    "game.add_collectible",
+    "game.add_score",
+    "game.add_collision",
+    "game.add_game_rules",
+    "game.replace_player_sprite",
+    "game.change_player_look",
+    "game.add_jump",
+    "game.make_avoid_game",
+    "game.make_catch_game",
+    "game.change_controls",
+    "game.player_moves_itself",
+    "game.change_thing_motion"
+  ]
+}

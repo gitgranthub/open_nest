@@ -1,0 +1,23 @@
+{
+  "id": "game.change_controls",
+  "intent": "change_controls",
+  "describe": "change which keys move the player, or make it follow the mouse",
+  "requires": [
+    "player",
+    "arrow_ifs"
+  ],
+  "op": "controls",
+  "params": {},
+  "guide": [
+    "Keys are checked with keys[pygame.K_LEFT] and so on. Add another key with or, like keys[pygame.K_LEFT] or keys[pygame.K_a]. To follow the mouse, set player.center = pygame.mouse.get_pos() inside the loop."
+  ],
+  "verify": [
+    "playtest_passes",
+    "player_responds"
+  ],
+  "report": [
+    "$how",
+    "Done. $how"
+  ],
+  "teach": "keys[...] is True while that key is held down, so each line moves the player while its key is pressed."
+}

@@ -14,6 +14,7 @@ from opennest.agent.tools import Toolbox
 from opennest.ai import images
 from opennest.ai.provider import ProviderError
 from opennest.ai.router import build_provider, default_model_id, get_entry, unmet_requirements
+from opennest.fastpath.router import FastPathRouter
 from opennest.memory.manager import MemoryManager
 from opennest.projects.manager import Project, ProjectError, create_project
 from opennest.projects.profiles import Profile
@@ -291,6 +292,10 @@ class MainWindow(QMainWindow):
             build_style=project.manifest.build_style,
             versions=versions,
             memory=MemoryManager.for_provider(project, self._provider, versions=versions),
+            # Classifies with whichever model Gary is, when that model can answer a
+            # closed question -- a local one. A cloud Gary gets the normal path; giving
+            # it the local model as a classifier is open decision D13.
+            fastpath=FastPathRouter(),
         )
         workbench = Workbench(
             project, controller, versions,

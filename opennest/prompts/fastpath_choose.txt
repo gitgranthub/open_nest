@@ -1,0 +1,5 @@
+{question}
+
+{options}
+
+Reply with the one letter of the best answer, and nothing else.

@@ -1,0 +1,12 @@
+{
+  "id": "analysis.filter_rows",
+  "intent": "filter_rows",
+  "describe": "only look at some of the rows, like one group or values above a number",
+  "requires": [],
+  "op": null,
+  "params": {},
+  "guide": [
+    "Make a filtered copy with frame[frame[column] == value] or frame[frame[column] > number], print how many rows are left, and use the copy for what follows. Use the exact column names and values in the data.",
+    "Never state a finding the code has not computed: write code that prints the result, run it, then quote what it printed."
+  ]
+}

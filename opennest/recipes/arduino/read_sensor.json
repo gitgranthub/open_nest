@@ -1,0 +1,12 @@
+{
+  "id": "arduino.read_sensor",
+  "intent": "read_sensor",
+  "describe": "read a sensor, like temperature, light or distance",
+  "requires": [],
+  "op": null,
+  "params": {},
+  "guide": [
+    "Never choose a pin. If the message does not say which pin, ask. Pins 0 and 1 are the USB connection; never use them for a part.",
+    "Ask which sensor they have if they have not said -- the code depends on the exact part. Never invent a part number or pinout. An analog sensor is read with analogRead(A0); print readings with Serial.println."
+  ]
+}

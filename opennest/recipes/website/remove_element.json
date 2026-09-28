@@ -1,0 +1,11 @@
+{
+  "id": "website.remove_element",
+  "intent": "remove_element",
+  "describe": "take something off the page",
+  "guide": [
+    "Remove the whole element in index.html -- its opening tag, everything inside it and its closing tag -- and any nav link that pointed to it. If script.js uses its id, remove that code too, or the page will show an error."
+  ],
+  "requires": [],
+  "op": null,
+  "params": {}
+}

@@ -1,0 +1,36 @@
+{
+  "id": "game.change_player_speed",
+  "intent": "change_player_speed",
+  "describe": "make the player move faster or slower",
+  "requires": [
+    "player_speed"
+  ],
+  "op": "set_number",
+  "params": {
+    "fact": "player_speed",
+    "question": "Does the message want the player to end up faster or slower?",
+    "up": "faster",
+    "down": "slower",
+    "up_word": "raised",
+    "down_word": "lowered",
+    "factor": 1.6,
+    "min": 1,
+    "max": 40
+  },
+  "guide": [
+    "Find the number the arrow keys move the player by -- usually a constant like PLAYER_SPEED near the top -- and change only that number.",
+    "Change the constant's line exactly as it is written; do not add indentation to a line at the top of the file."
+  ],
+  "verify": [
+    "value_set",
+    "speed_used",
+    "playtest_passes",
+    "player_responds"
+  ],
+  "report": [
+    "I $direction $name from $old to $new. It is near the top of the game file if you want to try other numbers.",
+    "$name was $old; it is $new now. Try a few other numbers there and see which feels right.",
+    "Done -- $name is $new now, up from $old. That one number sets how far the player moves each frame."
+  ],
+  "teach": "$name is how many pixels the player moves each frame while an arrow key is held, so a bigger number covers more ground."
+}

@@ -1,0 +1,12 @@
+{
+  "id": "arduino.make_traffic_light",
+  "intent": "make_traffic_light",
+  "describe": "make a traffic light with several LEDs",
+  "requires": [],
+  "op": null,
+  "params": {},
+  "guide": [
+    "Never choose a pin. If the message does not say which pin, ask. Pins 0 and 1 are the USB connection; never use them for a part.",
+    "Three LEDs, three named pin constants, each through its own resistor. In loop(): green on, wait, amber on, wait, red on, wait -- one at a time. Put each pin in wiring.md."
+  ]
+}
