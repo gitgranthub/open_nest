@@ -3587,8 +3587,66 @@ inline).
 **It predates Phase 13, measured.** The unchanged Phase 12 app walk
 (`spikes/fastpath/app_walk_fastpath.py`) run on this branch: 41/41, then exit 139. The
 same walk run on the pre-Phase-13 commit `552627f`, in a temporary worktree against the
-same models: **41/41, then exit 139**, the same crash report. Not investigated further
-here: Phase 13 changed nothing about the model, and this does not block it. It matters
+same models: **41/41, then exit 139**, the same crash report. **Diagnosed and fixed in
+26H.** It matters
 for the product because the application quits the same way after a real session, and a
 segfault at quit leaves a macOS crash report in front of a parent -- the Phase 12 lesson
 of section 20C. Recorded as its own task.
+
+### 26H. The exit segfault, diagnosed and fixed
+
+Section 26F's crash, taken apart. Every full walk exited 139 after its summary, on this
+branch and on `552627f` before it.
+
+**Where the model ran.** The Phase 12 app walk with every `MLXProvider` call recording its
+thread (`spikes/phase13/walk_threads.py`): turns and Fast Path scoring on worker threads,
+and exactly one caller on the **main** thread -- `MainWindow._close_project` ->
+`AgentController.close` -> `rollover.summarise` -> `provider.chat`, the summary written
+when a project closes (twice in the walk: back to the Flight Deck, and quitting).
+
+**Why that crashes, and only sometimes.** MLX keeps compiled functions in a cache *per
+thread* (`mlx/compile_impl.h`: "Get the compiler cache of current thread"), and
+`mlx_lm` compiles `swiglu`, so every forward pass leaves an entry. A worker's cache is
+destroyed when the worker ends, while Python is running. The main thread's is destroyed
+inside `exit()`, after Python has finalised; an entry still in it releases a Python object
+(`CacheEntry::~CacheEntry` -> `PyGILState_Ensure`) and the process segfaults. The entry is
+normally erased when the compiled function is freed during finalisation -- which only
+happens if the model is freed too. Reproduced deterministically with no Qt at all
+(`spikes/phase13/probe_mlx_exit.py`):
+
+| the model ran on | still referenced when Python finalised | exit |
+|---|---|---|
+| the main thread | no | 0 |
+| **the main thread** | **yes** | **139**, the walks' stack exactly |
+| a worker thread | yes | 0 |
+
+In the application the model outlives finalisation when something still holds it -- the
+walks' globals, or a turn's thread that is still running when a child quits. Through the
+real entry point (`spikes/phase13/probe_app_quit.py`, `python -m opennest.app`), quitting
+while Gary was mid-turn crashed with the same MLX stack.
+
+**The fix** (`ai/mlx_provider.py`, `_no_compiling_on_the_main_thread`): a model call made
+on the main thread runs with MLX compilation switched off (`mx.disable_compile()`, put
+back straight afterwards; `MLX_DISABLE_COMPILE` respected), so the main thread never has a
+cache entry for `exit()` to destroy. The close-time summary stays exactly where and what
+it was. It costs that one call ~2 % (84.4 against 86.0 tok/s); worker threads compile as
+before. Moving the summary to a worker was the alternative and was not taken: a thread's
+C++ thread-locals are destroyed after `join()`/`wait()` return, so a summary finished at
+quit could race finalisation the same way, and it would reopen close-time threading.
+
+| after the fix | |
+|---|---|
+| `probe_mlx_exit.py`, main thread, model held | 139 -> **0**, three runs |
+| Phase 12 app walk | 41/41, **exit 0** (was 139 on 4 of 4 runs) |
+| Phase 13 walk | 45/45, **exit 0** (was 139 on 3 of 3) |
+| real entry point: a Gary turn, back to the Flight Deck, quit | exit 0 (it was 0 unfixed too: nothing held the model) |
+| real entry point: quit mid-turn | the MLX segfault is gone; a **separate** abort remains, below |
+| new crash reports from any of the above | none |
+
+**Not fixed here, and not MLX: quitting while Gary is still writing aborts** (SIGABRT,
+`QThread: Destroyed while thread is still running`, from `QThread::~QThread`). On quit,
+`stop_thread` waits 5 s and then parks a turn's thread that will not stop; a parked thread
+still running when the interpreter finalises is destroyed, and Qt aborts. Without the fix
+it was masked, because in that run the turn had already failed and ended before exit and
+the segfault came first. Recorded as its own task. Quit after Gary has finished and neither
+crash occurs.

@@ -153,3 +153,96 @@ def test_a_template_that_refuses_the_flag_still_renders() -> None:
     provider = MLXProvider(ModelInfo(id="x", name="X", provider="mlx"), "repo/x")
     provider._tokenizer = PickyTokenizer()
     assert provider._render([Message(role="user", content="hi")], None) == "PROMPT"
+
+
+# ------------------------------------------ quitting must not crash (SPIKES.md 26H)
+#
+# MLX keeps compiled functions in a cache per thread, and destroys the main thread's
+# inside exit() -- after Python has finalised. An entry left there releases a Python
+# object and segfaults, measured on every full app walk. So the model never compiles on
+# the main thread, whose one use of it is the summary written when a project closes.
+# Fakes stand in for MLX: the suite is hermetic, and the crash itself is reproduced by
+# spikes/phase13/probe_mlx_exit.py against the real model.
+
+class _FakeMLX:
+    """``mlx.core`` and ``mlx_lm``, recording whether compilation was on at each token."""
+
+    def __init__(self, monkeypatch) -> None:
+        import sys
+        import types
+
+        self.compiling = True
+        self.during: list[bool] = []
+        core = types.ModuleType("mlx.core")
+        core.disable_compile = lambda: setattr(self, "compiling", False)
+        core.enable_compile = lambda: setattr(self, "compiling", True)
+        package = types.ModuleType("mlx")
+        package.core = core
+        lm = types.ModuleType("mlx_lm")
+
+        def stream_generate(model, tokenizer, prompt, **kwargs):
+            for text in ("Hello", " there"):
+                self.during.append(self.compiling)
+                yield types.SimpleNamespace(text=text, prompt_tokens=3, generation_tokens=2)
+
+        lm.stream_generate = stream_generate
+        sampling = types.ModuleType("mlx_lm.sample_utils")
+        sampling.make_sampler = lambda temp: None
+        for name, module in (("mlx", package), ("mlx.core", core), ("mlx_lm", lm),
+                             ("mlx_lm.sample_utils", sampling)):
+            monkeypatch.setitem(sys.modules, name, module)
+
+
+def _loaded_provider():
+    from opennest.ai.mlx_provider import MLXProvider
+    from opennest.ai.provider import ModelInfo
+
+    provider = MLXProvider(ModelInfo(id="x", name="X", provider="mlx"), "repo/x")
+    provider._model = object()          # loaded, as far as the provider can tell
+    provider._render = lambda messages, tools: "PROMPT"
+    return provider
+
+
+def test_the_close_time_summary_does_not_compile_on_the_main_thread(monkeypatch) -> None:
+    from opennest.ai.provider import Message
+
+    monkeypatch.delenv("MLX_DISABLE_COMPILE", raising=False)
+    mlx = _FakeMLX(monkeypatch)
+    text = "".join(c.text for c in _loaded_provider().chat([Message("user", "hi")]))
+    assert text == "Hello there"
+    assert mlx.during == [False, False], "the main thread built a compile cache entry"
+    assert mlx.compiling, "compilation was left off for every other thread afterwards"
+
+
+def test_a_worker_thread_compiles_as_it_always_has(monkeypatch) -> None:
+    """Every turn runs on a worker, whose cache ends while Python is still running."""
+    import threading
+
+    from opennest.ai.provider import Message
+
+    mlx = _FakeMLX(monkeypatch)
+    provider = _loaded_provider()
+    worker = threading.Thread(target=lambda: list(provider.chat([Message("user", "hi")])))
+    worker.start()
+    worker.join()
+    assert mlx.during == [True, True]
+
+
+def test_a_person_who_turned_compilation_off_keeps_it_off(monkeypatch) -> None:
+    from opennest.ai.provider import Message
+
+    monkeypatch.setenv("MLX_DISABLE_COMPILE", "1")
+    mlx = _FakeMLX(monkeypatch)
+    mlx.compiling = False
+    list(_loaded_provider().chat([Message("user", "hi")]))
+    assert not mlx.compiling
+
+
+def test_scoring_on_the_main_thread_does_not_compile_either(monkeypatch) -> None:
+    """The Fast Path scores on a worker today; the guard does not depend on that."""
+    mlx = _FakeMLX(monkeypatch)
+    provider = _loaded_provider()
+    seen = []
+    provider._score = lambda system, user, labels: seen.append(mlx.compiling) or [0.0]
+    assert provider.score_choices("system", "user", ["A"]) == [0.0]
+    assert seen == [False] and mlx.compiling

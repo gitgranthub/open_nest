@@ -11,8 +11,11 @@ So this provider resolves the pinned snapshot to a directory on disk first and h
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import re
+import threading
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any
@@ -57,6 +60,42 @@ _SCORE_CACHE_STEP = 16
 #: Stands in for the user's text while the fixed part of a scoring prompt is rendered, so
 #: the rendered string can be split where the variable part begins.
 _SCORE_SENTINEL = "⁣OPENNEST-SCORE⁣"
+
+
+@contextlib.contextmanager
+def _no_compiling_on_the_main_thread():
+    """Run the model without MLX compilation when this is the main thread.
+
+    **Otherwise quitting can crash.** MLX keeps a cache of compiled functions *per
+    thread* (``mlx_lm`` compiles ``swiglu``, so every forward pass fills one), and a
+    thread's cache is destroyed when that thread ends. A worker's ends while Python is
+    running. The main thread's ends inside ``exit()``, *after* Python has finalised --
+    and an entry still in it releases a Python object on the way out, which is a
+    segfault and a macOS crash report on quit (SPIKES.md section 26H). The entry is
+    only still there when something keeps the model alive past finalisation, which is
+    exactly the application's case.
+
+    Measured with no Qt at all: generating on the main thread with the model still
+    referenced at exit crashed every time (exit 139, the same stack as the app walks);
+    on a worker thread, or on the main thread with this switch, it exited cleanly.
+
+    The main thread's one use of the model is the summary written when a project closes
+    (``AgentController.close``). With compilation off it builds no cache entry, so there
+    is nothing for ``exit()`` to destroy. The switch is global to MLX, so anything a
+    worker runs meanwhile is simply not compiled either -- slower, never wrong -- and it
+    is put back straight afterwards. A person who set ``MLX_DISABLE_COMPILE`` keeps it.
+    """
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
+    import mlx.core as mx
+
+    mx.disable_compile()
+    try:
+        yield
+    finally:
+        if not os.environ.get("MLX_DISABLE_COMPILE"):
+            mx.enable_compile()
 
 
 def resolve_local_model(model_id: str, revision: str | None = None) -> Path:
@@ -155,16 +194,19 @@ class MLXProvider(ModelProvider):
 
         pieces: list[str] = []
         last = None
-        for response in stream_generate(
-            self._model,
-            self._tokenizer,
-            prompt,
-            max_tokens=settings.max_tokens,
-            sampler=sampler,
-        ):
-            pieces.append(response.text)
-            last = response
-            yield Chunk(text=response.text)
+        # Around the loop itself: this is a generator, so the model runs on whichever
+        # thread iterates it, and that is the thread that matters.
+        with _no_compiling_on_the_main_thread():
+            for response in stream_generate(
+                self._model,
+                self._tokenizer,
+                prompt,
+                max_tokens=settings.max_tokens,
+                sampler=sampler,
+            ):
+                pieces.append(response.text)
+                last = response
+                yield Chunk(text=response.text)
 
         self._reply = reply_from_completion(
             "".join(pieces),
@@ -198,6 +240,10 @@ class MLXProvider(ModelProvider):
         generation: nothing extra is loaded.
         """
         self.load()
+        with _no_compiling_on_the_main_thread():
+            return self._score(system, user, labels)
+
+    def _score(self, system: str, user: str, labels: Sequence[str]) -> list[float]:
         import mlx.core as mx
         from mlx_lm.models.cache import make_prompt_cache, trim_prompt_cache
 

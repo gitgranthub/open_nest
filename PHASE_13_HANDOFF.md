@@ -175,10 +175,12 @@ What changed, because Publish does not exist yet and so **nothing shows them tod
   pygame profile; `family_for` could decide it later.
 - **OpenGL games** (`pygame.OPENGL`) cannot draw under the dummy driver. The playtest has
   always had the same limit.
-- **A segfault at interpreter exit, not caused by Phase 13** (SPIKES 26F): MLX's
-  thread-local compile cache on the main thread is destroyed after Python has finalised.
-  Every full walk hits it after its summary — **including the Phase 12 app walk on the
-  pre-Phase-13 commit** — and short probes do not. Recorded as its own task.
+- **The segfault at interpreter exit is fixed** (SPIKES 26H): a model call on the main
+  thread -- only the close-time summary -- runs with MLX compilation off, so no
+  main-thread compile cache is left for `exit()` to destroy after Python has finalised.
+  Both walks now exit 0. **Still open, and separate: quitting while Gary is mid-turn
+  aborts** (`QThread: Destroyed while thread is still running`), because the parked
+  turn thread is destroyed at exit. For the owner test: quit after Gary has finished.
 
 ---
 
