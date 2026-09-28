@@ -399,8 +399,25 @@ class AgentController:
         #: and stays in the listing, but "this picture" only means something for the
         #: message it arrived with.
         self._attached: tuple[assets.Asset, ...] = ()
+        #: Set by :meth:`stop`: the project is closing, so a turn ends at its next call.
+        self._stopping = False
         self.history: list[Message] = []
         self._reset_history()
+
+    def stop(self) -> None:
+        """End the turn in progress at its next safe point, because the project is closing.
+
+        Called from the GUI thread while the turn runs on its worker; the Workbench then
+        waits for that worker to finish, so nothing is torn down under it. The turn ends
+        through the call budget (``CallBudget.stop``) -- exactly as a turn that ran out
+        of calls ends, which every subsystem already handles -- keeping and checkpointing
+        whatever it had already changed. A recipe, an edit, a run or a test already under
+        way finishes first. Only for closing: this controller is not used again.
+        """
+        self._stopping = True
+        budget = getattr(self, "_budget", None)
+        if budget is not None:
+            budget.stop()
 
     def _reset_history(self) -> None:
         """Begin a thread: one system message carrying the whole bootstrap."""
@@ -524,6 +541,9 @@ class AgentController:
         # repair cycle, a truncation retry and the rollover all spend from it. See
         # agent/budget.py for why the subsystems no longer get separate allowances.
         self._budget = CallBudget()
+        if self._stopping:
+            # Asked to stop before this turn had a budget to stop.
+            self._budget.stop()
         turn.usage = self._budget.usage
         self._metered = MeteredProvider(self.provider, self._budget)
         #: How many of this turn's tool results the last headless test already covers.
@@ -758,6 +778,12 @@ class AgentController:
             "Here is where I got to -- tell me what to try next, or ask for something "
             "smaller."
         )
+        if self._budget.stopped:
+            # Not out of calls: the project was closed while he worked, and the turn must
+            # not report a reason that is not true. (Like any turn's closing line, it is
+            # not added to the history; the archive keeps the child's message and any
+            # changes, which are checkpointed.)
+            turn.text = "I stopped there because the project was closed."
         return self._finish_turn(turn, allow_rollover=False)
 
     def _exchange(

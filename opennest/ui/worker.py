@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import contextlib
 
-from PySide6.QtCore import QObject, QThread, Signal
+from PySide6.QtCore import QEventLoop, QObject, QThread, QTimer, Signal
 
 from opennest.agent.controller import AgentController, Turn
 from opennest.ai.provider import ProviderError
@@ -173,6 +173,35 @@ def stop_thread(thread: QThread | None, timeout_ms: int = SHUTDOWN_WAIT_MS) -> N
             _park(thread)
     except RuntimeError:
         # The underlying QThread was already deleted by Qt. Nothing to wait for.
+        return
+
+
+def wait_for_thread(thread: QThread | None, *, poll_ms: int = 50) -> None:
+    """Wait for a worker to end by itself, keeping the window alive while it does.
+
+    For a thread that has been asked to finish and will -- a turn told to stop
+    (``AgentController.stop``) ends at its next model call or the next piece of one, and
+    anything else it is doing is short and bounded. :func:`stop_thread` gives up after
+    five seconds and parks the thread; a parked thread still running when the program
+    exits is destroyed by Qt, which **aborts the process** (measured when quitting
+    mid-turn: ``QThread: Destroyed while thread is still running``, SIGABRT, a macOS
+    crash report). So this does not give up.
+
+    The real event loop runs while it waits (a nested ``QEventLoop``, never ``qWait``,
+    which starves the worker of the GIL -- HANDOFF section 4), because a turn can be
+    blocked on the GUI thread itself: a parent permission prompt is asked there
+    (``consent._on_gui_thread``), and a blocking ``wait()`` would deadlock with it.
+    """
+    if thread is None:
+        return
+    try:
+        while thread.isRunning():
+            loop = QEventLoop()
+            QTimer.singleShot(poll_ms, loop.quit)
+            loop.exec()
+        thread.wait()
+    except RuntimeError:
+        # Deleted by Qt once it finished (``run_in_thread`` asks for that). Done.
         return
 
 

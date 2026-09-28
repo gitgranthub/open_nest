@@ -134,6 +134,8 @@ class CallBudget:
     #: exercise the exhausted path without a fifty-call fixture.
     limit: int = field(default_factory=lambda: MAX_PROVIDER_CALLS_PER_TURN)
     usage: TurnUsage = field(default_factory=TurnUsage)
+    #: Set by :meth:`stop` -- the project is closing, so the turn ends at its next call.
+    stopped: bool = False
 
     @property
     def spent(self) -> int:
@@ -141,13 +143,30 @@ class CallBudget:
 
     @property
     def remaining(self) -> int:
-        return max(0, self.limit - self.spent)
+        return 0 if self.stopped else max(0, self.limit - self.spent)
 
     @property
     def exhausted(self) -> bool:
         return self.remaining <= 0
 
+    def stop(self) -> None:
+        """End the turn at its next safe point: the next call, or the next piece of one.
+
+        Used when a project closes while Gary is still working (quitting included). The
+        turn then ends exactly the way a turn that ran out of calls does -- the ending
+        every subsystem already handles, with the partial work kept and checkpointed --
+        so a stopped turn is never a new, untested way for a turn to end. Anything
+        already under way that is not a model call (an edit, a recipe, a run or a test)
+        finishes first; each is short and bounded.
+        """
+        self.stopped = True
+
+    def check_stopped(self) -> None:
+        if self.stopped:
+            raise BudgetExhausted("This turn was stopped because the project is closing.")
+
     def check(self) -> None:
+        self.check_stopped()
         if self.exhausted:
             raise BudgetExhausted(
                 f"This turn already used its {self.limit} allowed requests."
@@ -215,7 +234,16 @@ class MeteredProvider(ModelProvider):
         # Spent before the request goes out, so an exhausted turn costs nothing and a
         # call that dies mid-stream still counts.
         self._pending = self.budget.begin(self.kind)
-        yield from self.inner.chat(messages, tools=tools, settings=settings)
+        stream = self.inner.chat(messages, tools=tools, settings=settings)
+        try:
+            for chunk in stream:
+                # A stopped turn does not wait for the rest of a long reply: it ends at
+                # the next piece, the same way it would have at the next call. Only the
+                # stop -- the call in progress may be the last one the budget allows.
+                self.budget.check_stopped()
+                yield chunk
+        finally:
+            stream.close()
 
     def finish(self) -> Reply:
         reply = self.inner.finish()

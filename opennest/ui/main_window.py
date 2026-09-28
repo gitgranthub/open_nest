@@ -66,6 +66,9 @@ class MainWindow(QMainWindow):
 
         self._provider = None
         self._loader_thread = None
+        #: True while a project is closing (``_close_project``), which can wait for a
+        #: turn to finish with the event loop running.
+        self._closing = False
         self._workbench: Workbench | None = None
         self._versions: VersionHistory | None = None
         self._controller: AgentController | None = None
@@ -373,7 +376,21 @@ class MainWindow(QMainWindow):
         """End the conversation thread, save outstanding work, clear the crash marker.
 
         Memory is written before the final checkpoint so the saved version contains it.
+
+        Not re-entrant, and guarded: releasing the Workbench can wait for a turn to
+        finish with the event loop running (``Workbench.release``), and a second close
+        arriving meanwhile -- the close button again, Command-Q again -- must not start
+        tearing the same project down underneath the first.
         """
+        if self._closing:
+            return
+        self._closing = True
+        try:
+            self._close_project_now()
+        finally:
+            self._closing = False
+
+    def _close_project_now(self) -> None:
         # Before anything else, because the web engine has to be let go of in order:
         # Qt destroys a profile whose page is still alive with "Expect troubles!", and
         # the trouble is a crash. Closing a parent widget does not call closeEvent on
@@ -393,6 +410,11 @@ class MainWindow(QMainWindow):
             self._sync.flush(project)
 
     def closeEvent(self, event) -> None:
+        if self._closing:
+            # Already closing, and waiting for Gary's turn to wind down; that close
+            # finishes the job. Accepting this one would destroy the window under it.
+            event.ignore()
+            return
         self._close_project()
         self._sync.stop()
         # The launch-path worker, and the one place Phase 11's rule was not applied.

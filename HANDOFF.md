@@ -274,7 +274,7 @@ turn cloud on, and the child can switch to Claude or OpenAI after a warning, or 
 pictures with an image model. Everything except Image Creation still works with cloud off,
 which is the default.
 
-1307 tests pass, ruff is clean.
+1318 tests pass, ruff is clean.
 
 **The application icon is deliberately unresolved, and that is a ruling rather than a
 gap.** Phase 10D was told not to design or simplify one: it needs a separately approved
@@ -307,7 +307,7 @@ privileged-action pattern in §5, not a new mechanism.
 ## 2. Get running in five minutes
 
 ```bash
-.venv/bin/python -m pytest -q      # 1307 passing, about 3 minutes
+.venv/bin/python -m pytest -q      # 1318 passing, about 3 minutes
 ```
 
 It is slower than it was (7 s at Phase 6, 55 s at Phase 12.2). Phase 12.4 made every Games
@@ -843,7 +843,11 @@ does.** Do not "clean up" these without re-measuring:
   main thread's is destroyed inside `exit()`, after Python has finalised -- a segfault on
   quit whenever the model outlived finalisation (SPIKES §26H). `MLXProvider` switches
   compilation off for a main-thread call; the close-time summary is the only one.
-  Quitting *mid-turn* still aborts, separately (a parked turn thread destroyed at exit).
+- **Never abandon a running turn's thread.** A parked thread still running at exit is
+  destroyed by Qt, which aborts. Closing a project stops the turn through its call
+  budget (`AgentController.stop` -> `CallBudget.stop`) and waits with the event loop
+  running (`ui.worker.wait_for_thread`) -- never a blocking `wait()`, which deadlocks
+  with a permission prompt the turn is waiting on (SPIKES §26I).
 - **The sunglasses are reserved for Publish Version.**
   `test_the_sunglasses_are_reserved_for_publishing_a_version` fails if a screen reaches
   for them; Publish is the change that updates it.

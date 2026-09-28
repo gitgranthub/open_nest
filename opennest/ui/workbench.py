@@ -64,6 +64,7 @@ from opennest.ui.worker import (
     RunWorker,
     run_in_thread,
     stop_thread,
+    wait_for_thread,
 )
 from opennest.versioning.checkpoint import LABEL_SAVED_BY_HAND, VersionHistory
 from opennest.versioning.git_manager import GitError, SecretsFound
@@ -192,6 +193,9 @@ class Workbench(QWidget):
         #: Pictures present before the current run, so its own output can be told apart
         #: from what the child imported earlier.
         self._images_before: outputs.Snapshot = {}
+        #: Set by :meth:`release`: the project is closing, and a turn that ends now is
+        #: not shown -- its work is kept, and the Workbench is on its way out.
+        self._releasing = False
         #: The run whose pictures the game view is showing, or None. Phase 13.
         self._live_run = None
         #: That game's own window title, which it has no window to show.
@@ -908,6 +912,8 @@ class Workbench(QWidget):
         self._thread = None
 
     def _turn_finished(self, turn) -> None:
+        if self._releasing:
+            return
         self._busy(False)
         self.working("")
         for _name, result in turn.tool_results:
@@ -1019,6 +1025,8 @@ class Workbench(QWidget):
         announce a fault in the machinery he speaks through, which is exactly the
         pretending PHASE_10_HANDOFF.md section 1 rules out.
         """
+        if self._releasing:
+            return
         self._busy(False)
         self.working("")
         self._page_back()
@@ -1220,6 +1228,8 @@ class Workbench(QWidget):
         replace. "changed" is not said in the chat, because "changing ..." already was;
         it puts the file, as it now is, in the Build / Preview panel instead.
         """
+        if self._releasing:
+            return
         if step.kind == "playing":
             # The game has started: show it now, not after the startup check. Said in
             # the chat already, as the "running the project" step before it.
@@ -1435,6 +1445,8 @@ class Workbench(QWidget):
         self._thread.finished.connect(self._thread_done)
 
     def _game_started(self, result) -> None:
+        if self._releasing:
+            return
         self._busy(False)
         self._ran(result)
         if self._live_run is not None and self._live_run is result.run and self._game.running:
@@ -1532,7 +1544,21 @@ class Workbench(QWidget):
 
         Closing a parent widget does not call ``closeEvent`` on its children, so this is
         called explicitly when a project closes rather than left to Qt.
+
+        **A turn still running is stopped and waited for, never abandoned.** Quitting
+        while Gary was writing used to give his thread five seconds, park it, and carry
+        on -- and a parked thread still running at exit is destroyed by Qt, which aborts
+        the process (SPIKES.md section 26I). Now the turn is told to stop at its next
+        safe point and this waits until its thread has ended, keeping the window alive
+        meanwhile. What the turn had already changed is kept and checkpointed.
         """
+        self._releasing = True
+        if self._thread is not None:
+            self.setEnabled(False)          # nothing new starts while it winds down
+            self.working("Finishing up before the project closes.")
+            self.controller.stop()
+            wait_for_thread(self._thread)
+            self.working("")
         stop_thread(self._thread)
         self._thread = None
         # And a game still on screen. Closing the project left the child process

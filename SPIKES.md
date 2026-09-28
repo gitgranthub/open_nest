@@ -3650,3 +3650,45 @@ still running when the interpreter finalises is destroyed, and Qt aborts. Withou
 it was masked, because in that run the turn had already failed and ended before exit and
 the segfault came first. Recorded as its own task. Quit after Gary has finished and neither
 crash occurs.
+
+### 26I. Quitting while Gary is still writing, fixed
+
+Section 26H left one crash: closing a project -- quitting included -- while a turn was
+running aborted the process (SIGABRT, `QThread: Destroyed while thread is still running`
+from `QThread::~QThread`). `Workbench.release` gave the turn's thread five seconds
+(`stop_thread`), then parked it and carried on; the close-time summary ran on the GUI
+thread while the parked turn could still be using the model and the controller, and a
+parked thread still running when the program exits is destroyed by Qt, which aborts.
+
+**The fix: stop the turn at its next safe point, then wait for its thread.**
+
+- **The stop travels through the call budget** (`CallBudget.stop`): the next model call,
+  or the next piece of the one streaming (`MeteredProvider`), raises `BudgetExhausted`
+  -- exactly how a turn that ran out of calls ends, which every subsystem already
+  handles. `_out_of_calls` keeps the partial work and `_finish_turn` checkpoints it; the
+  turn reports "I stopped there because the project was closed." A recipe, an edit, a
+  run or a test already under way finishes first (each short and bounded), so nothing is
+  cut in half. `AgentController.stop` also stops a turn that has not made its budget yet.
+- **The per-piece check looks only at the stop.** After its last allowed call is
+  dispatched a budget reads as used up; checking that per piece would have killed the
+  last legitimate call on its first word. Caught in writing, pinned by a test.
+- **`Workbench.release` waits for the thread to end by itself** (`ui.worker.wait_for_thread`)
+  with the event loop running and the Workbench disabled -- not a blocking `wait()`,
+  because a turn can be blocked on the GUI thread itself (a parent permission prompt,
+  `consent._on_gui_thread`), and that would deadlock; a test runs exactly that case. A
+  turn's late result is not shown by a closing Workbench.
+- **`MainWindow` does not close twice.** While a close waits with the loop running, a
+  second close event (the button again, Command-Q again) is ignored; the first finishes.
+
+| through the real entry point (`probe_app_quit.py`) | before | after |
+|---|---|---|
+| quit 3 s into "write me a very long story" | exit -6, crash report | **exit 0**, three runs; the quit completes ~2.9 s after the close (stop + the close-time summary); no crash report |
+| back to the Flight Deck mid-turn, reopen, a turn, quit | (same path) | exit 0; the deck in 2.91 s; the next turn works |
+| Phase 12 app walk / Phase 13 walk | 41/41, 45/45 | 41/41 and 45/45, both exit 0 |
+
+The stopped turn's archive holds the child's message and the project's checkpoints are
+intact. Like any turn's closing line, "I stopped there..." is not added to the history.
+
+Still not covered here: quitting during the first model load. `MainWindow.closeEvent`
+gives the loader five seconds and parks it (Phase 12, SPIKES 20C); a load slower than
+that -- a larger model on a slow Mac -- could still be parked at exit. Not measured.

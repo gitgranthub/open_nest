@@ -178,9 +178,10 @@ What changed, because Publish does not exist yet and so **nothing shows them tod
 - **The segfault at interpreter exit is fixed** (SPIKES 26H): a model call on the main
   thread -- only the close-time summary -- runs with MLX compilation off, so no
   main-thread compile cache is left for `exit()` to destroy after Python has finalised.
-  Both walks now exit 0. **Still open, and separate: quitting while Gary is mid-turn
-  aborts** (`QThread: Destroyed while thread is still running`), because the parked
-  turn thread is destroyed at exit. For the owner test: quit after Gary has finished.
+  Both walks now exit 0. **Quitting while Gary is mid-turn is fixed too** (SPIKES 26I):
+  the turn is stopped at its next safe point through its call budget and the Workbench
+  waits for its thread, so no running thread is destroyed at exit; what the turn had
+  changed is kept and checkpointed.
 
 ---
 
