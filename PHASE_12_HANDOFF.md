@@ -298,6 +298,11 @@ other file in there.
 
 ## 6. Phase 13 — the game preview in the workbench
 
+> **Built as Phase 13A, on the route below. [PHASE_13_HANDOFF.md](PHASE_13_HANDOFF.md) is
+> what was built and measured (SPIKES §26); two things this section did not foresee: the
+> channel had to be a socket, not a pipe, and a windowless game needs the frontmost task
+> role to keep its frame rate.** Pop out and put back (13B) is not started.
+
 The owner asked for this while watching the test drive: *"the preview window for game
 building must open in the workbench too, locked into the window system of Open Nest …
 and optional popout window and put back option."*

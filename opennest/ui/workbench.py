@@ -12,6 +12,8 @@ difference.
 
 from __future__ import annotations
 
+import contextlib
+import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
@@ -43,7 +45,7 @@ from opennest.ai.router import models_for_project, models_that_can_read, why_una
 from opennest.assets import kinds
 from opennest.assets import manager as assets
 from opennest.execution import arduino, outputs, web_preview
-from opennest.execution.python_runner import stop_project
+from opennest.execution.python_runner import finished, stop_project
 from opennest.projects import starters
 from opennest.projects.manager import (
     MANIFEST_NAME,
@@ -55,7 +57,14 @@ from opennest.security.sandbox import visible_files
 from opennest.ui import about_gary, brand, theme
 from opennest.ui import web_preview as web_preview_ui
 from opennest.ui.common import horizontal_rule, section_label, status_row
-from opennest.ui.worker import AgentWorker, ImageWorker, run_in_thread, stop_thread
+from opennest.ui.game_view import GameView
+from opennest.ui.worker import (
+    AgentWorker,
+    ImageWorker,
+    RunWorker,
+    run_in_thread,
+    stop_thread,
+)
 from opennest.versioning.checkpoint import LABEL_SAVED_BY_HAND, VersionHistory
 from opennest.versioning.git_manager import GitError, SecretsFound
 
@@ -183,10 +192,13 @@ class Workbench(QWidget):
         #: Pictures present before the current run, so its own output can be told apart
         #: from what the child imported earlier.
         self._images_before: outputs.Snapshot = {}
-        #: Whether this project had ever run successfully before the current attempt.
-        #: Seeded from the manifest so reopening a working project does not re-award the
-        #: milestone -- it is once per project, not once per session.
-        self._worked_before = bool(project.manifest.last_successful_run)
+        #: The run whose pictures the game view is showing, or None. Phase 13.
+        self._live_run = None
+        #: That game's own window title, which it has no window to show.
+        self._live_title = ""
+        #: The project's code and pictures as they were when that game started, so a
+        #: game left playing after a change is known to be the old version.
+        self._live_files: tuple = ()
         self._build()
         # WORKORDER_01 section 12: a file can be dragged onto the chat, the file panel
         # or the asset panel. One handler covers all three; where it landed decides
@@ -395,6 +407,21 @@ class Workbench(QWidget):
             self._web = web_preview_ui.WebPreview(self.project, self)
             layout.addWidget(self._web, 3)
 
+        # The child's game, drawn here rather than in a window of its own (Phase 13).
+        # Hidden until a game is running, so the panel is unchanged until then.
+        self._game = None
+        self._game_title = QLabel()
+        self._game_title.setProperty("role", "mono")
+        self._game_title.hide()
+        layout.addWidget(self._game_title)
+        if self.project.profile.live_view:
+            self._game = GameView(self)
+            self._game.hide()
+            self._game.ended.connect(self._game_ended)
+            self._game.focus_changed.connect(self._game_focus)
+            self._game.title_changed.connect(self._game_titled)
+            layout.addWidget(self._game, 3)
+
         # Which file the code below is, while a turn is building it (``_show_code``).
         self._code_caption = QLabel()
         self._code_caption.setProperty("role", "mono")
@@ -481,20 +508,10 @@ class Workbench(QWidget):
         self._activity.hide()
         layout.addWidget(self._activity)
 
-        # Sections 38, 39 and 54: reserved for a milestone that has actually been
-        # observed, so it stays rare enough to mean something. Never on a save.
-        self._completion = QWidget()
-        self._completion.setProperty("role", "bare")
-        completion = QHBoxLayout(self._completion)
-        completion.setContentsMargins(0, 0, 0, 0)
-        completion.setSpacing(10)
-        self._glasses = brand.placed("completion_glasses", dark=theme.is_dark())
-        self._completion_text = QLabel()
-        self._completion_text.setProperty("role", "cardTitle")
-        completion.addWidget(self._glasses, 0, Qt.AlignmentFlag.AlignVCenter)
-        completion.addWidget(self._completion_text, 1, Qt.AlignmentFlag.AlignVCenter)
-        self._completion.hide()
-        layout.addWidget(self._completion)
+        # No approval mark here. The white sunglasses are reserved for a child
+        # publishing a version (brand guide section 38, as ruled in Phase 13): not a
+        # run, a recipe, a playtest, a turn, a checkpoint or a compile. Routine success
+        # is said in text and status, and nothing in the Workbench shows them today.
 
         # Shows what is going with the next message, so an attachment is never invisible.
         self._attached_label = QLabel()
@@ -857,16 +874,6 @@ class Workbench(QWidget):
         else:
             self._eagle.stop()
 
-    def completed(self, text: str = "") -> None:
-        """Mark a real milestone, or clear the last one.
-
-        Section 39 lists what this is *not* for -- every save, every model reply, every
-        successful button press, every checkpoint. The single caller is a project's
-        first working run, which happens once in a project's life.
-        """
-        self._completion_text.setText(text)
-        self._completion.setVisible(bool(text))
-
     def _send(self) -> None:
         text = self._input.text().strip()
         if not text or self._thread is not None:
@@ -882,7 +889,6 @@ class Workbench(QWidget):
         # The model may run the project during the turn, so the chart it draws has to be
         # measured against the project as it was before the turn started.
         self._note_images()
-        self._note_milestone()
 
         # WORKORDER_01 section 29A's PR policy branches *before* the change, the way its
         # own diagram does. Off by default, so this is "" for a normal child session.
@@ -904,6 +910,13 @@ class Workbench(QWidget):
     def _turn_finished(self, turn) -> None:
         self._busy(False)
         self.working("")
+        for _name, result in turn.tool_results:
+            # A game Gary started this turn, so it can be judged like any other.
+            if result.run is not None and result.run.live is not None \
+                    and result.run.still_running:
+                self._live_run = result.run
+        if turn.checkpoint is not None:
+            self._retire_game_if_stale()
         self._page_back()
         self.set_model_status("ready", "Ready")
         for _name, result in turn.tool_results:
@@ -988,6 +1001,8 @@ class Workbench(QWidget):
         if restored is None:
             self._say(ASSISTANT_NAME, "There is no earlier version to go back to.")
             return
+        # The game on screen may be the version that was just undone.
+        self._retire_game_if_stale()
         self.refresh_files()
         self._refresh_undo()
         self.controller.refresh_state()
@@ -1014,7 +1029,21 @@ class Workbench(QWidget):
         run = result.run
         self._clear_details()
         self._clear_code_marks()
-        self._mark_first_success(run)
+        if run.still_running and run.output is not None and run.output.stopped:
+            # Stopped already -- by Stop, by a newer run, or because the files changed
+            # under it. Whatever stopped it has said so.
+            return
+        if run.still_running and run.live is not None and self._game is not None:
+            self._show_game(run)
+            self._run_view = (self._output.toPlainText(), "", "", False)
+            return
+        if self._game is not None and self._game.stream is not None \
+                and self._game.stream is not getattr(self._live_run, "live", None):
+            # Its pictures were showing from the start, and it fell over during the
+            # startup check: the failure below is the thing to read now.
+            self._game.detach()
+            self._game.hide()
+            self._game_title.hide()
         if run.still_running:
             # Not "close its window": a Raspberry Pi test loop is a console program and
             # has no window to close. Stop is true for both, and it is right there.
@@ -1024,13 +1053,148 @@ class Workbench(QWidget):
         if run.ok:
             self._output.setPlainText(run.stdout or "(no output)")
         else:
-            self._technical_detail = run.failure_text
-            self._headline = headline_failure(run)
-            self._output.setPlainText(self._headline)
-            self._details_button.setVisible(bool(run.failure_text.strip()))
+            self._show_failure(run)
         self._run_view = (self._output.toPlainText(), self._technical_detail, self._headline,
                           not self._details_button.isHidden())
         self._show_any_chart()
+
+    def _show_failure(self, run) -> None:
+        """Section 30: the one line worth leading with, the rest behind a button."""
+        self._technical_detail = run.failure_text
+        self._headline = headline_failure(run)
+        self._output.setPlainText(self._headline)
+        self._details_button.setVisible(bool(run.failure_text.strip()))
+
+    # -- the game, drawn here (Phase 13) --------------------------------------
+
+    def _show_game(self, run) -> None:
+        """Put a running game in the panel, once its run has reported. Idempotent."""
+        self._live_run = run
+        self._show_game_stream(run.live)
+        self._output.setPlainText("Your game is running here. Press Stop when you are done.")
+        self._stop_button.setEnabled(True)
+
+    def _show_game_stream(self, stream) -> None:
+        """Show a game's pictures -- from the moment it starts, before its run reports.
+
+        The run's result arrives only after the four-second startup check, and the
+        pictures should not wait for it. Attaching the same stream twice is not a
+        restart, so the result arriving later changes nothing on screen.
+        """
+        if self._game.stream is not stream:
+            # Cleared first: attaching delivers the game's title straight away.
+            self._live_title = ""
+            self._live_files = self._code_fingerprint()
+            self._game.attach(stream)
+        self._chart.hide()
+        self._chart_caption.hide()
+        self._code_caption.hide()
+        self._game.show()
+        self._game_title.show()
+        self._output.setMaximumHeight(110)
+        self._refresh_game_caption()
+
+    def _code_fingerprint(self) -> tuple:
+        """What the game is made of right now: every file under src/ and assets/."""
+        entries = []
+        for folder in ("src", "assets"):
+            root = self.project.directory / folder
+            if not root.is_dir():
+                continue
+            for path in sorted(root.rglob("*")):
+                with contextlib.suppress(OSError):
+                    if path.is_file():
+                        stat = path.stat()
+                        entries.append((str(path.relative_to(self.project.directory)),
+                                        stat.st_size, stat.st_mtime_ns))
+        return tuple(entries)
+
+    def _refresh_game_caption(self) -> None:
+        if self._game is None:
+            return
+        title = self._live_title or self.project.name
+        if not self._game.running:
+            hint = ""
+        elif self._game.hasFocus():
+            hint = "playing -- press Tab to leave the game"
+        else:
+            hint = "click the game to play"
+        self._game_title.setText(f"{title}   \u00b7   {hint}" if hint else title)
+
+    def _game_focus(self, _focused: bool = False) -> None:
+        self._refresh_game_caption()
+
+    def _game_titled(self, title: str) -> None:
+        # The game's own window title, which it no longer has a window to show -- so
+        # "Call my game Eagle Patrol" is visible here instead. Plain text, and bounded,
+        # by the time the stream hands it over.
+        self._live_title = title
+        self._refresh_game_caption()
+
+    def _game_ended(self) -> None:
+        """The game's pictures stopped. Say how it ended -- only what actually happened."""
+        run = self._live_run
+        if run is None or self._game is None:
+            return
+        stream = run.live
+        process = run.process
+        if process is not None and process.poll() is None and not stream.broken:
+            # The pictures stop the moment the game's process goes; give it that moment.
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                process.wait(timeout=2)
+        self._stop_button.setEnabled(False)
+        idle = self._thread is None   # during a turn, the panel is showing Gary's work
+        if process is not None and process.poll() is None:
+            # The game is still going, and the stream is not: it sent something that is
+            # not a picture, or closed the channel it was given. Nothing on screen would
+            # be true any more, so it is stopped.
+            stop_project(run)
+            reason = stream.broken or "it stopped sending pictures"
+            self._game.show_stopped("Stopped")
+            if idle:
+                self._panel_text(f"Open Nest stopped the game because {reason}.")
+            return
+        end = finished(run)
+        if end is None or run.output.stopped:
+            self._game.show_stopped("Stopped")
+        elif end.ok:
+            self._game.show_stopped("The game ended")
+            if idle:
+                self._panel_text("The game ended. Press Run Game to play it again.")
+        else:
+            self._game.show_stopped("The game stopped with an error")
+            if idle:
+                self._panel_text("")
+                self._show_failure(end)
+            # And Gary is told, next time he is asked anything: until now a crash
+            # during play was never recorded, and his facts said "it is running now".
+            if self.toolbox.last_run is run:
+                self.toolbox.last_run = end
+        self._refresh_game_caption()
+
+    def _retire_game_if_stale(self) -> None:
+        """Take the game out of the panel if it is not the version the files hold now.
+
+        After a change or an Undo, a game still playing is the old one -- even one Gary
+        started this turn, if he changed the code again afterwards. Left on screen it
+        would read as the new version, which is exactly the kind of small claim this
+        project does not let the application make. So it is stopped, and Run Game plays
+        what is there now.
+        """
+        if self._game is None or self._game.stream is None:
+            return
+        if self._code_fingerprint() == self._live_files:
+            return
+        run = self._live_run
+        self._live_run = None
+        self._game.detach()
+        if run is not None and run.process is not None and run.process.poll() is None:
+            stop_project(run)
+        self._game.hide()
+        self._game_title.hide()
+        self._stop_button.setEnabled(False)
+        if self._web is None:
+            self._output.setMaximumHeight(16777215)
 
     # -- section 30's technical detail --------------------------------------
 
@@ -1056,6 +1220,12 @@ class Workbench(QWidget):
         replace. "changed" is not said in the chat, because "changing ..." already was;
         it puts the file, as it now is, in the Build / Preview panel instead.
         """
+        if step.kind == "playing":
+            # The game has started: show it now, not after the startup check. Said in
+            # the chat already, as the "running the project" step before it.
+            if self._game is not None and step.live is not None:
+                self._show_game_stream(step.live)
+            return
         if step.kind in ("changed", "undone") and step.content is not None:
             self._turn_code = step
             self._show_code(step)
@@ -1075,6 +1245,11 @@ class Workbench(QWidget):
             # The page is about to change; while it is being built, the code is the thing
             # to watch. ``_page_back`` puts the page back when the turn ends.
             self._web.hide()
+            self._output.setMaximumHeight(16777215)
+        if self._game is not None and not self._game.isHidden():
+            # The same for a game: the code is on screen while it is being changed.
+            self._game.hide()
+            self._game_title.hide()
             self._output.setMaximumHeight(16777215)
         self._panel_text(step.content)
         if step.kind == "undone":
@@ -1108,13 +1283,15 @@ class Workbench(QWidget):
     def _show_still(self, turn) -> None:
         """The last frame of the invisible test, after a turn that changed the game.
 
-        A still, not the game: the child's own window is still Run Game (a playing preview
-        is Phase 13). Only from a test that passed -- a picture of a game that crashed or
-        froze would say it worked.
+        A still, not the game: Run Game plays it, here in the panel (Phase 13). Only from
+        a test that passed -- a picture of a game that crashed or froze would say it
+        worked. Not over a game that is already playing: that is the better evidence.
         """
         tests = getattr(turn, "playtests", ())
         test = tests[-1] if tests else None
         if getattr(turn, "checkpoint", None) is None or test is None or not test.still:
+            return
+        if self._live_run is not None and self._game is not None and self._game.running:
             return
         self._show_any_chart(test.still)
         self._chart_caption.setText("How it looked when Open Nest tested it, with no "
@@ -1134,15 +1311,24 @@ class Workbench(QWidget):
             self._technical_detail, self._headline = detail, headline
             self._details_button.setVisible(has_details)
             self._code_button.setText(SHOW_CODE)
+            if self._live_run is not None and self._game is not None:
+                self._game.show()
+                self._game_title.show()
+                self._output.setMaximumHeight(110)
 
     def _clear_code_marks(self) -> None:
         self._code_caption.hide()
         self._output.setExtraSelections([])
 
     def _page_back(self) -> None:
-        """After a turn, the page goes back where it was, if code had taken its place."""
+        """After a turn, the page -- or the game -- goes back where it was, if code had
+        taken its place."""
         if self._web is not None and self._web.isHidden():
             self._web.show()
+            self._output.setMaximumHeight(110)
+        if self._game is not None and self._live_run is not None and self._game.isHidden():
+            self._game.show()
+            self._game_title.show()
             self._output.setMaximumHeight(110)
 
     def _clear_details(self) -> None:
@@ -1200,82 +1386,6 @@ class Workbench(QWidget):
         """Remember which pictures existed before something runs."""
         self._images_before = outputs.snapshot(self.project.directory)
 
-    #: What the approval mark says when a project works for the first time.
-    #:
-    #: Guide section 38 offers "It works." and "You built that." for this moment, and the
-    #: second is the one that is true in every case here. ``RunResult.ok`` means
-    #: different things per profile: a Research analysis ran to completion and exited 0,
-    #: an Arduino sketch was accepted by the compiler, and a *game* survived a
-    #: four-second startup grace and is on screen. That last one is not evidence the game
-    #: works, so putting "It works." under it would claim a state nothing verified.
-    #: "You built that." is about authorship rather than machine state, so it over-claims
-    #: nothing -- and what *was* verified is already in the Build / Preview panel beside
-    #: it, which is section 46's "never the only signal".
-    FIRST_SUCCESS = "You built that."
-
-    def _mark_first_success(self, run) -> None:
-        """The one thing in the Workbench that earns the approval mark.
-
-        Fires at most once in a project's life: the first run that worked, **of a project
-        the child has actually changed**. Not every run, not every save, not every
-        checkpoint -- section 39 lists those explicitly as what the sunglasses are not
-        for, and the graphic only keeps its meaning while it stays rare. Reopening a
-        project that already works shows nothing, because the manifest remembers.
-
-        The "has actually changed" half was missing and the owner caught it watching a
-        Phase 12.2 walk. The chain was: the model calls ``run_project`` itself during its
-        first turn, the untouched starter launches, ``RunResult.ok`` is True for an
-        interactive project the moment it survives four seconds -- and Open Nest awarded
-        the approval mark and **"You built that."** for an orange square on a black
-        background that it had shipped itself. The child had built nothing and had not
-        even pressed Run.
-
-        The copy was already chosen to avoid claiming machine state (see
-        :attr:`FIRST_SUCCESS`), which is why this read as defensible. It is not: for a
-        starter that has never been edited, *authorship* is the part that is false. This
-        is the same over-claim Phase 12.1 removed from Gary's mouth, in the
-        application's own voice.
-
-        ``can_undo`` is the deterministic test, and it is exact rather than a proxy:
-        ``VersionHistory.start`` commits ``LABEL_CREATED`` when the project is made, and
-        ``save`` only commits when something actually changed, so a second checkpoint
-        existing *is* "this project has diverged from the kit it began as".
-        """
-        if not run.ok or self._worked_before or not self._child_has_changed_anything():
-            return
-        self._worked_before = True
-        self.completed(self.FIRST_SUCCESS)
-
-    def _child_has_changed_anything(self) -> bool:
-        """Whether this project is still exactly the starter it was created from.
-
-        Without versioning there is nothing to compare against. That case keeps the old
-        behaviour rather than withdrawing the milestone from a machine with no git: a
-        mark shown slightly too eagerly is a smaller fault than a feature that silently
-        disappears, and every supported installation has git.
-        """
-        if self.versions is None or not self.versions.enabled:
-            return True
-        return self.versions.can_undo
-
-    def _note_milestone(self) -> None:
-        """Remember whether this project had *ever* worked, before this run changes it.
-
-        ``Toolbox`` stamps ``manifest.last_successful_run`` the moment a run succeeds,
-        so by the time the result reaches the panel the field is already set and the
-        "was this the first time?" question can no longer be asked. Captured here for
-        the same reason the picture snapshot is: the answer only exists beforehand.
-
-        Monotonic on purpose. Re-reading the manifest each time would let the flag go
-        *back* to False, and then a second successful run would award the milestone
-        again -- ``_record_success`` saves under ``contextlib.suppress(OSError)``, so a
-        manifest that could not be written is a real path to exactly that. Once a
-        project has worked it has worked, and nothing here can un-learn it.
-        """
-        self._worked_before = self._worked_before or bool(
-            self.project.manifest.last_successful_run
-        )
-
     def _run(self) -> None:
         """The main button: run, compile, preview or generate, depending on the profile.
 
@@ -1294,13 +1404,44 @@ class Workbench(QWidget):
             return
 
         self._note_images()
-        self._note_milestone()
+        if profile.live_view and profile.can_run:
+            self._start_game()
+            return
         tool = "run_project" if profile.can_run else "compile_project"
         result = self.toolbox.dispatch(tool, {})
+        self._ran(result)
+
+    def _ran(self, result) -> None:
         if result.run is not None:
             self._show_run(result)
         elif not result.ok:
             self._panel_text(result.content)
+
+    def _start_game(self) -> None:
+        """Run Game, for a game drawn here: started off the UI thread (``RunWorker``).
+
+        The panel keeps painting through the four-second startup check, and the game's
+        pictures appear the moment it has started. Sending a message waits until it has
+        -- one project runs one thing at a time through its Toolbox.
+        """
+        if self._thread is not None:
+            return
+        self._busy(True)
+        self._panel_text("Starting your game\u2026")
+        worker = RunWorker(self.toolbox)
+        worker.progress.connect(self._progress)
+        worker.finished.connect(self._game_started)
+        self._thread = run_in_thread(self, worker)
+        self._thread.finished.connect(self._thread_done)
+
+    def _game_started(self, result) -> None:
+        self._busy(False)
+        self._ran(result)
+        if self._live_run is not None and self._live_run is result.run and self._game.running:
+            # The child pressed Run Game, so the game is what they are about to use --
+            # as a window of its own would have been. A run Gary starts never takes
+            # the keyboard away from the chat.
+            self._game.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _something_to_run(self) -> bool:
         """Whether the entry point exists yet, said plainly when it does not.
@@ -1377,6 +1518,9 @@ class Workbench(QWidget):
             stop_project(self.toolbox.last_run)
         self._stop_button.setEnabled(False)
         self._panel_text("Stopped.")
+        if self._game is not None and self._game.stream is not None:
+            self._game.show_stopped("Stopped")
+            self._refresh_game_caption()
 
     def release(self) -> None:
         """Let go of anything that has to be torn down in a particular order.
@@ -1396,6 +1540,10 @@ class Workbench(QWidget):
         # the Workbench, and the only way to be rid of it was to quit the game itself.
         if self.toolbox.last_run is not None:
             stop_project(self.toolbox.last_run)
+        if self._live_run is not None:
+            stop_project(self._live_run)
+        if self._game is not None:
+            self._game.detach()
         if self._web is not None:
             self._web.close()
 

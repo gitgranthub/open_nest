@@ -150,7 +150,7 @@ _ACCESSIBLE: dict[Mark, str] = {
     Mark.WORDMARK: "Open Nest",
     Mark.COMPACT: "Open Nest",
     Mark.NEST: "Open Nest",
-    Mark.GLASSES: "Task completed",
+    Mark.GLASSES: "Version published",
     Mark.ON: "Open Nest",
 }
 
@@ -201,8 +201,10 @@ PLACEMENTS: dict[str, tuple[Mark, int]] = {
     # 10D is that the closer something is to actual work, the less branding it carries,
     # and this is the only settings surface that gets any at all.
     "settings_about": (Mark.WORDMARK, 192),
-    # Sections 38-39: rare, and therefore worth something when it appears.
-    "completion_glasses": (Mark.GLASSES, 128),
+    # No placement for the white sunglasses, deliberately. By the owner's ruling in
+    # Phase 13 they belong to one moment only -- a child publishing a version -- and
+    # that moment is not built yet. Publish defines its own placement when it is
+    # designed; until then nothing can put them on screen (guide section 38).
 }
 
 #: The eagle's logical sizes. An activity indicator should read as an indicator rather

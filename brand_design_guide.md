@@ -1330,6 +1330,25 @@ The restraint is important.
 
 # 38. White Sunglasses — Authority / Approval / Completion
 
+> **Ruling — Phase 13, by the owner. This supersedes the examples below and in §54 and
+> §58.** The sunglasses are the quiet creative director's slightest approving nod, and
+> they belong to **one moment: a child publishing a version** — deliberately deciding
+> "this version is ready to show", Open Nest checking it one final time where that makes
+> sense, and a named release being preserved. Their appearance *is* the approval: no
+> confetti, no achievement animation, no celebration, and Gary never announces it.
+>
+> They do **not** appear for a successful run, a recipe, a playtest, Run Game, a
+> completed Gary turn, a checkpoint or Save a Version, a compile, an ordinary preview, a
+> finished setup, or any other accomplished stage. Those use ordinary Open Nest state and
+> text (§54's routine completion). If a publish's final check fails, there are no
+> sunglasses: Open Nest says what needs attention and the project stays a draft.
+>
+> Publish Version is not built yet, so **nothing in the product shows the sunglasses
+> today** — `tests/test_brand_placement.py` enforces it. How the first publish shows
+> them (briefly, then settling into something quieter such as a small published-version
+> marker), and whether later publishes do, is decided when Publish is designed.
+> PHASE_13_HANDOFF.md records the Publish concept this belongs to.
+
 The supplied `glasses.png` is a major Open Nest visual symbol.
 
 The sunglasses represent:
@@ -1873,7 +1892,9 @@ Never replace useful numerical progress information with animation alone.
 
 # 54. Completion-State Hierarchy
 
-Similarly, not every success receives the sunglasses.
+Similarly, not every success receives the sunglasses. *(Phase 13 ruling, §38: only a
+published version does. The "significant milestone" below is a Publish Version moment
+now, and a working run is routine.)*
 
 ### Routine completion
 
@@ -2012,12 +2033,14 @@ Installing Qwen…
 At final completion:
 
 ```text
-[WHITE SUNGLASSES]
-
 Open Nest is ready.
 
 [ Open Flight Deck ]
 ```
+
+*(Phase 13 ruling, §38: this once showed the white sunglasses. A parent finishing an
+installation has made nothing, so it is routine completion now; the sunglasses belong to
+a child publishing a version.)*
 
 This sequence naturally teaches the visual language without explaining it.
 

@@ -3397,3 +3397,198 @@ four recipe turns, step 33 still by the composed "graph this and ..." recipe.
 
 **Frozen.** No further Fast Path, classifier or recipe work before Phase 13. Recipes
 still **63 -- 41 deterministic, 22 guidance-only**. 1256 tests, ruff clean.
+
+---
+
+## 26. Phase 13 -- the game drawn inside the Workbench
+
+PHASE_12_HANDOFF.md section 6 is the specification and section 20I is why the cheap
+version was withdrawn. The route: the child's game still runs in its own sandboxed
+process, opens no window (SDL's dummy video driver), and sends each picture it draws to
+Open Nest, which paints it in the Build / Preview panel and sends the child's keys and
+clicks back. Everything below is the 48 GB M4 Pro, Qwen3 4B where a model is involved.
+The probes are kept in the gitignored `spikes/phase13/` (`probe_live.py`,
+`probe_live2.py`, `probe_exit.py`, `live_walk.py`).
+
+### 26A. Feasibility, measured before anything was built
+
+Under the product's own `process_sandbox.wrap`, profile unchanged:
+
+| | measured |
+|---|---|
+| an inherited descriptor survives `sandbox-exec` | yes -- pipe and Unix socket pair alike |
+| input sent from Open Nest steers the unmodified starter | yes: x 320 -> 590 with right held |
+| a crash after the four-second startup check is visible to Open Nest | yes, traceback included, exit 1 |
+| sound with the dummy video driver, inside the sandbox | the mixer starts (44.1 kHz, stereo); nothing was played |
+| QImage from 640x480 RGB + scaled paint, offscreen | 0.145 ms a frame |
+
+**A pipe is the wrong channel, and the reason is the interpreter lock.** A 640x480 RGB
+frame is 921,600 bytes; a macOS pipe moves at most 64 KB per read, so each frame is
+about fifteen reads, each re-acquiring the GIL. With Open Nest's main thread spinning in
+Python:
+
+| channel | parent idle | parent busy in Python |
+|---|---|---|
+| pipe | 56.3 frames/s received, game 48.5 fps | **12.7 received, and the game fell to 12.0** -- a full pipe blocks the game's `flip` |
+| socket pair, 4 MB buffers | 57.6, game 49.5 | **55.5, game 51.5** |
+
+### 26B. A defect in today's runner: a game that prints every frame freezes
+
+An interactive run was read by `communicate()` for its four-second startup and never
+again. A game that prints a line a frame -- a first debugging habit -- filled the 64 KB
+pipe and then blocked in `print`. Measured with the game's own clock written to a file:
+
+| | game clock every 1.5 s (ms) |
+|---|---|
+| printing, output not read (the runner as it was) | 5444, 6946, 8446, 9963, 11469, **12054, 12054, 12054** |
+| printing, output read | 5435 ... 15970, still rising |
+| not printing, output not read | 5416 ... 15969, still rising |
+
+Fixed for every interactive run, not only live ones: `python_runner.Output` reads both
+streams from the moment the project starts, keeping a copy bounded exactly as `_clip`
+bounds a batch run (20,000 characters however long it runs). The same reader is what
+lets Open Nest report how a game ended.
+
+### 26C. `MSG_DONTWAIT` on a macOS Unix socket send still blocks
+
+Found by the test written to prove the opposite
+(`test_input_never_blocks_open_nest_on_a_game_that_stopped_reading`): 200,000 key
+presses at a game that was not reading hung the test in `send(..., MSG_DONTWAIT)`. On
+this kernel the flag is honoured for a receive and not for a Unix-socket send. Open
+Nest's end is put in non-blocking mode instead, the reader waits in `select`, and input
+goes through a bounded buffer that only ever holds whole messages -- so a short write
+can never cut a key-up in half. Had it shipped, a game stuck in a loop that stopped
+reading its input would have frozen Open Nest the next time the child pressed a key.
+
+### 26D. A windowless process sleeps late, and one task role fixes it
+
+With the stream working, the game itself was slower than in its own window:
+
+| how the game runs | game draws | Open Nest receives |
+|---|---|---|
+| its own window (the Run Game of Phase 12) | 55.9-56.4 fps (46.5 in one trial) | -- |
+| dummy video driver, no shim | 45.2-47.7 fps | -- |
+| drawn in Open Nest, before the fix | 48.4 fps | 48.2/s |
+
+The shim and the stream cost nothing -- Open Nest received every frame drawn. The time
+was in sleeping. Measured inside the sandbox:
+
+| | `time.sleep(0.016)` | `clock.tick(60)` frame | frame work alone |
+|---|---|---|---|
+| plain Python, no window | 22.64 ms | -- | -- |
+| pygame, dummy driver | 21.24 ms | 20.45 ms | 0.053 ms |
+| pygame, own window | 17.74 ms | 17.73 ms | 0.378 ms |
+
+macOS gives a process with no window loose timer deadlines, so every ordinary sleep
+overshoots by about 5 ms (`pygame.time.delay`, which busy-waits, was exact in both).
+Tried, in order:
+
+| | sleep(0.016) | tick(60) |
+|---|---|---|
+| nothing | 21.95 ms | 45.7 fps |
+| `pthread_set_qos_class_self_np(USER_INTERACTIVE)` (returned 0) | 22.24 ms | 45.3 fps |
+| `NSProcessInfo beginActivity` with latency-critical options (App Nap off) | -- | 45.7-46.1 fps |
+| **`task_policy_set(TASK_CATEGORY_POLICY, TASK_FOREGROUND_APPLICATION)`** (returned 0) | **17.87 ms** | **56.2 fps** |
+
+The last is the role AppKit gives an application in front. The shim sets it for its own
+process before the game starts; it is a scheduling class and grants no file, network or
+device access, and a refusal leaves the game as it was. After it, three trials each:
+**drawn in Open Nest 56.1-56.3 fps, received 56.1-56.3/s; own window 56.2-56.3 fps.**
+The headless playtest is deliberately left as it was -- it is the verification layer,
+and its thresholds are in frames and seconds that were measured without this.
+
+### 26E. The walk: Phase 13 through MainWindow, under cocoa
+
+`spikes/phase13/live_walk.py`, the Phase 12 harness (real clicks, nested event loop, a
+check that could not run is a failure), the real model: **45/45**.
+
+| | |
+|---|---|
+| first picture in the panel after pressing Run Game | **0.26-0.31 s**, while the four-second startup check still runs on its worker |
+| the game's process | `SDL_VIDEODRIVER=dummy`, the confined shim, no window of its own |
+| arrow held / let go / Tab away with a key held / click back | moves / stops / let go / keyboard returns |
+| Stop, Escape, a crash on space mid-play | "Stopped." / "The game ended." / the error line, details behind the button, and Gary's facts now say the last run failed with the child's own `src/game.py` line |
+| a change while playing ("make the player bigger"), and Undo while playing | the old game stopped and taken out of the panel; Run Game plays the new version (wider) |
+| an animated game | draws 56.6 fps; 56.3 pictures a second reach the panel |
+| generation, 200 tokens | **43.1 tok/s with no game, 44.4 with a game streaming** into the panel (the first walk: 42.0 / 42.8); the game kept drawing at 51 pictures a second throughout |
+| Open Nest's own CPU with a game streaming | 76-105 % of one core, sampled |
+| back to the Flight Deck, or quit, with a game playing | the game's process ends; no stray shim process |
+
+**Rerun on the final code** (native frames, device-pixel smoothing, opaque view): 45/45;
+first picture 0.26 s; an animated game drew 57.1 fps and 56.7 pictures a second reached
+the panel; generation 42.1 tok/s without a game and 43.2 with one streaming.
+
+**Focus could not be exercised with macOS's own activation.** `isActiveWindow()` stays
+False after `show()` and `requestActivate()` whenever another application is in front --
+macOS will not activate a background process -- and `hasFocus()` is False for every
+widget in an inactive window. The first walk therefore failed four focus checks, and one
+of them ("Tab leaves the game") had passed vacuously. The walk now reports the real
+state, then sets Qt's active window so the Workbench's focus handling still runs under
+cocoa, and labels those five checks as Qt-activated. **A person clicking the real window
+once is still owed.** Gary was asked to run the game twice and edited instead both times
+(model choice); the path is covered by the `playing` step's tests.
+
+### 26G. What showing a game costs Open Nest, and two fixes that halved it
+
+`spikes/phase13/probe_cpu.py`, a real Workbench under cocoa at 2x, no model loaded,
+`getrusage` over 8 s:
+
+| | Open Nest CPU, % of one core |
+|---|---|
+| idle Workbench | 0.0 |
+| the starter, standing still (no frames sent) | 0.6 |
+| an animated game, 56 pictures/s, **first version** | 44-46 |
+| the same stream with the view hidden (reading only) | 3.9-4.7 |
+
+So reading the stream was never the cost; showing it was, and only ~3 % of that was
+Open Nest's own paint code. Synthetic frames in a Workbench-sized window
+(`probe_surface.py`) reproduced it and split it:
+
+| | % of a core |
+|---|---|
+| RGB888 frames, scaled, 56/s | 39.0 |
+| the same at 30/s | 24.9 |
+| a native `QRasterWindow` in `createWindowContainer`, 56/s | 39.6 -- no better |
+| unscaled | 33.9 |
+| **RGB32 frames (Qt's native layout), scaled** | **22.0** |
+
+Two changes, one each side:
+
+- **Frames travel in Qt's native layout.** The shim asks pygame for `BGRA`, which on a
+  little-endian Mac is exactly `QImage.Format_RGB32` in memory (the starter's orange
+  arrives as 62, 142, 214, 255 -- opaque). Qt no longer converts every frame. Frames are
+  a third larger; reading them still costs about 5 %.
+- **Smoothing is decided in device pixels.** A 460-point view is 920 pixels on a Retina
+  panel, so a 640-pixel game is being *enlarged*, and the first version smoothed it
+  anyway. It now smooths only when the picture is really shrunk -- cheaper, and sharper
+  for a game's own pixel art. Marking the view opaque (it paints every pixel) then helped
+  too, 22 -> 18 %; before the other two fixes it had measured worse, 44 -> 55 %, which
+  was the smoothing cost moving, not the attribute.
+
+**After: 10.7, 21.7 and 18.5 % of a core in three trials, at 54-60 pictures a second** --
+from 44-46. The spread is probably whether the window was covered while measuring (macOS
+does not composite a covered window); not separated here. The target Mac has fewer, slower
+cores; this has not been measured on one.
+
+### 26F. Found while measuring, not caused by Phase 13: a segfault at interpreter exit
+
+Both full walks exited **139** after printing their summary. The crash report is the same
+both times: the main thread, inside `exit()`, finalising thread-local storage;
+`mlx::core::detail::CompileCache::CacheEntry::~CacheEntry()` calls `PyGILState_Ensure`
+after the interpreter has finalised. So a thread-local MLX compile cache existed on the
+**main** thread, which means a forward pass ran there -- `mlx_lm`'s `swiglu` is
+`mx.compile`d, so any forward pass creates one. Short probes did not reproduce it:
+model-only, a project, a live game, a plain-thread generation, a recipe turn and a Gary
+turn each exited 0 (`probe_exit.py`). The candidate in the product is
+`AgentController.close()`, which summarises the conversation through the model on the
+GUI thread when a project closes (HANDOFF section 6 already records that it runs
+inline).
+
+**It predates Phase 13, measured.** The unchanged Phase 12 app walk
+(`spikes/fastpath/app_walk_fastpath.py`) run on this branch: 41/41, then exit 139. The
+same walk run on the pre-Phase-13 commit `552627f`, in a temporary worktree against the
+same models: **41/41, then exit 139**, the same crash report. Not investigated further
+here: Phase 13 changed nothing about the model, and this does not block it. It matters
+for the product because the application quits the same way after a real session, and a
+segfault at quit leaves a macOS crash report in front of a parent -- the Phase 12 lesson
+of section 20C. Recorded as its own task.

@@ -211,6 +211,43 @@ def test_stopping_a_thread_that_will_not_stop_detaches_it_rather_than_letting_qt
     _spin(ended, timeout_ms=5000)
 
 
+def test_run_game_passes_on_only_that_the_game_started(qt_app) -> None:
+    """The child pressed a button; the Workbench must not narrate it as Gary working."""
+    from PySide6.QtCore import QObject
+
+    from opennest.agent.tools import Step, ToolResult
+    from opennest.ui.worker import RunWorker, run_in_thread
+
+    class Box:
+        observer = None
+
+        def dispatch(self, name, arguments):
+            for step in (Step("tool", "running the project"),
+                         Step("playing", "running the project", live="stream")):
+                self.observer(step)
+            return ToolResult(True, "It started and is running now.")
+
+    class Receiver(QObject):
+        def __init__(self):
+            super().__init__()
+            self.steps, self.results = [], []
+
+        def step(self, value):
+            self.steps.append(value)
+
+        def done(self, value):
+            self.results.append(value)
+
+    box, receiver = Box(), Receiver()
+    worker = RunWorker(box)
+    worker.progress.connect(receiver.step)
+    worker.finished.connect(receiver.done)
+    run_in_thread(receiver, worker)   # deletes itself when done, so it is not kept
+    assert _spin(lambda: receiver.results)
+    assert [s.kind for s in receiver.steps] == ["playing"]
+    assert box.observer is None, "the Toolbox was left reporting to a finished worker"
+
+
 def test_nothing_connects_a_lambda_to_a_worker_signal() -> None:
     """A lambda handler runs on the worker thread. Grepped, because it is invisible.
 

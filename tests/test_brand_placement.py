@@ -120,6 +120,10 @@ def test_every_placement_name_is_used_or_removed():
     """
     used = set()
     for path in PACKAGE.rglob("*.py"):
+        if path.name == "brand.py":
+            # Where every placement is defined, so it would count every one as used --
+            # and did, until Phase 13 found a placement nothing asked for.
+            continue
         text = path.read_text(encoding="utf-8")
         for name in brand.PLACEMENTS:
             if f'"{name}"' in text:
@@ -321,58 +325,70 @@ def test_a_failed_turn_stops_the_eagle(bench):
 
 
 # --------------------------------------------------- the approval mark (sections 38, 39)
+#
+# Ruled by the owner in Phase 13: the white sunglasses are the creative director's quiet
+# nod, and they belong to one moment -- a child publishing a version they decided is
+# ready to show. Not a run, a recipe, a playtest, a turn, a checkpoint, a compile or a
+# preview. Publish is not built yet, so today nothing may put them on screen at all.
 
-def test_the_first_time_a_project_works_earns_the_mark(bench):
-    """Section 38's "important project completion", on the one event that qualifies."""
-    assert bench._completion.isHidden(), "nothing has run yet"
-    bench._note_milestone()
-    bench._show_run(_Result(_Run(ok=True)))
-    assert not bench._completion.isHidden()
-    assert bench._completion_text.text() == bench.FIRST_SUCCESS
+def _glasses_mentions() -> list[str]:
+    offenders = []
+    for path in PACKAGE.rglob("*.py"):
+        if path.name == "brand.py":
+            continue
+        text = path.read_text(encoding="utf-8")
+        for marker in ("Mark.GLASSES", "GLASSES", "completion_glasses"):
+            if marker in text:
+                offenders.append(f"{path.relative_to(PACKAGE)} mentions {marker!r}")
+    return offenders
 
 
-def test_the_second_time_it_works_does_not(bench):
-    """Section 39: not every successful run. Rarity is what makes it mean anything.
+def test_the_sunglasses_are_reserved_for_publishing_a_version():
+    """Nothing outside the component layer reaches for the sunglasses.
 
-    Deliberately does **not** stamp the manifest between the two runs, which is what
-    ``Toolbox._record_success`` would normally do. That save happens under
-    ``contextlib.suppress(OSError)``, so a read-only or full disk produces exactly this
-    sequence -- a success the manifest never recorded -- and the milestone must still
-    not fire twice.
+    When Publish Version is built, this is the test that changes, deliberately and in
+    the same change -- to allow exactly that one screen.
     """
-    bench._note_milestone()
+    assert not _glasses_mentions(), "; ".join(_glasses_mentions())
+    assert not any(mark == brand.Mark.GLASSES for mark, _size in brand.PLACEMENTS.values()), (
+        "a placement puts the sunglasses somewhere"
+    )
+
+
+def _glasses_on(widget) -> list:
+    """Every label on ``widget`` showing the sunglasses, by accessible name."""
+    return [label for label in marks(widget)
+            if label.accessibleName() == brand._ACCESSIBLE[brand.Mark.GLASSES]]
+
+
+def test_a_working_run_is_routine_success(bench):
+    """Guide section 54: routine completion is text and status, not the graphic."""
+    before = len(marks(bench))
     bench._show_run(_Result(_Run(ok=True)))
-    bench.completed("")
-
-    bench._note_milestone()
-    bench._show_run(_Result(_Run(ok=True)))
-    assert bench._completion.isHidden(), "the mark fired twice for the same project"
+    assert not _glasses_on(bench)
+    assert len(marks(bench)) == before, "a run added a brand graphic to the Workbench"
 
 
-def test_a_failed_run_earns_nothing(bench):
-    bench._note_milestone()
-    bench._show_run(_Result(_Run(ok=False)))
-    assert bench._completion.isHidden()
+def test_a_changed_projects_first_working_run_is_still_routine(qt_app, project):
+    """The case that used to earn the mark: the first run of a project the child changed.
 
-
-def test_reopening_a_project_that_already_works_shows_nothing(qt_app, project):
-    """Once per project, not once per session -- the manifest is what remembers."""
-    from opennest.ui.workbench import Workbench
-
-    project.manifest.last_successful_run = "2026-01-01T00:00:00+00:00"
-    provider = ScriptedProvider([Reply(text="ok")])
-    widget = Workbench(project, AgentController(project, provider, Toolbox(project)))
+    It said "You built that." beside the sunglasses. That is a good moment -- and it is
+    not the one they are for.
+    """
+    widget, versions = _versioned_bench(project)
     try:
-        assert widget._worked_before
-        widget._note_milestone()
+        if versions.enabled:
+            (project.directory / "src" / "game.py").write_text("PLAYER_SPEED = 9\n")
+            versions.save("the child changed something")
         widget._show_run(_Result(_Run(ok=True)))
-        assert widget._completion.isHidden()
+        assert not _glasses_on(widget)
+        assert not hasattr(widget, "completed"), "the Workbench can award a mark again"
     finally:
         widget.close()
 
 
 def _versioned_bench(project):
-    """A Workbench with real versioning, which is what the milestone gate consults."""
+    """A Workbench with real versioning, which is what a changed project needs."""
     from opennest.ui.workbench import Workbench
     from opennest.versioning.checkpoint import VersionHistory
 
@@ -381,64 +397,6 @@ def _versioned_bench(project):
     provider = ScriptedProvider([Reply(text="ok")] * 4)
     controller = AgentController(project, provider, Toolbox(project), versions=versions)
     return Workbench(project, controller, versions=versions), versions
-
-
-def test_the_untouched_starter_running_earns_nothing(qt_app, project):
-    """The owner caught this watching a Phase 12.2 walk, and it is an over-claim.
-
-    The model calls ``run_project`` during its first turn, the starter launches,
-    ``RunResult.ok`` is True the moment an interactive project survives four seconds --
-    and Open Nest awarded the approval mark and "You built that." for an orange square
-    on a black background that it had shipped itself. The child had built nothing and
-    had not pressed Run.
-    """
-    widget, versions = _versioned_bench(project)
-    try:
-        if not versions.enabled:
-            pytest.skip("versioning is what the gate reads, and git is not available")
-        assert not versions.can_undo, "fixture is wrong: the project already has history"
-        widget._note_milestone()
-        widget._show_run(_Result(_Run(ok=True)))
-        assert widget._completion.isHidden(), (
-            "the approval mark was awarded for the starter template running"
-        )
-    finally:
-        widget.close()
-
-
-def test_the_mark_is_earned_once_the_project_has_actually_changed(qt_app, project):
-    """And the milestone must still work -- the gate narrows it, it does not remove it."""
-    widget, versions = _versioned_bench(project)
-    try:
-        if not versions.enabled:
-            pytest.skip("versioning is what the gate reads, and git is not available")
-        (project.directory / "src" / "game.py").write_text("PLAYER_SPEED = 9\n")
-        versions.save("the child changed something")
-        assert versions.can_undo
-
-        widget._note_milestone()
-        widget._show_run(_Result(_Run(ok=True)))
-        assert not widget._completion.isHidden()
-        assert widget._completion_text.text() == widget.FIRST_SUCCESS
-    finally:
-        widget.close()
-
-
-def test_the_approval_line_claims_nothing_the_run_did_not_show(bench):
-    """``RunResult.ok`` means different things per profile, and the copy must survive all.
-
-    For a batch project it means the program ran to completion; for a compile it means
-    the compiler accepted the sketch; for an interactive game it means only that the
-    process survived a four-second startup grace and is on screen. "It works." would be
-    an unverified claim in that last case, which is exactly what the phase's rule about
-    brand state forbids. "You built that." is about authorship and is true in all three.
-    """
-    claim = bench.FIRST_SUCCESS.lower()
-    for forbidden in ("works", "working", "runs", "playable", "finished", "fixed"):
-        assert forbidden not in claim, (
-            f"{bench.FIRST_SUCCESS!r} asserts {forbidden!r}, which one successful run "
-            "does not establish for every profile"
-        )
 
 
 # --------------------------------------------------- the setup wizard (section 58)
@@ -461,9 +419,15 @@ def test_the_download_keeps_its_numbers_when_the_eagle_appears():
     assert "describe()" in body, "the real byte counts must still be reported"
 
 
-def test_the_wizard_opens_with_the_identity_and_ends_with_the_approval_mark(qt_app, tmp_path,
-                                                                           monkeypatch):
-    """Section 58's sequence, which is what teaches the visual language."""
+def test_the_wizard_opens_with_the_identity_and_ends_without_the_approval_mark(
+    qt_app, tmp_path, monkeypatch
+):
+    """Section 58's sequence -- less its last graphic, by the Phase 13 ruling.
+
+    A finished setup was once the clearest case for the sunglasses. They are reserved for
+    a child publishing a version now, and a parent finishing an installation has made
+    nothing, so the finish page says it is ready in words (section 54).
+    """
     from opennest.security import keychain, permissions
     from opennest.setup.state import InstallationState
     from opennest.setup.wizard import FinishStep, SetupWizard, WelcomeStep
@@ -480,8 +444,7 @@ def test_the_wizard_opens_with_the_identity_and_ends_with_the_approval_mark(qt_a
         welcome = next(s for s in wizard.steps if isinstance(s, WelcomeStep))
         finish = next(s for s in wizard.steps if isinstance(s, FinishStep))
         assert marks(welcome), "the wizard should open with the Open Nest identity"
-        assert marks(finish), "setup finishing is the clearest case for the approval mark"
-        # And the graphic is not the only signal (section 46).
+        assert not _glasses_on(finish), "the sunglasses are for publishing a version"
         from PySide6.QtWidgets import QLabel
 
         said = " ".join(label.text() for label in finish.findChildren(QLabel))

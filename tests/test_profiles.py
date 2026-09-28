@@ -238,3 +238,11 @@ def test_the_raspberry_pi_template_separates_mac_code_from_pi_code(
     for line in source.splitlines():
         if line.startswith("import RPi") or line.startswith("from RPi"):
             pytest.fail("RPi.GPIO is imported at the top level; this cannot run on a Mac")
+
+
+def test_only_games_are_drawn_inside_the_workbench() -> None:
+    """Phase 13's live view knows how to show one kind of program: a pygame game."""
+    from opennest.projects.profiles import load_profiles
+
+    drawn = {profile.id: profile.live_view for profile in load_profiles() if profile.live_view}
+    assert drawn == {"games": "pygame"}

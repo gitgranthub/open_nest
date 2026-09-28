@@ -17,15 +17,19 @@ is not run.
 
 from __future__ import annotations
 
+import codecs
+import contextlib
 import os
 import signal
 import subprocess
 import sys
+import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from opennest.execution import live_view
 from opennest.security.process_sandbox import SandboxUnavailable, wrap
 
 #: A child's game runs until they close it; an analysis should not run forever.
@@ -51,6 +55,10 @@ class RunResult:
     still_running: bool = False
     #: Live handle for a still-running project, so the UI can offer a Stop control.
     process: subprocess.Popen | None = None
+    #: What a still-running project prints, read as it arrives -- see :class:`Output`.
+    output: Output | None = None
+    #: The pictures of a game shown inside Open Nest, and its input. Phase 13.
+    live: live_view.LiveStream | None = None
 
     @property
     def ok(self) -> bool:
@@ -80,6 +88,92 @@ def _clip(text: str) -> str:
     return f"{text[:half]}\n...[{omitted} characters omitted]...\n{text[-half:]}"
 
 
+class _Captured:
+    """One stream's text, bounded the way :func:`_clip` bounds it, however long it runs.
+
+    The first half is kept as it arrived and the rest is a rolling tail, so a game that
+    prints every frame for an hour holds 20,000 characters, not 36 MB.
+    """
+
+    def __init__(self) -> None:
+        self._head = ""
+        self._tail = ""
+        self._omitted = 0
+
+    def add(self, text: str) -> None:
+        half = MAX_CAPTURED_CHARS // 2
+        room = half - len(self._head)
+        if room > 0:
+            self._head += text[:room]
+            text = text[room:]
+        self._tail += text
+        if len(self._tail) > half:
+            self._omitted += len(self._tail) - half
+            self._tail = self._tail[-half:]
+
+    def text(self) -> str:
+        if not self._omitted:
+            return self._head + self._tail
+        return f"{self._head}\n...[{self._omitted} characters omitted]...\n{self._tail}"
+
+
+class Output:
+    """Everything a still-running project prints, read as it arrives.
+
+    An interactive run used to be read for its four-second startup and then never
+    again, so its output piled up in the pipe until the pipe was full -- and then the
+    child's next ``print`` blocked, and their game froze where it stood. Measured
+    (SPIKES.md section 26): a game printing one line a frame stopped dead twelve seconds
+    after it started, and the same game with its output read kept going. So from the
+    moment an interactive project starts, two threads read what it writes, keep a
+    bounded copy, and hand it over when the run ends.
+    """
+
+    def __init__(self, process: subprocess.Popen) -> None:
+        self.started = time.monotonic()
+        self.ended = 0.0
+        #: Set by :func:`stop_project` before it stops the run, so an ending Open Nest
+        #: caused is never mistaken for the project failing.
+        self.stopped = False
+        self._lock = threading.Lock()
+        self._streams = {"stdout": _Captured(), "stderr": _Captured()}
+        self._threads = [
+            threading.Thread(target=self._read, args=(pipe, name), daemon=True,
+                             name=f"project-{name}")
+            for pipe, name in ((process.stdout, "stdout"), (process.stderr, "stderr"))
+            if pipe is not None
+        ]
+        for thread in self._threads:
+            thread.start()
+
+    def _read(self, pipe, name: str) -> None:
+        # The raw descriptor, not the text wrapper: ``read(n)`` on the wrapper waits for
+        # n characters, and this has to take what is there as soon as it is there.
+        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        fd = pipe.fileno()
+        try:
+            while True:
+                chunk = os.read(fd, 65536)
+                if not chunk:
+                    break
+                with self._lock:
+                    self._streams[name].add(decoder.decode(chunk))
+        except OSError:
+            pass
+        finally:
+            with self._lock:
+                self._streams[name].add(decoder.decode(b"", final=True))
+                self.ended = time.monotonic()
+
+    def join(self, timeout: float = 2.0) -> None:
+        for thread in self._threads:
+            thread.join(timeout)
+
+    def text(self, name: str) -> str:
+        with self._lock:
+            return self._streams[name].text()
+
+
 def run_project(
     project_dir: Path,
     command: tuple[str, ...],
@@ -90,6 +184,8 @@ def run_project(
     allow_network: bool = False,
     extra_env: dict[str, str] | None = None,
     devices: Sequence[str] = (),
+    live: bool = False,
+    on_live: Callable[[live_view.LiveStream], None] | None = None,
 ) -> RunResult:
     """Run a project's command from its directory and capture everything.
 
@@ -106,8 +202,22 @@ def run_project(
     process is launched, given :data:`STARTUP_GRACE_SECONDS` to fall over, and then
     reported as running with a live handle the UI can stop. A crash inside the grace
     window is captured exactly as in batch mode, which is what the repair loop needs.
+    Its output is read for as long as it runs (:class:`Output`), because an unread pipe
+    fills and then freezes the project.
+
+    ``live`` is Phase 13: an interactive game that opens no window and sends its
+    pictures to Open Nest instead (:mod:`opennest.execution.live_view`). Same sandbox,
+    same profile, same command -- the shim goes in front of the child's file, and the
+    game is handed one channel back to Open Nest. Ignored for anything that is not
+    ``python <file>``. ``on_live`` is told the stream the moment the game has started,
+    so its first pictures can be shown during the startup grace rather than after it.
     """
     project_dir = Path(project_dir).resolve(strict=True)
+    stream = None
+    if live and interactive and live_view.command_for(command) is not None:
+        command = live_view.command_for(command)
+        stream = live_view.LiveStream()
+        extra_env = {**(extra_env or {}), **stream.environment()}
     argv = list(command)
     if argv and argv[0] == "python":
         argv[0] = python_executable or sys.executable
@@ -122,9 +232,13 @@ def run_project(
     try:
         argv = wrap(argv, project_dir, allow_network=allow_network, devices=devices)
     except SandboxUnavailable as exc:
+        if stream is not None:
+            stream.close()
         return RunResult(None, "", str(exc), time.monotonic() - started, False)
     except ValueError as exc:
         # A device that is not a grantable serial port. Refused, not run.
+        if stream is not None:
+            stream.close()
         return RunResult(None, "", str(exc), time.monotonic() - started, False)
 
     try:
@@ -137,26 +251,40 @@ def run_project(
             errors="replace",
             env=_child_environment(project_dir, extra_env),
             start_new_session=True,
+            # The live channel, and nothing else, goes to the game.
+            pass_fds=(stream.child_fd,) if stream is not None else (),
         )
     except OSError as exc:
+        if stream is not None:
+            stream.close()
         return RunResult(None, "", f"Open Nest could not start the project: {exc}",
                          time.monotonic() - started, False)
 
     if interactive:
+        output = Output(process)
+        if stream is not None:
+            stream.start()
+            if on_live is not None:
+                with contextlib.suppress(Exception):   # showing it never stops a run
+                    on_live(stream)
         try:
-            stdout, stderr = process.communicate(timeout=STARTUP_GRACE_SECONDS)
+            process.wait(timeout=STARTUP_GRACE_SECONDS)
         except subprocess.TimeoutExpired:
             # Survived startup: leave it on screen for the child.
             return RunResult(
                 exit_code=None, stdout="", stderr="",
                 seconds=time.monotonic() - started,
                 timed_out=False, still_running=True, process=process,
+                output=output, live=stream,
             )
         # Exited within the grace window -- succeeded quickly, or crashed.
+        output.join()
+        if stream is not None:
+            stream.close()
         return RunResult(
             exit_code=process.returncode,
-            stdout=_clip(stdout or ""),
-            stderr=_clip(stderr or ""),
+            stdout=output.text("stdout"),
+            stderr=_stderr_for(output, stream),
             seconds=time.monotonic() - started,
             timed_out=False,
         )
@@ -179,23 +307,66 @@ def run_project(
 
 def stop_project(result: RunResult) -> None:
     """Stop a still-running interactive project. Safe to call more than once."""
+    if result.output is not None and result.process is not None \
+            and result.process.poll() is None:
+        result.output.stopped = True
     if result.process is not None and result.process.poll() is None:
-        _terminate(result.process)
+        _terminate(result.process, result.output)
+    if result.live is not None:
+        result.live.close()
 
 
-def _terminate(process: subprocess.Popen) -> tuple[str, str]:
-    """Stop a process group, escalating if it ignores the polite request."""
+def finished(result: RunResult) -> RunResult | None:
+    """How a still-running project ended, once it has; None while it is still going.
+
+    For the game on the child's screen: the run reported ``still_running`` when it
+    survived startup, and that stays true of the result however it ends. This is what
+    it actually did -- its exit status and everything it printed, the shim's own
+    traceback frames removed exactly as they are for a crash during startup.
+    ``result.output.stopped`` says whether Open Nest was the one that ended it.
+    """
+    process, output = result.process, result.output
+    if process is None or output is None or process.poll() is None:
+        return None
+    output.join()
+    return RunResult(
+        exit_code=process.returncode,
+        stdout=output.text("stdout"),
+        stderr=_stderr_for(output, result.live),
+        seconds=(output.ended or time.monotonic()) - output.started,
+        timed_out=False,
+    )
+
+
+def _stderr_for(output: Output, stream: live_view.LiveStream | None) -> str:
+    text = output.text("stderr")
+    return live_view.without_shim_frames(text) if stream is not None else text
+
+
+def _terminate(process: subprocess.Popen, output: Output | None = None) -> tuple[str, str]:
+    """Stop a process group, escalating if it ignores the polite request.
+
+    With ``output``, the pipes already belong to its reader threads, so this waits for
+    the process rather than reading from them a second time.
+    """
+    def collect(grace: float) -> tuple[str, str]:
+        if output is None:
+            return process.communicate(timeout=grace)
+        process.wait(timeout=grace)
+        output.join(1.0)
+        return output.text("stdout"), output.text("stderr")
+
     for sig, grace in ((signal.SIGTERM, 5), (signal.SIGKILL, 5)):
         try:
             os.killpg(os.getpgid(process.pid), sig)
         except (ProcessLookupError, PermissionError):
             break
         try:
-            return process.communicate(timeout=grace)
+            return collect(grace)
         except subprocess.TimeoutExpired:
             continue
     try:
-        return process.communicate(timeout=1)
+        return collect(1)
     except subprocess.TimeoutExpired:
         return "", ""
 

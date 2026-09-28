@@ -73,7 +73,7 @@ class Step:
     """
 
     #: ``thinking``, ``recipe``, ``tool``, ``changed``, ``refused``, ``testing``,
-    #: ``undone``.
+    #: ``undone``, ``playing``.
     kind: str
     #: For a child, lower case, present tense: "changing src/game.py".
     text: str
@@ -84,6 +84,9 @@ class Step:
     #: 0-based lines of ``content`` that are new or different. Empty for a new file.
     changed_lines: tuple[int, ...] = ()
     created: bool = False
+    #: For ``playing``: the game that has just started, whose pictures the Workbench
+    #: shows (:class:`opennest.execution.live_view.LiveStream`). Phase 13.
+    live: object = None
 
 
 def changed_lines(before: str | None, after: str) -> tuple[int, ...]:
@@ -445,6 +448,10 @@ class Toolbox:
             python_executable=self.python_executable,
             interactive=self.project.profile.is_interactive,
             allow_network=self._network_allowed(),
+            # Drawn inside the Workbench rather than in a window of its own -- whoever
+            # started it, the child's Run Game or Gary. Phase 13.
+            live=self.project.profile.live_view == "pygame",
+            on_live=self._playing,
         )
         self.last_run = result
         if result.ok:
@@ -455,6 +462,10 @@ class Toolbox:
             body = result.stdout.strip() or "(the project produced no output)"
             return ToolResult(True, f"It ran successfully.\n\n{body}", run=result)
         return ToolResult(False, result.failure_text or "It failed with no output.", run=result)
+
+    def _playing(self, stream) -> None:
+        """The game has started and its pictures are arriving: say so, with the stream."""
+        self.report(Step("playing", "running the project", live=stream))
 
     def playtest(self) -> playtest.Playtest | None:
         """Run the game once without a window and report what it did, or None.

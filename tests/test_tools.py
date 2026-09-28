@@ -466,6 +466,44 @@ def test_stop_running_is_safe_before_anything_has_run(box: Toolbox) -> None:
     box.stop_running()
 
 
+# ------------------------------------------ Phase 13: a game is drawn inside Open Nest
+
+def _captured_run_kwargs(project, monkeypatch) -> dict:
+    from opennest.execution.python_runner import RunResult
+
+    seen: dict = {}
+
+    def fake(*args, **kwargs):
+        seen.update(kwargs)
+        return RunResult(0, "", "", 0.1, False)
+
+    monkeypatch.setattr("opennest.agent.tools.run_project", fake)
+    Toolbox(project).dispatch("run_project", {})
+    return seen
+
+
+def test_a_game_is_drawn_inside_open_nest_whoever_runs_it(tmp_path, monkeypatch) -> None:
+    """One route for Run Game and for Gary's run_project: no window of its own for either."""
+    project = create_project("A Game", "games", root=tmp_path)
+    seen = _captured_run_kwargs(project, monkeypatch)
+    assert seen["live"] is True and seen["interactive"] is True
+    assert callable(seen["on_live"])
+
+
+def test_a_raspberry_pi_test_loop_is_not_a_game(tmp_path, monkeypatch) -> None:
+    project = create_project("A Robot", "raspberry_pi", root=tmp_path)
+    assert _captured_run_kwargs(project, monkeypatch)["live"] is False
+
+
+def test_the_game_starting_is_reported_with_its_pictures(box: Toolbox) -> None:
+    """The Workbench shows the game from this step, before the startup check ends."""
+    seen: list = []
+    box.observer = seen.append
+    stream = object()
+    box._playing(stream)
+    assert [(s.kind, s.live) for s in seen] == [("playing", stream)]
+
+
 def test_every_refusal_carries_a_machine_readable_reason(box: Toolbox) -> None:
     """The prose is for the model; the code is for Open Nest to count and branch on."""
     _game(box)

@@ -50,7 +50,9 @@
       ],
       "run_mode": "interactive",
       "_playtest_note": "After a turn changes the game, Open Nest runs it once more without a window and watches the frames (opennest/execution/playtest.py). An interactive run only proves the game did not crash in four seconds; this is what tells a frozen picture from a game, and feeds a crash, a blank window or a frozen picture back to the repair loop. Phase 12.4, SPIKES.md section 24.",
-      "playtest": "pygame"
+      "playtest": "pygame",
+      "_live_view_note": "Run Game shows the game inside the Workbench's Build / Preview panel rather than in a window of its own. It still runs in its own process under the same sandbox; it opens no window, sends each picture it draws to Open Nest over one channel it is handed at launch, and gets the child's keys and clicks back the same way (opennest/execution/live_view.py). Phase 13, PHASE_12_HANDOFF.md section 6.",
+      "live_view": "pygame"
     },
     {
       "id": "website",

@@ -48,6 +48,42 @@ class AgentWorker(QObject):
             self.finished.emit(turn)
 
 
+class RunWorker(QObject):
+    """Starts the child's game off the UI thread -- the Run Game button, Phase 13.
+
+    An interactive run waits four seconds to see whether the game falls over at once.
+    When the game had a window of its own, blocking the Workbench for those seconds was
+    unkind but invisible, because the game was already on screen. Drawn inside the
+    Workbench, the same four seconds would be a frozen panel with the game running
+    unseen behind it. So the start happens here, and the stream is handed over the
+    moment the game has started (``progress``, a ``playing`` Step), so its first
+    pictures appear straight away.
+
+    Only ``playing`` is passed on. The Toolbox also reports "running the project" as a
+    tool step, and the Workbench shows tool steps as something Gary is doing -- but this
+    is the child pressing a button, not Gary.
+    """
+
+    progress = Signal(object)  # the ``playing`` Step, with the stream
+    finished = Signal(object)  # ToolResult
+
+    def __init__(self, toolbox) -> None:
+        super().__init__()
+        self.toolbox = toolbox
+
+    def _observe(self, step) -> None:
+        if step.kind == "playing":
+            self.progress.emit(step)
+
+    def run(self) -> None:
+        self.toolbox.observer = self._observe
+        try:
+            result = self.toolbox.dispatch("run_project", {})
+        finally:
+            self.toolbox.observer = None
+        self.finished.emit(result)
+
+
 class ImageWorker(QObject):
     """Generates one picture off the UI thread.
 

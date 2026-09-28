@@ -45,8 +45,22 @@ the owner has chosen and nobody has started. Two user-facing fallbacks 12.4 expo
 fixed: raw tool-call JSON never reaches the child, and "It works." is no longer said
 because a game merely launched. PHASE_12_HANDOFF §12 and SPIKES §24 have all of it.
 
-**Phase 12.5 — the Fast Path — is implemented, measured, and worth keeping. It is not yet
-committed and is waiting for the owner's review.** Before Gary writes anything, the model
+**Phase 13A — the game drawn inside the Workbench — is built and verified, on
+`phase-13-live-preview`. Read [PHASE_13_HANDOFF.md](PHASE_13_HANDOFF.md).** Run Game now
+plays the child's game in the Build / Preview panel: it still runs in its own process
+under the unchanged sandbox, opens no window, and sends Open Nest the pictures it draws
+over one socket; the child's keys and clicks go back the same way. First picture ~0.3 s
+after the press; 56 pictures a second, the same as a window of its own; no measurable
+slowdown of the model while a game plays. A crash during play is shown and becomes the
+last run Gary is told about; a game left playing after a change or an Undo is stopped as
+the old version. The invisible playtest is untouched and still the verification layer.
+Also fixed on the way: **any interactive project that printed a lot froze** once its
+unread output pipe filled (SPIKES §26B). **The white sunglasses are now reserved for a
+child publishing a version** (owner's ruling, brand guide §38): nothing shows them today.
+**13B — pop out and put back — is next.** SPIKES §26 has every measurement.
+
+**Phase 12.5 — the Fast Path — is implemented, measured, and worth keeping. It is
+committed (552627f) on `phase-12-test-drive`.** Before Gary writes anything, the model
 already in memory answers two closed questions -- which kind of change is this, and is it
 exactly one change? -- and a confident one is made by a recipe: small edits through the
 Toolbox, checked by the playtest, a compile or a run, and reported from what was actually
@@ -117,9 +131,11 @@ child asking for a spaceship game still does not get one. PHASE_12_HANDOFF §8 k
 ergonomics (an anchor or line-numbered edit a small model can actually hit), not tone,
 and it wants a measurement before a redesign.
 
-**Phases 13 and 14 are specified and not started**: the game preview drawn inside the
-workbench (PHASE_12_HANDOFF §6, feasibility measured), and getting work out of Open Nest
-at all — export, PDF, sharing (§7, nothing exists today).
+**Phase 13A is built (above); 13B and Phase 14 are not started.** Phase 14 — getting work
+out of Open Nest at all — is PHASE_12_HANDOFF §7, and the owner has since reshaped it
+around **Publish Version**: a frozen, named release a child decides is ready to show,
+with project-type outputs, an `.opennest` package that opens play-first, and Share kept
+separate from Publish. PHASE_13_HANDOFF §6 records the concept; nothing of it exists.
 
 **The assistant is called Gary**, as of 10B. He is a voice, not a character: no
 illustrated face, and brand guide §47 keeps him separate from the eagle, the nest and the
@@ -236,8 +252,8 @@ it belongs in section 4.
 | 12.2 — editing reliability | **closed.** 18 of 18 `edit_file` calls were refused; measured the distribution (47% the model editing code it imagined, 33% wrong indent, 20% a newline written as two characters) and added a bounded deterministic recovery that refuses ambiguity. 3 of 4 real edits now land. Also: one project runs one copy of itself, and the approval mark is no longer awarded for the starter launching. 1044 tests, ruff clean. SPIKES §22 |
 | 12.3 — does the child get a game? | **measured, and the answer is no.** 1 of 24 conversations produced the game that was asked for. 4B vs 8B did not solve it, prompt tuning did not solve it, starter markers made it worse, and tool execution is no longer the dominant problem. `RunResult.ok` is True for any game that merely launched, so the repair loop cannot react to "runs but does not work". SPIKES §23 |
 | 12.4 — Playability Feedback Loop | **closed.** A headless playtest after every change feeds crashed / no picture / closed itself / frozen to the repair loop, sharing its three attempts and the call budget. The 12.3 spike graded 7 of 10 working games frozen and was rebuilt, not wired in. 14 real conversations: 0 false failures, 0 crashes reaching the child as "done". 1104 tests, ruff clean. PHASE_12_HANDOFF §12, SPIKES §24 |
-| **12.5 — The Fast Path** | **implemented, closed out and frozen; not committed, awaiting the owner's review.** A classifier on whichever local model Gary is -- closed questions, no generation, no second model -- routes a recognised single change to a recipe that edits through the Toolbox, is checked, and reports truthfully; everything else goes to Gary as before. Games (Phase 12 requests) 4/18 → 17/18; all 44 conversations 14/44 → 33/44; median 20.1 s → 3.2 s; tokens −73%. Closure pass: Blank eligibility from files, the three known misses, one website gap; UI walk 41/41. Pre-13 pass: natural wording, several requests per message, a planning fallback, the test's still frame. 63 recipes (41 deterministic, 22 guidance-only). ~210 MB cache. 1256 tests, ruff clean. PHASE_12_HANDOFF §13, SPIKES §25-25N |
-| 13 — The game preview in the workbench | **not started.** Specified in PHASE_12_HANDOFF §6; feasibility measured |
+| **12.5 — The Fast Path** | **implemented, closed out and frozen; committed (552627f).** A classifier on whichever local model Gary is -- closed questions, no generation, no second model -- routes a recognised single change to a recipe that edits through the Toolbox, is checked, and reports truthfully; everything else goes to Gary as before. Games (Phase 12 requests) 4/18 → 17/18; all 44 conversations 14/44 → 33/44; median 20.1 s → 3.2 s; tokens −73%. Closure pass: Blank eligibility from files, the three known misses, one website gap; UI walk 41/41. Pre-13 pass: natural wording, several requests per message, a planning fallback, the test's still frame. 63 recipes (41 deterministic, 22 guidance-only). ~210 MB cache. 1256 tests, ruff clean. PHASE_12_HANDOFF §13, SPIKES §25-25N |
+| **13 — The game preview in the workbench** | **13A built and verified on `phase-13-live-preview`**: the game drawn in the Build / Preview panel from its own sandboxed process, input sent back, same profile. 56 pictures/s, first picture ~0.3 s; the printing-game freeze fixed; the sunglasses reserved for Publish. 1303 tests, ruff clean; Phase 13 walk 45/45, Phase 12 app walk 41/41. **13B (pop out / put back) not started.** [PHASE_13_HANDOFF.md](PHASE_13_HANDOFF.md), SPIKES §26 |
 | 14 — Getting work out of Open Nest (export / PDF / share) | **not started.** Specified in PHASE_12_HANDOFF §7. Nothing can currently leave the app |
 
 Branches are **stacked**: each is based on the previous one, so each PR shows only its
@@ -258,7 +274,7 @@ turn cloud on, and the child can switch to Claude or OpenAI after a warning, or 
 pictures with an image model. Everything except Image Creation still works with cloud off,
 which is the default.
 
-1256 tests pass, ruff is clean.
+1303 tests pass, ruff is clean.
 
 **The application icon is deliberately unresolved, and that is a ruling rather than a
 gap.** Phase 10D was told not to design or simplify one: it needs a separately approved
@@ -291,7 +307,7 @@ privileged-action pattern in §5, not a new mechanism.
 ## 2. Get running in five minutes
 
 ```bash
-.venv/bin/python -m pytest -q      # 1256 passing, about 2 minutes
+.venv/bin/python -m pytest -q      # 1303 passing, about 3 minutes
 ```
 
 It is slower than it was (7 s at Phase 6, 55 s at Phase 12.2). Phase 12.4 made every Games
@@ -349,6 +365,7 @@ opennest/
 │   ├── flight_deck.py      home screen
 │   ├── workbench.py        project workspace
 │   ├── worker.py           QThread plumbing; generation never blocks the UI
+│   ├── game_view.py        Phase 13: paints a LiveStream, sends it the child's input
 │   └── main_window.py      shell; owns the provider, VersionHistory and memory lifecycle
 ├── ai/
 │   ├── provider.py         ModelProvider interface, Message/ToolCall/Reply
@@ -407,6 +424,8 @@ opennest/
 │   ├── python_runner.py    out-of-process running, batch vs interactive
 │   ├── playtest.py         after a change: does the game do anything? Decides, pure
 │   ├── playtest_harness.py ...the half that runs inside the child's process. Records only
+│   ├── live_view.py        Phase 13: a game's pictures in, its input out. No Qt, no agent
+│   ├── live_shim.py        ...the half inside the child's process. Imports nothing from us
 │   ├── arduino.py          arduino-cli: is it here, boards, ports, compile, upload
 │   └── outputs.py          which pictures a run produced. Deterministic, not a tool.
 ├── setup/                  installation lifecycle -- WORKORDER_01 section 35A
@@ -802,6 +821,28 @@ does.** Do not "clean up" these without re-measuring:
   could never pass; corrected in `spikes/phase12/app_walk.py` (local). Check a grader
   against a known-good run before believing its failure.
 
+**Phase 13 traps — the game drawn in the Workbench (PHASE_13_HANDOFF §3, SPIKES §26):**
+
+- **A pipe is the wrong channel for frames.** Fifteen 64 KB reads a frame, each taking the
+  GIL: with the main thread busy the stream fell to 12.7/s and a full pipe froze the
+  game's `flip`. A socket pair with 4 MB buffers held 55/s.
+- **`MSG_DONTWAIT` on a macOS Unix-socket send still blocks.** Open Nest's end is
+  non-blocking and input goes through a bounded buffer of whole messages.
+- **A windowless process sleeps late** (loose timer deadlines; 46 fps for `tick(60)`).
+  The shim sets the frontmost-application task role for itself: 56 fps. Thread QoS and
+  App Nap were not it.
+- **Showing a game was the cost, not reading it.** Frames travel in Qt's native layout
+  (`BGRA` = `Format_RGB32` here) and smoothing is decided in device pixels: 44 -> 11-22 %
+  of a core.
+- **Never `communicate()` on an interactive run.** Its pipes belong to `Output`'s reader
+  threads, from the moment it starts; that is what fixed the printing-game freeze.
+- **Focus cannot be driven while another app is in front.** macOS will not activate a
+  background process, so `hasFocus()` is False everywhere and "focus left" passes
+  whatever the code does. `spikes/phase13/live_walk.py` reports it and labels the checks.
+- **The sunglasses are reserved for Publish Version.**
+  `test_the_sunglasses_are_reserved_for_publishing_a_version` fails if a screen reaches
+  for them; Publish is the change that updates it.
+
 **Phase 11 traps:**
 
 - **A widget destroyed while one of its worker threads runs aborts the interpreter.** No
@@ -887,6 +928,15 @@ per action, and never let out. Specifically:
 
 Do not reopen this architecture unless implementation reveals a concrete security
 limitation. When you build Pi deployment or file export, they take this pattern.
+
+**Phase 13's live game view is not a privileged action and adds no grant.** The game runs
+under the ordinary profile, byte-for-byte (a test asserts `wrap` is called exactly as for
+any run: no device, no network). What it gains is one inherited Unix socket pair that
+connects to Open Nest and nothing else, like its stdout pipe. Everything it sends is
+treated as hostile input (`execution/live_view.py`: fixed header, bounds before
+allocation, exact lengths, plain-text title) and a malformed stream stops the game. The
+shim also sets its own process's scheduling role (frontmost application) for frame
+timing; that is a scheduling class, not an access right.
 
 A known, accepted limitation: TOCTOU between validating a path and opening it. Recorded
 in `security/sandbox.py` with what the fix would be. Do not "solve" it casually — it

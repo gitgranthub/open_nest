@@ -1224,31 +1224,22 @@ class HealthStep(Step):
 class FinishStep(Step):
     """Section 35A step 8, and guide section 58's closing moment.
 
-    The third of the three graphics that teach the visual language: identity at the
-    start, the eagle while something installs, the approval mark when it is done. This
-    is also the clearest case in the whole product for the sunglasses -- section 38's
-    first example is literally a finished setup -- and it is rare by construction,
-    because a parent sees it once.
+    **No sunglasses here, by the owner's ruling in Phase 13**, though guide sections 38
+    and 58 once named a finished setup as their clearest case. They are reserved for one
+    moment: a child publishing a version of something they made -- the creative
+    director's quiet nod. A parent finishing an installation has made nothing, so this
+    is routine completion (guide section 54): a plain line that says it is ready.
     """
 
-    # Not "Open Nest is ready" any more: guide section 58 puts that sentence next to the
-    # approval mark below, and the rendered page said it twice, once as chrome and once
-    # as the moment. The heading gives way, because the graphic and its line are the
-    # part that is supposed to land.
+    # "Setup complete" as the heading, "Open Nest is ready." as the line: the rendered
+    # page once said "ready" twice, as chrome and as the moment.
     title = "Setup complete"
     next_label = "Launch Open Nest"
 
     def build(self) -> None:
-        approval = QHBoxLayout()
-        approval.setSpacing(12)
-        approval.addWidget(
-            brand.placed("completion_glasses", dark=theme.is_dark()),
-            0, Qt.AlignmentFlag.AlignVCenter,
-        )
         ready = QLabel(f"{APP_NAME} is ready.")
         ready.setProperty("role", "greeting")
-        approval.addWidget(ready, 1, Qt.AlignmentFlag.AlignVCenter)
-        self.body.addLayout(approval)
+        self.body.addWidget(ready)
         self.body.addSpacing(6)
 
         self._summary = _mono("")

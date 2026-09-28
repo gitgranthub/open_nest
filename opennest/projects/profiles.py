@@ -64,6 +64,10 @@ class Profile:
     #: the one kind of program the headless test knows how to watch. See
     #: :mod:`opennest.execution.playtest`.
     playtest: str | None = None
+    #: How an interactive run is shown -- ``"pygame"`` or None. Games only: the game
+    #: opens no window of its own and is drawn inside the Workbench instead, still in
+    #: its own sandboxed process. Phase 13, :mod:`opennest.execution.live_view`.
+    live_view: str | None = None
 
     @property
     def can_run(self) -> bool:
@@ -154,6 +158,7 @@ def _build(raw: dict) -> Profile:
         image_provider=raw.get("image_provider"),
         image_model=raw.get("image_model"),
         playtest=raw.get("playtest"),
+        live_view=raw.get("live_view"),
     )
 
 
