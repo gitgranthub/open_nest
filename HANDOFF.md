@@ -59,6 +59,26 @@ unread output pipe filled (SPIKES §26B). **The white sunglasses are now reserve
 child publishing a version** (owner's ruling, brand guide §38): nothing shows them today.
 **13B — pop out and put back — is next.** SPIKES §26 has every measurement.
 
+**Then the owner tested 13A, and the flow around it was not sound; the owner-test pass
+corrected it before 13B (PHASE_13_HANDOFF §7, SPIKES §27).** Traced from the owner's own
+project archive: the project was begun with **Start Empty**, so nothing could run until the
+Basic Game was found by hand; the 4B model wrote every `edit_file` out **as text**, which
+nothing ran and the chat showed; the guard caught "I added" but not "the eagle is now
+flying", and the caught claims **stayed in Gary's history** and were summarised into the
+project's memory as decisions; and "next" counted a step done that never ran. Now: an
+empty project is set up on its first request (Blank only when the child names a game); a
+call written as text runs through the Toolbox or is dropped, never shown; **a question is
+answered with no tools and no recipe**, from a guide to the actual screen and **what Open
+Nest has checked** (the file is still exactly the starter, what is in the game and which
+keys it reads, what the last message really changed, whether the game on screen is the
+current code, the last test); Gary's history holds what the child was told; "is now", "I
+see", "I'm adding", a thing the code has not got, a loop, a promise with nothing done are
+each corrected or planned, never relayed; a plan step is done only when a file changed for
+it (and, in a game, the thing is drawn), and "next" compares the files first; the Project
+panel marks what changed and shows a file's code with the lines marked; a Blank game plays
+in the panel. **All of it works in every project type**; the game-only parts are the
+controls, "drawn", the stale-game check and the named-thing check.
+
 **Phase 12.5 — the Fast Path — is implemented, measured, and worth keeping. It is
 committed (552627f) on `phase-12-test-drive`.** Before Gary writes anything, the model
 already in memory answers two closed questions -- which kind of change is this, and is it
@@ -254,6 +274,7 @@ it belongs in section 4.
 | 12.4 — Playability Feedback Loop | **closed.** A headless playtest after every change feeds crashed / no picture / closed itself / frozen to the repair loop, sharing its three attempts and the call budget. The 12.3 spike graded 7 of 10 working games frozen and was rebuilt, not wired in. 14 real conversations: 0 false failures, 0 crashes reaching the child as "done". 1104 tests, ruff clean. PHASE_12_HANDOFF §12, SPIKES §24 |
 | **12.5 — The Fast Path** | **implemented, closed out and frozen; committed (552627f).** A classifier on whichever local model Gary is -- closed questions, no generation, no second model -- routes a recognised single change to a recipe that edits through the Toolbox, is checked, and reports truthfully; everything else goes to Gary as before. Games (Phase 12 requests) 4/18 → 17/18; all 44 conversations 14/44 → 33/44; median 20.1 s → 3.2 s; tokens −73%. Closure pass: Blank eligibility from files, the three known misses, one website gap; UI walk 41/41. Pre-13 pass: natural wording, several requests per message, a planning fallback, the test's still frame. 63 recipes (41 deterministic, 22 guidance-only). ~210 MB cache. 1256 tests, ruff clean. PHASE_12_HANDOFF §13, SPIKES §25-25N |
 | **13 — The game preview in the workbench** | **13A built and verified on `phase-13-live-preview`**: the game drawn in the Build / Preview panel from its own sandboxed process, input sent back, same profile. 56 pictures/s, first picture ~0.3 s; the printing-game freeze fixed; the sunglasses reserved for Publish. 1303 tests, ruff clean; Phase 13 walk 45/45, Phase 12 app walk 41/41. **13B (pop out / put back) not started.** [PHASE_13_HANDOFF.md](PHASE_13_HANDOFF.md), SPIKES §26 |
+| 13 owner-test pass | **done, before 13B.** The owner's first test of 13A, traced from the project archive and corrected across every project type: set-up on first request, calls written as text, questions answered without tools, checked facts every turn, history as shown, evidence-based claim checks, plans that re-check the files, file marks and click-to-code. PHASE_13_HANDOFF §7, SPIKES §27 |
 | 14 — Getting work out of Open Nest (export / PDF / share) | **not started.** Specified in PHASE_12_HANDOFF §7. Nothing can currently leave the app |
 
 Branches are **stacked**: each is based on the previous one, so each PR shows only its
@@ -274,7 +295,7 @@ turn cloud on, and the child can switch to Claude or OpenAI after a warning, or 
 pictures with an image model. Everything except Image Creation still works with cloud off,
 which is the default.
 
-1318 tests pass, ruff is clean.
+1398 tests pass, ruff is clean.
 
 **The application icon is deliberately unresolved, and that is a ruling rather than a
 gap.** Phase 10D was told not to design or simplify one: it needs a separately approved
@@ -307,7 +328,7 @@ privileged-action pattern in §5, not a new mechanism.
 ## 2. Get running in five minutes
 
 ```bash
-.venv/bin/python -m pytest -q      # 1318 passing, about 3 minutes
+.venv/bin/python -m pytest -q      # 1398 passing, about 3 minutes
 ```
 
 It is slower than it was (7 s at Phase 6, 55 s at Phase 12.2). Phase 12.4 made every Games
@@ -377,8 +398,10 @@ opennest/
 │   │                       conversation, so it is not in the catalogue either.
 │   └── router.py           curated catalogue; cloud needs the switch AND a key
 ├── agent/
-│   ├── controller.py       the loop: prompt, tools, repair, checkpoints, rollover
+│   ├── controller.py       the loop: prompt, tools, repair, checkpoints, rollover, plans
 │   ├── budget.py           ONE call budget per turn; every subsystem spends from it
+│   ├── evidence.py         what Open Nest has checked, and the guide to the screen
+│   ├── replies.py          what a reply may say: questions, the chat boundary, claims
 │   └── tools.py            read_file / edit_file / write_file / run_project
 ├── fastpath/               Phase 12.5 spike: recognise a common request, make it with a
 │   │                       recipe, check it, or step aside for Gary. SPIKES.md section 25
@@ -851,6 +874,34 @@ does.** Do not "clean up" these without re-measuring:
 - **The sunglasses are reserved for Publish Version.**
   `test_the_sunglasses_are_reserved_for_publishing_a_version` fails if a screen reaches
   for them; Publish is the change that updates it.
+
+**Phase 13 owner-test traps (PHASE_13_HANDOFF §7, SPIKES §27):**
+
+- **Gary's history is settled at the end of every turn** (`_close_turn`): the child's
+  message, the calls and their results, and the reply the child read -- nothing else.
+  Corrections, plan instructions and superseded replies are gone. Anything the next turn
+  must know goes in the prompt (`agent/evidence.py`), never in the history; a test that
+  wants to see a correction was sent reads `provider.calls`, not `controller.history`.
+  Rollover runs after the settling, in `_close_turn`, not in `_finish_turn`.
+- **A question never reaches the Fast Path or a tool** (`replies.is_question`). "when I
+  press space it should jump" is not a question and "can you make me a game?" is a
+  request -- both are pinned. Every question-shaped message in both label sets is gold
+  "other"; a new one that is not is the measurement to make before changing the rule.
+- **A tool call written as Python is parsed only for a tool's own name, with literal
+  arguments, and only when no call came the ordinary way.** Do not widen it to any
+  function name: it is the model's call, not code.
+- **The named-thing check reads identifiers and strings, never comments**
+  (`evidence.code_words`), and only in games. "# the eagle flies over the cars" is not a
+  car.
+- **`source_fingerprint` is by content.** Undo writes the old bytes back as new files;
+  by modification time an undone step never looked undone.
+- **A plan step is never planned again** (`_can_reduce`). Measured: "next" re-planned
+  step 1 into three new steps and silently dropped the plan's other two.
+- **An edit that changes nothing is refused** (`reason="no_change"`). It used to succeed,
+  be reported as a change of 0 lines, and count a plan step done.
+- **The owner's `test02` project still has the poisoned memory** written before this
+  pass (its bible's Decisions describe an eagle that was never made). Nothing rewrites a
+  child's memory files automatically; deleting that project, or those lines, is the fix.
 
 **Phase 11 traps:**
 

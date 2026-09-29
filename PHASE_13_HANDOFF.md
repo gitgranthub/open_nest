@@ -171,8 +171,10 @@ What changed, because Publish does not exist yet and so **nothing shows them tod
   worth knowing on battery.
 - **The Pi's test loop still shows only "The project is running."** Its output is now
   read (the freeze fix) and bounded, so showing it live is a small addition — not done.
-- **Games in a Blank project still open a window of their own.** Blank's run is not a
-  pygame profile; `family_for` could decide it later.
+- ~~**Games in a Blank project still open a window of their own.**~~ **Played in the
+  panel since the owner-test pass** (§7, `plays_in_panel`): once a Blank project's entry
+  file imports pygame, Run plays it here. Blank still has no headless test, so a game
+  there is still not checked after a change, and its recipes stay guidance.
 - **OpenGL games** (`pygame.OPENGL`) cannot draw under the dummy driver. The playtest has
   always had the same limit.
 - **The segfault at interpreter exit is fixed** (SPIKES 26H): a model call on the main
@@ -236,3 +238,62 @@ Working Project -> Publish Version -> final checks -> frozen release snapshot
   cover image wants — though the playtest's still (`.opennest/tmp/playtest.png`) is the
   one taken under controlled input.
 - Export is still a privileged application action under HANDOFF §5's rule, not a tool.
+
+---
+
+## 7. The owner-test pass — before 13B
+
+The owner used 13A for real and the flow around the game was not sound. This pass fixed
+that flow and nothing else: no 13B, no classifier or gate change, no new recipe, no
+Publish. SPIKES §27 has the trace, the reproduction and every walk.
+
+**What was wrong**, from the owner's own project archive (`test02`): the Game project had
+been begun with **Start Empty**, so no recipe could act and Run said there was no
+`src/game.py`; every `edit_file` the 4B model produced was **written out as Python text**,
+so no tool ran and the chat showed the call; "the eagle is now flying" was not a phrase
+the honesty guard knew, and a reply opening "I haven't changed any file yet" exempted
+everything after it; the **caught claims stayed in Gary's history**, so the next turn
+repeated them, and closing the project wrote them into the bible as decisions; "next" took
+a step off the list before trying it. The game on screen was never stale -- it was exactly
+the starter, which is what the owner saw.
+
+**What changed** (all project types unless it says games):
+
+| | |
+|---|---|
+| empty project | Set up on its first *request* with the profile's default kit (`_set_up_if_empty`); Blank only when the child names a game, as the Basic Game in `src/main.py`; a question is answered instead. Start Empty stays. No message names `src/game.py` |
+| tool syntax | A call written as Python is run through the Toolbox (`mlx_provider._text_call_spans`, parser-checked, tool names only) or dropped; `replies.presentable` keeps long code, argument lines and repeated paragraphs out of the chat for every model |
+| questions | Answered in one turn with **no tools and no recipe** (`build_answer_prompt`): the voice, the project type's first lines, the guide to the screen and the checked facts. "what are the controls?" no longer rewrites the controls |
+| what Gary knows | `agent/evidence.py`, every turn: the entry file exists or not; still exactly a starter; what is in the game and the keys it reads (games); a named thing in the code but never drawn, or made again every frame (games); what the last message really changed; an Undo or a starter added by hand; whether the game on screen is the current code; the last test, only while it is about this code; "nothing has been run yet" |
+| the history | Settled at the end of every turn to the child's message, the calls and results, and the reply the child read (`_settle_history`); rollover after it |
+| claims | "is now" / "Creating ..." / "it's there now" with nothing changed; "I see"; "I'm adding" after a denial; a thing the child named that no code has (games, identifiers only); a looping reply; a promise ending a turn that did nothing -- corrected once, planned, or made an offer; never relayed |
+| edits | One that leaves the file as it was is refused (`no_change`), not counted as a change |
+| plans | A step is done only when a file changed for it (and, in a game, its thing is drawn and not made every frame); one that did not land is retried, never skipped; "next" compares the files with how the last turn left them first and says so; an Undo back before a step reopens it; a question in between keeps the plan; the planner never re-plans a step; plain offers, no "say next" |
+| Project panel | "● new" / "● changed" in muted green beside what the last message touched (`MarkDelegate`); one click shows the code with those lines marked; "Show the game" / "Show the page" goes back, and Preview always brings the page back |
+| Blank games | Played in the panel (`plays_in_panel`) instead of a window of its own that timed out after 120 s; still no headless test there |
+
+**Verified**: the suite (1398, ruff clean), the Phase 12 app walk (41/41, same recipe routes), and `benchmarks/owner_pass/owner_walk.py` --
+the owner's sequence through the real Workbench and model on a Game project begun empty,
+one begun with its starter, a Blank project, a Website begun empty, a Research and a
+Raspberry Pi project. Results and each step's source are in `benchmarks/owner_pass/results/`.
+
+**Still true after it** -- recorded, not hidden:
+
+- **The 4B model still mostly cannot write the eagle game.** Its edits are refused (its
+  new code does not parse, or matches nothing), and when one lands it is often the
+  12.3 shape -- the thing made inside the loop. What changed is that Open Nest now says
+  so: "That step didn't get made, so I haven't moved on to step 2."
+- **Descriptions of *motion* are not checked.** Open Nest can say a thing is not in the
+  code, not drawn, or made every frame; "it flies left and right" about code that moves
+  it only on a key is not something the parser decides.
+- **Answers are only as good as a 4B model reading a guide.** Most are right now ("Arrow
+  keys: move the player (orange square). Escape: quit the game."); some still wander to
+  the eagle. The answer turn is where a stronger selected model helps first.
+- **The build prompt is ~30 % longer** (1557 -> 2029 tokens on a Games turn). Tool
+  selection was not re-benchmarked; the Phase 12 app walk is the regression check that was
+  run.
+- **The owner's `test02` still holds the memory written before this pass** (its bible
+  describes an eagle that was never made). Nothing rewrites a child's memory files
+  automatically.
+- **Website claims are checked only by the general guards**; the named-thing and "drawn"
+  checks are games-only, where they were measured.

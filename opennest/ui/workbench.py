@@ -16,7 +16,7 @@ import contextlib
 import subprocess
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QRect, Qt, Signal
 from PySide6.QtGui import QColor, QPixmap, QTextCursor, QTextFormat
 from PySide6.QtWidgets import (
     QComboBox,
@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSplitter,
+    QStyledItemDelegate,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -39,7 +40,7 @@ from PySide6.QtWidgets import (
 
 from opennest import ASSISTANT_NAME, SYSTEM_NAME
 from opennest.agent.controller import AgentController
-from opennest.agent.tools import Toolbox
+from opennest.agent.tools import Step, Toolbox
 from opennest.ai import images
 from opennest.ai.router import models_for_project, models_that_can_read, why_unavailable
 from opennest.assets import kinds
@@ -52,6 +53,8 @@ from opennest.projects.manager import (
     Project,
     ProjectError,
     add_starter,
+    plays_in_panel,
+    source_fingerprint,
 )
 from opennest.security.sandbox import visible_files
 from opennest.ui import about_gary, brand, theme
@@ -78,6 +81,37 @@ HIDE_DETAILS = "Hide technical details"
 #: swaps to the code (and back), so every project type ends with both one click apart.
 SHOW_CODE = "Show the code that changed"
 SHOW_RESULT = "Show the result"
+#: After clicking a file while the game plays: back to the game, which kept running.
+SHOW_GAME = "Show the game"
+#: ...and while a website's page is showing: back to the page.
+SHOW_PAGE = "Show the page"
+
+#: Where a file list item keeps its mark: "new" or "changed" since the child's last message.
+MARK_ROLE = Qt.ItemDataRole.UserRole + 1
+MARK_WORDS = {"new": "\u25cf new", "changed": "\u25cf changed"}
+
+
+class MarkDelegate(QStyledItemDelegate):
+    """A file's name as usual, and -- when the last message changed it -- a small dot and
+    one word beside it in the palette's muted green (brand guide section 25: green is for
+    quiet technical state, never a large or bright block). Painted rather than put in the
+    item's text, so the name a child reads and clicks stays the file's own name."""
+
+    def paint(self, painter, option, index) -> None:
+        super().paint(painter, option, index)
+        mark = index.data(MARK_ROLE)
+        if mark not in MARK_WORDS:
+            return
+        painter.save()
+        font = painter.font()
+        font.setPointSizeF(max(font.pointSizeF() - 1.5, 8.0))
+        painter.setFont(font)
+        painter.setPen(QColor(theme.resolve_palette().ok))
+        area = QRect(option.rect)
+        area.setRight(area.right() - 6)
+        painter.drawText(area, int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter),
+                         MARK_WORDS[mark])
+        painter.restore()
 
 
 def _first_bytes(source: Path, count: int = 64) -> bytes:
@@ -200,6 +234,10 @@ class Workbench(QWidget):
         self._live_run = None
         #: That game's own window title, which it has no window to show.
         self._live_title = ""
+        #: What the child's last message changed, by project-relative path: the last
+        #: ``changed`` step for each file. Marked in the Project panel and used when a file
+        #: is clicked, until the next message or an Undo.
+        self._recent: dict[str, Step] = {}
         #: The project's code and pictures as they were when that game started, so a
         #: game left playing after a change is known to be the old version.
         self._live_files: tuple = ()
@@ -365,12 +403,18 @@ class Workbench(QWidget):
     def _files_panel(self) -> QFrame:
         """Files and Assets, as WORKORDER_01 section 14 and DESIGN_DOC.md both show them."""
         frame, layout = panel("Project")
+        self._marks = MarkDelegate(self)
         self._files = QListWidget()
+        self._files.setItemDelegate(self._marks)
+        # One click shows a file's code in Build / Preview -- the chat no longer carries it.
+        self._files.itemClicked.connect(self._open_file)
         self._files.itemActivated.connect(self._open_file)
         layout.addWidget(self._files, 2)
 
         layout.addWidget(section_label("Assets"))
         self._assets = QListWidget()
+        self._assets.setItemDelegate(self._marks)
+        self._assets.itemClicked.connect(self._describe_asset)
         self._assets.itemActivated.connect(self._describe_asset)
         layout.addWidget(self._assets, 1)
 
@@ -418,7 +462,9 @@ class Workbench(QWidget):
         self._game_title.setProperty("role", "mono")
         self._game_title.hide()
         layout.addWidget(self._game_title)
-        if self.project.profile.live_view:
+        # A Blank project can become a game (the owner-test pass), so it has the view too.
+        if self.project.profile.live_view or (self.project.profile.id == "blank"
+                                              and self.project.profile.can_run):
             self._game = GameView(self)
             self._game.hide()
             self._game.ended.connect(self._game_ended)
@@ -680,16 +726,30 @@ class Workbench(QWidget):
             # and comes out of the panel a child reads.
             if name == MANIFEST_NAME or name in added:
                 continue
-            self._files.addItem(QListWidgetItem(name))
+            item = QListWidgetItem(name)
+            self._mark(item, name)
+            self._files.addItem(item)
 
         self._assets.clear()
         for asset in imported:
             item = QListWidgetItem(asset.name)
             item.setData(Qt.ItemDataRole.UserRole, asset)
             item.setToolTip(asset.summary)
+            self._mark(item, asset.path, tooltip=asset.summary)
             self._assets.addItem(item)
 
         self._refresh_starter_offer()
+
+    def _mark(self, item: QListWidgetItem, path: str, *, tooltip: str = "") -> None:
+        """New or changed since the child's last message: said beside the file, quietly."""
+        step = self._recent.get(path)
+        if step is None:
+            return
+        mark = "new" if step.created else "changed"
+        item.setData(MARK_ROLE, mark)
+        said = f"{'New' if mark == 'new' else 'Changed'} in your last message"
+        item.setToolTip(f"{tooltip}\n{said}" if tooltip else said)
+        item.setData(Qt.ItemDataRole.AccessibleTextRole, f"{item.text()}, {mark}")
 
     def _refresh_starter_offer(self) -> None:
         """Show "nothing here yet" and the starter buttons, or neither.
@@ -700,8 +760,11 @@ class Workbench(QWidget):
         empty = not starters.has_own_files(self.project.directory / "src")
         offered = bool(self._starter_buttons) and empty
         if empty:
+            # No file names and no "starter" as a thing to understand: asking is enough,
+            # because the first request sets the starting files up (the owner-test pass).
             self._empty_note.setText(
-                "Nothing here yet.\nStart empty, or add a starter."
+                f"Nothing here yet.\nTell {ASSISTANT_NAME} what you want to make, and the "
+                f"starting files are set up first. Or add them now:"
                 if offered else
                 f"Nothing here yet.\nTell {ASSISTANT_NAME} what you want to make."
             )
@@ -716,11 +779,20 @@ class Workbench(QWidget):
         except ProjectError as exc:
             self._panel_text(str(exc))
             return
+        for name in written:
+            relative = f"src/{name}"
+            content = self._text_of(relative)
+            if content is not None:
+                self._recent[relative] = Step("changed", f"created {relative}", path=relative,
+                                              content=content, created=True)
         self.refresh_files()
         # The model is told what it now has, the same way it is told after any other
-        # change to the project. Gary knowing which foundation exists is the point of
-        # recording the starter at all.
-        self.controller.refresh_state()
+        # change to the project -- and that it changed outside a message, so a plan
+        # waiting for "next" is checked against it. Gary knowing which foundation exists
+        # is the point of recording the starter at all.
+        name = starters.get_starter(starter_id).name
+        self.controller.note_outside_change(
+            f"The {name} starter was added from the Project panel")
         # Open Nest, not Gary: copying shipped files in is the application acting, and
         # PHASE_10_HANDOFF section 1 keeps that split.
         self._say(SYSTEM_NAME, f"Added {len(written)} files to the project.")
@@ -847,12 +919,38 @@ class Workbench(QWidget):
         self.controller.build_style = self._style.currentData()
         self.controller.refresh_state()
 
-    def _open_file(self, item: QListWidgetItem) -> None:
-        path = self.project.directory / item.text()
+    def _text_of(self, relative: str) -> str | None:
         try:
-            self._panel_text(path.read_text(encoding="utf-8"))
+            return (self.project.directory / relative).read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
-            self._panel_text(f"{item.text()} is not a text file.")
+            return None
+
+    def _open_file(self, item: QListWidgetItem) -> None:
+        """A file's code in Build / Preview, with what the last message changed marked.
+
+        The code belongs here, not in the chat: Gary says what he did, and this is where
+        the child can see it. The marks are only the last message's -- and only while the
+        file still reads as it did then, so an edit since cannot put them on the wrong
+        lines. A game playing in the panel keeps playing; "Show the game" brings it back.
+        """
+        relative = item.text()
+        content = self._text_of(relative)
+        if content is None:
+            self._panel_text(f"{relative} is not a text file.")
+            return
+        recent = self._recent.get(relative)
+        current = recent is not None and recent.content == content
+        game_showing = self._game is not None and self._live_run is not None and \
+            not self._game.isHidden()
+        page_showing = self._web is not None and not self._web.isHidden()
+        if game_showing or page_showing:
+            self._run_view = (self._output.toPlainText(), "", "", False)
+        self._show_code(Step("file", "", path=relative, content=content,
+                             changed_lines=recent.changed_lines if current else (),
+                             created=bool(current and recent.created)))
+        if game_showing or page_showing:
+            self._code_button.setText(SHOW_GAME if game_showing else SHOW_PAGE)
+            self._code_button.show()
 
     def _say(self, who: str, text: str) -> None:
         self._transcript.appendPlainText(f"{who}: {text}\n")
@@ -901,6 +999,9 @@ class Workbench(QWidget):
         self._last_step = ""
         self._turn_code = self._run_view = None
         self._code_button.hide()
+        # The marks are "changed since your last message": this one starts afresh.
+        self._recent = {}
+        self.refresh_files()
         worker = AgentWorker(self.controller, text, attachments)
         worker.progress.connect(self._progress)
         worker.finished.connect(self._turn_finished)
@@ -1009,9 +1110,14 @@ class Workbench(QWidget):
             return
         # The game on screen may be the version that was just undone.
         self._retire_game_if_stale()
+        # The marks said what the last message changed; after an Undo that is not true.
+        self._recent = {}
         self.refresh_files()
         self._refresh_undo()
-        self.controller.refresh_state()
+        # Gary is told, and a plan waiting for "next" is checked against it: the owner's
+        # test found a plan carrying on as if nothing underneath it had moved.
+        self.controller.note_outside_change(
+            f"Undo went back to the version saved as \u201c{restored.label}\u201d")
         self._panel_text("")
         self._say(ASSISTANT_NAME, f"Went back to: {restored.label}")
 
@@ -1092,7 +1198,7 @@ class Workbench(QWidget):
         if self._game.stream is not stream:
             # Cleared first: attaching delivers the game's title straight away.
             self._live_title = ""
-            self._live_files = self._code_fingerprint()
+            self._live_files = source_fingerprint(self.project.directory)
             self._game.attach(stream)
         self._chart.hide()
         self._chart_caption.hide()
@@ -1101,21 +1207,6 @@ class Workbench(QWidget):
         self._game_title.show()
         self._output.setMaximumHeight(110)
         self._refresh_game_caption()
-
-    def _code_fingerprint(self) -> tuple:
-        """What the game is made of right now: every file under src/ and assets/."""
-        entries = []
-        for folder in ("src", "assets"):
-            root = self.project.directory / folder
-            if not root.is_dir():
-                continue
-            for path in sorted(root.rglob("*")):
-                with contextlib.suppress(OSError):
-                    if path.is_file():
-                        stat = path.stat()
-                        entries.append((str(path.relative_to(self.project.directory)),
-                                        stat.st_size, stat.st_mtime_ns))
-        return tuple(entries)
 
     def _refresh_game_caption(self) -> None:
         if self._game is None:
@@ -1191,7 +1282,7 @@ class Workbench(QWidget):
         """
         if self._game is None or self._game.stream is None:
             return
-        if self._code_fingerprint() == self._live_files:
+        if source_fingerprint(self.project.directory) == self._live_files:
             return
         run = self._live_run
         self._live_run = None
@@ -1239,6 +1330,17 @@ class Workbench(QWidget):
         if step.kind in ("changed", "undone") and step.content is not None:
             self._turn_code = step
             self._show_code(step)
+            # The file appears in the Project panel as it is made, marked new or changed;
+            # a recipe that puts one back leaves it unmarked, because nothing changed.
+            if step.kind == "changed":
+                earlier = self._recent.get(step.path)
+                if earlier is not None and earlier.created:
+                    step = Step("changed", step.text, path=step.path, content=step.content,
+                                changed_lines=(), created=True)
+                self._recent[step.path] = step
+            else:
+                self._recent.pop(step.path, None)
+            self.refresh_files()
         if step.kind == "changed":
             return
         if step.kind in ("thinking", "recipe", "tool", "testing"):
@@ -1265,11 +1367,17 @@ class Workbench(QWidget):
         if step.kind == "undone":
             what = "put back as it was"
         elif step.created:
-            what = "new file"
+            what = "new file" if step.kind != "file" else "new in your last message"
+        elif step.kind == "file" and not step.changed_lines:
+            what = ""
         else:
             count = len(step.changed_lines)
-            what = f"{count} line{'' if count == 1 else 's'} changed"
-        self._code_caption.setText(f"{step.path} \u2014 {what}")
+            # A change that only took lines out leaves no new line to mark.
+            what = (f"{count} line{'' if count == 1 else 's'} changed" if count
+                    else "lines taken out")
+            if step.kind == "file":
+                what += " in your last message"
+        self._code_caption.setText(f"{step.path} \u2014 {what}" if what else step.path)
         self._code_caption.show()
         colour = QColor(theme.resolve_palette().accent)
         colour.setAlpha(55)
@@ -1321,9 +1429,15 @@ class Workbench(QWidget):
             self._technical_detail, self._headline = detail, headline
             self._details_button.setVisible(has_details)
             self._code_button.setText(SHOW_CODE)
+            if self._turn_code is None:
+                # Back from a file the child clicked: there is no turn's code to offer.
+                self._code_button.hide()
             if self._live_run is not None and self._game is not None:
                 self._game.show()
                 self._game_title.show()
+                self._output.setMaximumHeight(110)
+            if self._web is not None and self._web.isHidden():
+                self._web.show()
                 self._output.setMaximumHeight(110)
 
     def _clear_code_marks(self) -> None:
@@ -1414,7 +1528,7 @@ class Workbench(QWidget):
             return
 
         self._note_images()
-        if profile.live_view and profile.can_run:
+        if profile.can_run and self._game is not None and plays_in_panel(self.project):
             self._start_game()
             return
         tool = "run_project" if profile.can_run else "compile_project"
@@ -1465,15 +1579,20 @@ class Workbench(QWidget):
         """
         if self.project.entrypoint_path.is_file():
             return True
+        # No file names: the owner-test pass found a child told about src/game.py and
+        # left to discover the starter button. Asking Gary is enough -- the first request
+        # sets the starting files up -- and the button is still there for a child who
+        # wants it now.
+        game = self.project.profile.playtest == "pygame"
+        first = "There's no game here yet." if game else "There's nothing to run yet."
         offer = (
-            f" Add a starter from the Project panel, or tell {ASSISTANT_NAME} what to make."
+            f" Tell {ASSISTANT_NAME} what you'd like to make and the starting "
+            f"{'game' if game else 'files'} will be set up first -- or add "
+            f"{'it' if game else 'them'} now from the Project panel."
             if self._starter_buttons
-            else f" Tell {ASSISTANT_NAME} what you want to make and it will be written."
+            else f" Tell {ASSISTANT_NAME} what you want to make."
         )
-        self._panel_text(
-            f"There is nothing to run yet -- this project has no "
-            f"src/{self.project.manifest.entrypoint}.{offer}"
-        )
+        self._panel_text(f"{first}{offer}")
         return False
 
     def _preview(self) -> None:
@@ -1494,6 +1613,9 @@ class Workbench(QWidget):
         self._panel_text(
             web_preview.remote_warning(web_preview.remote_references(self.project))
         )
+        # Code a file click put here gives the panel back to the page.
+        self._web.show()
+        self._output.setMaximumHeight(110)
         self._web.show_page(web_preview.entry_url(self.project))
 
     def _save_version(self) -> None:

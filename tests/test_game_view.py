@@ -297,11 +297,13 @@ def game_bench(qt_app, project, stops):
 
 
 def test_only_a_games_workbench_has_a_game_view(game_bench, qt_app, tmp_path) -> None:
+    """And Blank's, since the owner-test pass: a Blank project asked for a game is given
+    one, and Run plays it here rather than in a window of its own (``plays_in_panel``)."""
     from opennest.projects.manager import create_project
     from opennest.ui.workbench import Workbench
 
     assert game_bench._game is not None and game_bench._game.isHidden()
-    for profile in ("website", "research", "raspberry_pi", "arduino", "blank"):
+    for profile in ("website", "research", "raspberry_pi", "arduino"):
         project = create_project(profile, profile, root=tmp_path)
         provider = ScriptedProvider([Reply(text="ok")])
         other = Workbench(project, AgentController(project, provider, Toolbox(project)))

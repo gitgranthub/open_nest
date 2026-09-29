@@ -692,9 +692,20 @@ def test_pressing_run_on_an_empty_project_explains_itself(make_bench) -> None:
     bench._run()
     said = bench._output.toPlainText()
     assert "nothing to run yet" in said.lower()
-    assert "src/main.py" in said
-    # Never the interpreter's own message about a path the child did not choose.
+    assert "Tell Gary what you want to make" in said
+    # Never the interpreter's own message about a path the child did not choose -- and,
+    # since the owner-test pass, not the path either: a child should not need to know
+    # what src/main.py is to be told what to do.
     assert "No such file or directory" not in said
+    assert "src/" not in said
+
+
+def test_pressing_run_on_an_empty_game_points_at_gary_not_a_file(make_bench) -> None:
+    bench = make_bench("games", name="Empty Game", starter_id=None)
+    bench._run()
+    said = bench._output.toPlainText()
+    assert said.startswith("There's no game here yet.")
+    assert "Tell Gary" in said and "src/game.py" not in said
 
 
 def test_a_website_workbench_has_a_page_and_a_game_does_not(make_bench) -> None:

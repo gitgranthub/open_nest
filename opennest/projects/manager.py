@@ -15,6 +15,7 @@ Manifest writes are atomic: a crash mid-save must not leave a project unopenable
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import asdict, dataclass, field
@@ -234,6 +235,56 @@ def add_starter(project: Project, starter_id: str) -> tuple[str, ...]:
     project.manifest.starter_version = starter.version
     project.save()
     return written
+
+
+def source_fingerprint(directory: Path) -> tuple:
+    """What a project is made of right now: every file under src/ and assets/, by content.
+
+    Used to know whether the game on screen is the version the files hold (Phase 13),
+    whether a test result is still about the current code, and whether a plan's steps
+    were made against the project as it is now. By content rather than by modification
+    time, because an Undo writes the old bytes back as new files: measured by time, an
+    undone step would never look undone.
+    """
+    entries = []
+    for folder in ("src", "assets"):
+        root = Path(directory) / folder
+        if not root.is_dir():
+            continue
+        for path in sorted(root.rglob("*")):
+            if "__pycache__" in path.parts:
+                continue
+            try:
+                if path.is_file():
+                    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                    entries.append((str(path.relative_to(directory)), digest))
+            except OSError:
+                continue
+    return tuple(entries)
+
+
+_IMPORTS_PYGAME = re.compile(r"^\s*(?:import|from)\s+pygame\b", re.MULTILINE)
+
+
+def plays_in_panel(project: Project) -> bool:
+    """Whether Run plays this project as a game inside the Workbench (Phase 13).
+
+    A Game project always does (``live_view``). A Blank project does once its entry file
+    is a pygame game -- which, since the owner-test pass, Open Nest itself sets up when
+    the child asks a Blank project for a game. Before this, Blank ran it as a one-off
+    script: a window of its own on the child's screen, and "still running after 120
+    seconds, so it was stopped". Only how it is shown changes -- the sandbox, and Blank's
+    lack of a headless test, are exactly as they were.
+    """
+    profile = project.profile
+    if profile.live_view == "pygame":
+        return True
+    if profile.id != "blank" or not profile.can_run:
+        return False
+    try:
+        return bool(_IMPORTS_PYGAME.search(project.entrypoint_path.read_text(encoding="utf-8")))
+    except (OSError, UnicodeDecodeError):
+        return False
 
 
 def open_project(directory: Path) -> Project:

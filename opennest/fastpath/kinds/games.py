@@ -1535,3 +1535,110 @@ def brief(facts: Facts) -> str:
     if facts.has("score"):
         parts.append("It has a score.")
     return " ".join(parts)
+
+
+# ------------------------------------------------------------------ how it is played
+
+#: Key names as a child reads them on the keyboard.
+_KEY_WORDS = {
+    "K_LEFT": "Left arrow", "K_RIGHT": "Right arrow", "K_UP": "Up arrow",
+    "K_DOWN": "Down arrow", "K_SPACE": "Space", "K_RETURN": "Enter",
+    "K_KP_ENTER": "Enter", "K_ESCAPE": "Escape", "K_TAB": "Tab",
+    "K_LSHIFT": "Shift", "K_RSHIFT": "Shift", "K_LCTRL": "Control", "K_RCTRL": "Control",
+    "K_BACKSPACE": "Backspace",
+}
+_ARROWS = ("Left arrow", "Right arrow", "Up arrow", "Down arrow")
+_MOUSE = {"MOUSEBUTTONDOWN": "clicking", "MOUSEBUTTONUP": "clicking",
+          "MOUSEMOTION": "moving the mouse", "get_pressed": "clicking",
+          "get_pos": "where the mouse is"}
+
+
+def _key_word(name: str) -> str:
+    if name in _KEY_WORDS:
+        return _KEY_WORDS[name]
+    rest = name[2:]
+    return rest.upper() if len(rest) == 1 else rest.replace("_", " ").title()
+
+
+def _key_of(node: ast.AST) -> str | None:
+    """``pygame.K_LEFT`` or ``K_LEFT`` (after ``from pygame.locals import *``)."""
+    name = _dotted(node)
+    last = name.split(".")[-1]
+    return last if last.startswith("K_") and name in (last, f"pygame.{last}") else None
+
+
+def _what_it_does(body: list[ast.stmt]) -> str:
+    """What an ``if <key>:`` block visibly does, from what it assigns. Plain, or ""."""
+    moved, other = [], []
+    for stmt in body:
+        for node in ast.walk(stmt):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target] \
+                if isinstance(node, ast.AugAssign) else []
+            for target in targets:
+                if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) \
+                        and target.attr in ("x", "y", "left", "right", "top", "bottom",
+                                            "centerx", "centery", "center", "topleft"):
+                    moved.append(target.value.id)
+                elif isinstance(target, ast.Name):
+                    if target.id == "running" and isinstance(node, ast.Assign) and \
+                            isinstance(node.value, ast.Constant) and node.value.value is False:
+                        return "quits the game"
+                    other.append(target.id)
+    if moved:
+        return f"moves {moved[0]}"
+    return f"changes {', '.join(dict.fromkeys(other))}" if other else ""
+
+
+def controls_read(source: str) -> list[str] | None:
+    """The keys and mouse the game's code actually reads, in a child's words.
+
+    For "how do I play this?" -- answered from the file, never from what games usually
+    do: the Basic Game uses the arrow keys, and a game Gary rewrote may not. Each line is
+    one control and, where the code makes it plain, what it does ("moves player",
+    "quits the game"). ``None`` when the file does not parse, so nothing can be said;
+    an empty list when it parses and reads no keys and no mouse at all.
+    """
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return None
+    held: dict[str, str] = {}       # key word -> what it does, while held down
+    pressed: dict[str, str] = {}    # ... when pressed once (a KEYDOWN event)
+    mouse: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.If):
+            test = node.test
+            keys = []
+            for sub in ast.walk(test):
+                key = _key_of(sub)
+                if key:
+                    keys.append(key)
+            is_press = any(_dotted(sub).endswith("KEYDOWN") for sub in ast.walk(test))
+            held_test = any(isinstance(sub, ast.Subscript) for sub in ast.walk(test))
+            for key in keys:
+                word = _key_word(key)
+                table = held if held_test and not is_press else pressed
+                table.setdefault(word, _what_it_does(node.body))
+        name = _dotted(node) if isinstance(node, (ast.Attribute, ast.Name)) else ""
+        for marker, words in _MOUSE.items():
+            if name.endswith(marker) and (marker.isupper() or "mouse" in name) \
+                    and words not in mouse:
+                mouse.append(words)
+    for node in ast.walk(tree):
+        # A key named anywhere else (a dict of controls, a comparison outside an if).
+        key = _key_of(node) if isinstance(node, (ast.Attribute, ast.Name)) else None
+        if key and _key_word(key) not in held and _key_word(key) not in pressed:
+            pressed[_key_word(key)] = ""
+    lines = []
+    for table, how in ((held, "hold down"), (pressed, "press")):
+        words = list(table)
+        if all(arrow in table for arrow in _ARROWS) and \
+                len({table[arrow] for arrow in _ARROWS}) == 1:
+            action = table[_ARROWS[0]]
+            lines.append(f"the arrow keys ({how}){': ' + action if action else ''}")
+            words = [w for w in words if w not in _ARROWS]
+        for word in words:
+            action = table[word]
+            lines.append(f"{word} ({how}){': ' + action if action else ''}")
+    lines += [f"the mouse: {words}" for words in mouse]
+    return lines

@@ -11,6 +11,7 @@ So this provider resolves the pinned snapshot to a directory on disk first and h
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import json
 import os
@@ -44,6 +45,22 @@ _THINK_BLOCK = re.compile(r"<think>.*?(?:</think>|$)", re.DOTALL)
 #: model looped inside an ``edit_file`` argument until the cap, and the whole raw block
 #: was shown to the child as Gary's reply.
 _UNCLOSED_TOOL_CALL = re.compile(r"<tool_call>.*\Z", re.DOTALL)
+#: A tool call written as a line of Python in the reply's prose -- ``edit_file(path=...,
+#: old_text=..., new_text=...)``, bare or in a code fence -- instead of a ``<tool_call>``
+#: block. Measured in the owner's first Phase 13 test (SPIKES.md section 27A): after "Call
+#: edit_file now", the 4B model wrote the call out as text on four turns running. None
+#: was run, and all of it -- escaped newlines and all -- was Gary's reply in the chat.
+#: The parameter names are each tool's own, in the order its schema lists them.
+_TEXT_CALL_TOOLS = {
+    "read_file": ("path",),
+    "edit_file": ("path", "old_text", "new_text"),
+    "write_file": ("path", "content"),
+    "run_project": (),
+    "compile_project": (),
+}
+_TEXT_CALL_START = re.compile(r"\b(" + "|".join(_TEXT_CALL_TOOLS) + r")\s*\(")
+#: A fence left empty once the call inside it has gone.
+_EMPTY_FENCE = re.compile(r"```[a-zA-Z]*\s*```")
 
 #: How many scoring prefixes stay prefilled. One Fast Path decision asks the intent
 #: question in three orderings and the "one change?" question in two, so five prefixes
@@ -337,12 +354,16 @@ def reply_from_completion(raw: str, *, prompt_tokens: int = 0,
                           generated_tokens: int = 0) -> Reply:
     """A finished completion as a :class:`Reply`: the calls, and only the prose."""
     calls = parse_tool_calls(raw)
+    begun = raw.count("<tool_call>")
+    if not begun and not _FENCED_JSON.search(raw):
+        read, unreadable = _text_call_spans(raw)
+        begun = len(read) + len(unreadable)
     return Reply(
         text=strip_tool_calls(raw).strip(),
         tool_calls=calls,
         # More calls begun than could be read: cut off, or not JSON. Tool protocol is
         # never prose, so the text above has already lost it either way.
-        dropped_tool_call=raw.count("<tool_call>") > len(calls),
+        dropped_tool_call=begun > len(calls),
         prompt_tokens=prompt_tokens,
         generated_tokens=generated_tokens,
     )
@@ -356,6 +377,10 @@ def parse_tool_calls(text: str) -> tuple[ToolCall, ...]:
     said, and dispatch decides what it meant.
     """
     blobs = _TOOL_CALL_BLOCK.findall(text) or _FENCED_JSON.findall(text)
+    if not blobs:
+        # Only when the model wrote no call the ordinary way: a line of Python naming a
+        # tool is then the call it meant, and dispatch checks it like any other.
+        return tuple(call for _start, _end, call in _text_call_spans(text)[0])
     calls: list[ToolCall] = []
     for index, blob in enumerate(blobs):
         try:
@@ -390,4 +415,72 @@ def strip_tool_calls(text: str) -> str:
     """
     text = _TOOL_CALL_BLOCK.sub("", _THINK_BLOCK.sub("", text))
     text = _UNCLOSED_TOOL_CALL.sub("", text).replace("</tool_call>", "")
-    return _FENCED_JSON.sub("", text)
+    text = _FENCED_JSON.sub("", text)
+    # A call written as Python is protocol too, run or not; one that never closes goes
+    # from where it starts, the same as an unclosed block.
+    spans, begun = _text_call_spans(text)
+    cut = min(begun) if begun else len(text)
+    kept, position = [], 0
+    for start, end, _call in spans:
+        if start >= cut:
+            break
+        kept.append(text[position:start])
+        position = end
+    kept.append(text[position:cut])
+    stripped = "".join(kept)
+    return _EMPTY_FENCE.sub("", stripped) if spans or begun else stripped
+
+
+def _text_call_spans(text: str) -> tuple[list[tuple[int, int, ToolCall]], list[int]]:
+    """Tool calls written as Python in ``text``: ``(start, end, call)`` for each one that
+    reads as a call, and the starts of any that do not (cut off, or not plain values).
+
+    Python's own parser decides, never a pattern: the call must parse as exactly one call
+    of that tool with literal arguments -- ``old_text="    x = 1\\n"`` is a string with
+    a real newline in it, the way the model meant it. Anything else is not run.
+    """
+    found: list[tuple[int, int, ToolCall]] = []
+    begun: list[int] = []
+    position = 0
+    while True:
+        match = _TEXT_CALL_START.search(text, position)
+        if match is None:
+            return found, begun
+        name, start = match.group(1), match.start(1)
+        call, end = None, -1
+        close = text.find(")", match.end() - 1)
+        while close != -1:
+            try:
+                tree = ast.parse(text[start:close + 1], mode="eval")
+            except SyntaxError:
+                close = text.find(")", close + 1)
+                continue
+            call, end = _as_tool_call(tree.body, name, len(found)), close + 1
+            break
+        if call is None:
+            begun.append(start)
+            position = end if end != -1 else len(text)
+            if end == -1:
+                return found, begun
+            continue
+        found.append((start, end, call))
+        position = end
+
+
+def _as_tool_call(node: ast.expr, name: str, index: int) -> ToolCall | None:
+    """``node`` as a call of tool ``name`` with plain values, or None."""
+    if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id == name):
+        return None
+    params = _TEXT_CALL_TOOLS[name]
+    if len(node.args) > len(params):
+        return None
+    try:
+        arguments = {params[i]: ast.literal_eval(arg) for i, arg in enumerate(node.args)}
+        for keyword in node.keywords:
+            if keyword.arg is None:
+                return None
+            arguments[keyword.arg] = ast.literal_eval(keyword.value)
+    except (ValueError, SyntaxError, TypeError):
+        return None
+    return ToolCall(name=name, arguments=arguments, id=f"call_{index}")

@@ -132,9 +132,12 @@ class NewProjectDialog(QDialog):
             for starter in offered:
                 self._add_starter_card(layout, starter.id, starter.name,
                                        starter.description)
+            # Empty is always offered, and it is not a trap: the first thing asked for
+            # sets the starting files up (the owner-test pass), so a child who picks it
+            # is never left with "nothing to run" and a button to discover.
             self._add_starter_card(
                 layout, START_EMPTY, "Start Empty",
-                "No files. Say what you want and it gets written from nothing.",
+                "No files yet. Ask for something and the starting files are set up then.",
             )
             self._show_choice()
         else:

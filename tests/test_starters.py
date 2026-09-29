@@ -206,6 +206,15 @@ def test_gary_is_told_nothing_about_a_starter_when_there_was_none(tmp_path: Path
     )
     reopened = open_project(old.directory)
     assert reopened.manifest.starter_id is None
+    # Nothing *recorded* is claimed. What is said instead is measured: the owner-test pass
+    # compares the file with the shipped kit byte for byte, and says so only when it is
+    # identical -- and once the child has changed a line, not at all.
+    state = project_state(reopened).lower()
+    assert "started from" not in state
+    assert "is exactly the basic game starter, unchanged" in state
+    game = reopened.entrypoint_path
+    game.write_text(game.read_text(encoding="utf-8").replace("PLAYER_SPEED = 5",
+                                                              "PLAYER_SPEED = 9"))
     assert "starter" not in project_state(reopened).lower()
 
 

@@ -443,9 +443,15 @@ def _last_instruction(provider, call: int) -> str:
 
 
 def test_a_frozen_game_is_sent_back_and_the_fix_is_accepted(project) -> None:
+    def asteroids(n: int) -> Reply:
+        # Code that has the asteroids it is described as having: since the owner-test
+        # pass, a reply naming a thing the code has not got is pulled up.
+        return Reply(tool_calls=(ToolCall("write_file", {
+            "path": f"src/asteroids_{n}.py", "content": f"ASTEROIDS = {n}\n"}),))
+
     controller, provider = make(project, [
-        _write(1), Reply(text="The asteroids fall now."),
-        _write(2), Reply(text="Fixed it -- they really fall now."),
+        asteroids(1), Reply(text="The asteroids fall now."),
+        asteroids(2), Reply(text="Fixed it -- they really fall now."),
     ])
     calls = _verdicts(controller, playtest.FROZEN, playtest.PASSED)
 
@@ -725,15 +731,20 @@ def test_a_too_big_request_is_split_and_gary_starts_on_the_first_step(project) -
 
     assert turn.fastpath["plan"][0] == "Add cars that drive along the bottom"
     assert turn.text.startswith("That was a lot to build in one go")
+    assert "Step 1 of 3: Add cars that drive along the bottom." in turn.text
     assert "I added a part." in turn.text
-    assert "Still to do:" in turn.text and "\u201cnext\u201d" in turn.text
+    # Offered in plain words -- no magic phrase for the child to learn.
+    assert turn.text.endswith("Next is step 2 of 3: \u201cMake the player look like an "
+                              "eagle\u201d. Want me to keep going?")
     assert "Now do only this step: \u201cAdd cars that drive along the bottom\u201d" in \
         provider.calls[2][-1].content
     assert provider.calls[1][0].role == "system"      # the plan call had no tools...
     assert len(provider.calls) == 4                   # ...and nothing looped
+    assert [step.status for step in controller._plan.steps] == ["done", "todo", "todo"]
 
-    turn = controller.send("next")
-    assert turn.text == "Done the next one."
+    turn = controller.send("yes")                      # straight after the offer
+    assert turn.text.startswith("Step 2 of 3: Make the player look like an eagle.")
+    assert "Done the next one." in turn.text
     assert controller.history[len(controller.history) - 4].content == \
         "Make the player look like an eagle"
 
@@ -747,7 +758,9 @@ def test_when_even_the_steps_come_to_nothing_the_plan_is_offered(project) -> Non
     turn = controller.send("make an eagle game where the eagle poops on cars")
     assert turn.text.startswith("I haven't changed anything yet")
     assert "1. Add cars that drive along the bottom" in turn.text
-    assert controller._pending[0] == "Add cars that drive along the bottom"
+    assert turn.text.endswith("Want me to start with the first one?")
+    assert controller._plan.steps[0].text == "Add cars that drive along the bottom"
+    assert all(step.status == "todo" for step in controller._plan.steps)
 
 
 def test_a_claim_in_the_step_is_still_caught(project) -> None:
@@ -761,11 +774,32 @@ def test_a_claim_in_the_step_is_still_caught(project) -> None:
     assert turn.text.startswith("I haven't changed anything yet")
 
 
-def test_anything_but_next_sets_the_offered_steps_aside(project) -> None:
-    controller, _ = make(project, [Reply(text="Hi.")])
-    controller._pending = ["Add cars that drive along the bottom"]
+def _waiting_plan(controller, *steps: str):
+    from opennest.agent.controller import Plan, PlannedStep
+    from opennest.projects.manager import source_fingerprint
+
+    controller._plan = Plan(request="an eagle game", steps=[PlannedStep(s) for s in steps],
+                            files=source_fingerprint(controller.project.directory),
+                            offered=True)
+    return controller._plan
+
+
+def test_a_question_in_between_keeps_the_plan_but_a_yes_no_longer_means_it(project) -> None:
+    controller, provider = make(project, [Reply(text="It's how fast you move."),
+                                          Reply(text="Yes, it is.")])
+    _waiting_plan(controller, "Add cars that drive along the bottom")
     controller.send("what does PLAYER_SPEED do")
-    assert controller._pending == []
+    assert controller._plan is not None and not controller._plan.offered
+    turn = controller.send("yes")                     # answering something else now
+    assert "Step 1" not in turn.text and len(provider.calls) == 2
+
+
+def test_a_change_for_something_else_sets_the_plan_aside(project) -> None:
+    controller, _ = make(project, [_write(1), Reply(text="Done.")])
+    _verdicts(controller, playtest.PASSED)
+    _waiting_plan(controller, "Add cars that drive along the bottom")
+    controller.send("add a red ball")
+    assert controller._plan is None
 
 
 def test_a_bare_next_with_nothing_offered_is_answered_without_the_model(project) -> None:
@@ -804,7 +838,8 @@ def test_saying_it_ran_is_fine_when_it_did_run(project) -> None:
     controller, _ = make(project, [
         Reply(tool_calls=(ToolCall("run_project", {}),)), Reply(text="I ran it: it opens.")])
     controller.toolbox.dispatch = _fake_run(controller.toolbox.dispatch)
-    turn = controller.send("what does my game do?")
+    # A request: since the owner-test pass a question is answered without tools at all.
+    turn = controller.send("run it and tell me what it does")
     assert turn.text == "I ran it: it opens."
 
 

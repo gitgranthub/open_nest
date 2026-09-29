@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 
 from opennest.execution import arduino, playtest
 from opennest.execution.python_runner import RunResult, run_project, stop_project
-from opennest.projects.manager import Project
+from opennest.projects.manager import Project, plays_in_panel, source_fingerprint
 from opennest.security.sandbox import PathNotAllowed, resolve_in_project
 
 #: Refuse to hand the model a file so large it destroys the context window.
@@ -54,7 +54,7 @@ class ToolResult:
     run: RunResult | None = None
     #: Why a tool refused, in one word: ``not_found``, ``ambiguous``, ``missing_file``,
     #: ``syntax_error``, ``exists``, ``not_text``, ``too_long``, ``missing_argument``,
-    #: ``outside_project``, ``unavailable``. Empty on success.
+    #: ``outside_project``, ``unavailable``, ``no_change``. Empty on success.
     reason: str = ""
     #: Which bounded repair made an edit land, empty when the text matched exactly.
     #: Phase 12.2 measures the recovery path's usage through this.
@@ -198,6 +198,13 @@ class Toolbox:
         #: None means no -- the same fail-closed default the sandbox has always had.
         self.network_policy = network_policy
         self.last_run: RunResult | None = None
+        #: What the project was made of when ``last_run`` started, so "is the game on
+        #: screen the version the files hold?" is a checked fact rather than a hope.
+        self.last_run_files: tuple = ()
+        #: The last headless test, and what the project was made of when it ran. Gary is
+        #: told the result only while it is still about the current code.
+        self.last_playtest: playtest.Playtest | None = None
+        self.last_playtest_files: tuple = ()
         #: Told each :class:`Step` as it happens, or None. Set for one turn by
         #: ``AgentController.send(on_progress=...)``; the Workbench shows the steps.
         self.observer: Callable[[Step], None] | None = None
@@ -416,6 +423,15 @@ class Toolbox:
                 )
             updated, recovered = repair
 
+        if updated == text:
+            # Measured on the owner-test walk: an edit whose new text was its old text
+            # "succeeded", the file was reported changed with 0 lines different, and a
+            # plan step was counted done for it. Nothing changed, so nothing is said to.
+            raise ToolError(
+                f"That would leave {relative!r} exactly as it is -- new_text is the same as "
+                f"the text it replaces. Nothing was changed.",
+                reason="no_change",
+            )
         _reject_broken_python(relative, updated)
         path.write_text(updated, encoding="utf-8")
         rel = str(path.relative_to(self.project.directory.resolve()))
@@ -442,18 +458,21 @@ class Toolbox:
         if not command:
             raise ToolError("This kind of project cannot be run.", reason="unavailable")
         self.stop_running()
+        files = source_fingerprint(self.project.directory)
+        # Drawn inside the Workbench rather than in a window of its own -- whoever started
+        # it, the child's Run Game or Gary. Phase 13; and a Blank project's game too.
+        live = plays_in_panel(self.project)
         result = run_project(
             self.project.directory,
             command,
             python_executable=self.python_executable,
-            interactive=self.project.profile.is_interactive,
+            interactive=self.project.profile.is_interactive or live,
             allow_network=self._network_allowed(),
-            # Drawn inside the Workbench rather than in a window of its own -- whoever
-            # started it, the child's Run Game or Gary. Phase 13.
-            live=self.project.profile.live_view == "pygame",
+            live=live,
             on_live=self._playing,
         )
         self.last_run = result
+        self.last_run_files = files
         if result.ok:
             self._record_success()
         if result.still_running:
@@ -485,11 +504,14 @@ class Toolbox:
         if not self.project.entrypoint_path.is_file():
             return None
         self.report(Step("testing", "testing the game without a window"))
-        return playtest.run(
+        files = source_fingerprint(self.project.directory)
+        result = playtest.run(
             self.project.directory,
             profile.run_command,
             python_executable=self.python_executable,
         )
+        self.last_playtest, self.last_playtest_files = result, files
+        return result
 
     def _record_success(self) -> None:
         """Remember that the project worked, so memory can say so after a restart.
@@ -533,11 +555,12 @@ class Toolbox:
                 "board they have and tell them to choose it next to the Compile button.",
             )
 
+        files = source_fingerprint(self.project.directory)
         try:
             result = arduino.compile_sketch(self.project, board)
         except arduino.ArduinoUnavailable as exc:
             return ToolResult(False, str(exc))
-        self.last_run = result
+        self.last_run, self.last_run_files = result, files
         if result.ok:
             self._record_success()
             body = result.stdout.strip()

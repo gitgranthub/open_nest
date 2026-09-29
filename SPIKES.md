@@ -3692,3 +3692,173 @@ intact. Like any turn's closing line, "I stopped there..." is not added to the h
 Still not covered here: quitting during the first model load. `MainWindow.closeEvent`
 gives the loader five seconds and parks it (Phase 12, SPIKES 20C); a load slower than
 that -- a larger model on a slow Mac -- could still be parked at exit. Not measured.
+
+---
+
+## 27. The Phase 13 owner test -- traced, reproduced, and corrected before 13B
+
+The owner's first real test of 13A: a Game project, "build a game that s an eagle flying
+over cars parked in a dealership", and the Build / Preview panel saying there was no
+`src/game.py`; the Basic Game found by hand in the Project panel; `edit_file(path=...,
+old_text=..., new_text=...)` and escaped source filling Gary's chat; the game on screen
+an orange square on black while Gary said "The eagle is now flying back and forth across
+the screen", "Look for a white circle moving...", and -- told there was no eagle -- "I see
+the eagle is missing". The owner's direction: fix first-run scaffolding, the tool leakage,
+the truthfulness of edits / plans / files / preview, file-to-code visibility, Gary as the
+Open Nest guide, real controls, and "next" revalidation; no classifier tuning, no recipe
+growth, no Publish, no 13B.
+
+### 27A. What actually happened, from the project's own archive
+
+`test02` in `.opennest-sandbox/projects/` kept everything: `thread_v01.jsonl`, the git
+history, the manifest.
+
+| the owner's question | what the files show |
+|---|---|
+| Was the project empty? | **Yes.** It was created with **Start Empty**: the "Project created" commit holds `project.json` and `.gitignore` only, `starter_id: null`. Every Games recipe needs a loop, a fill, a flip and a player, so all of them stepped aside; the first turn ran against no file at all. |
+| Did the original edit fail or refuse? | **No edit ever ran.** In all four Gary turns the 4B model wrote the call out as Python text -- `edit_file(\n  path="src/game.py",\n  old_text="    # Game loop\n...` -- twice inside a ```` ```python ```` fence. The parser read only `<tool_call>` blocks and fenced JSON, so nothing was dispatched and the text itself was the reply. (Had it run, it would have been refused: `# Game loop` and `screen.fill("black")` are code the model imagined; the starter has `screen.fill(BACKGROUND)`.) |
+| Did the plan continue as if a failed step succeeded? | **Yes.** "next" popped step 1 off `_pending` before anything was attempted, whatever then happened. |
+| Did adding the starter reset state under the plan? | The starter was added between turns (`starter_id` set; a run at 09:27:50); the plan, made against an empty project, carried on with no check of any kind. |
+| Did the honesty guard treat source text as proof? | No -- it saw no change and caught the first-person claims ("I added the eagle"). It missed the third-person ones ("The eagle is now flying"), and a reply opening "I haven't changed any file yet" exempted everything after it. |
+| Was the running game stale? | **No.** The panel showed exactly the files: the Basic Game starter, unchanged. The orange square was the truth. |
+| Did the edit land elsewhere? | Nothing landed anywhere. |
+| And the part nobody asked | **The caught claims stayed in the history.** The guard replaced the reply on screen and kept the claim as the model's own message, so the next turn read "I added the eagle (a white circle)... Now the eagle flies back and forth" as its last word and repeated it. Closing the project summarised it into memory: the bible's Decisions now read "The eagle is a white circle drawn at (eagle_x, 50)... Do not change the eagle's position or drawing logic." |
+
+### 27B. Reproduced on the unchanged code
+
+`benchmarks/owner_pass/owner_walk.py` replays the owner's sequence through the real
+Workbench, VersionHistory, memory, the Fast Path and the real Qwen3 4B, off the GUI
+thread, and records the chat, the files and what the game file contains. Run against an
+export of `c0a59c1` (`results/baseline.json`), the empty Game project gave: no file ever
+created; "I haven't changed any file yet. ... I'm adding the eagle and cars to the game.
+The eagle is now flying from left to right" (relayed -- the denial exempted it); "how do I
+play this?" answered "The eagle automatically flies... No input needed" about a project
+with no game in it; Run Game: "There is nothing to run yet -- this project has no
+src/game.py".
+
+### 27C. What changed
+
+- **An empty project is set up when the child asks for something** (`AgentController.
+  _set_up_if_empty`). A typed project gets its profile's default kit -- the one the New
+  Project dialog offers first, and the one every recipe is measured against; Blank only
+  when the child says "game" (the rule the whole-game recipes already keep), as the
+  Basic Game in `src/main.py`. A question ("what do I do now?") is answered, not built
+  for. It is reported as it happens (the file appears new in Build / Preview and the
+  Project panel), said first in the reply, and kept out of the tool results Gary is
+  judged by. "Start Empty" stays, reworded; the Run and empty-panel messages no longer
+  name `src/game.py`.
+- **A tool call written as Python is a tool call** (`mlx_provider._text_call_spans`):
+  parsed with Python's own parser, only for a tool's own name, only with literal
+  arguments, only when no call came the ordinary way -- and stripped from the prose
+  either way. One cut off mid-way is dropped and reported like an unclosed
+  `<tool_call>`. Then the presentation boundary for every model (`replies.presentable`):
+  no long code block, no unfenced run of code lines, no call arguments, no paragraph said
+  twice.
+- **A question is answered, not built** (`build_answer_prompt`, `ANSWER_RULES`): one turn
+  with no tools and no recipe, the voice, the project type's first lines (not its
+  building instructions, which a 4B model recites), the screen and the checked facts. In
+  both labelled Fast Path sets every question-shaped message is gold "other", so no recipe
+  route is lost -- and "what are the controls?" no longer *changes the controls*
+  (measured: it went to `change_controls` and added WASD). A call written into an answer
+  is not run; a promise in one ("I'll add it now") is made an offer; if the answer comes
+  to nothing, Open Nest says what the project has.
+- **Gary reads what happened, not what he said** (`_settle_history`): at the end of every
+  turn its history is the child's message, the calls and their results, and the reply the
+  child actually read. Rollover moved after it, so a handover summarises that.
+- **What Open Nest has checked, every turn** (`agent/evidence.py`): whether the entry file
+  exists; whether it is still byte-for-byte a starter ("nothing anyone has described since
+  is in it"); what is in the game and which keys and mouse it reads, from the parser
+  (`games.controls_read`); a thing the child named that the code has but never draws;
+  what the last message really changed; an Undo or a starter added outside a message;
+  whether the game on screen is the version the files hold (the Toolbox now fingerprints
+  every run and test, by content); and the last test's result only while it is about this
+  code. The guide to the screen (`evidence.guide`) is the Workbench as it is, per project
+  type.
+- **Claims with no evidence** (`replies`): "is now", "Creating src/main.py", "it's there
+  now" when nothing changed this turn or the last; "I see" / "I can see" (nothing shows
+  Gary anything); a sentence saying the game has a thing the child named ("the eagle",
+  "the cars") that appears in none of its code -- comments excluded; "I'm adding" after a
+  denial; a reply that loops; "I'll do that now" ending a request that changed nothing.
+  Each gets one correction or goes to the step planner; none is relayed. An edit whose new
+  text equals its old text is refused instead of being reported as a change.
+- **Plans** (`Plan`, `PlannedStep`): a step is done only when a file changed for it and a
+  thing it names is drawn; one that did not land is offered again, never skipped ("That
+  step didn't get made, so I haven't moved on to step 2"); before any step the project is
+  compared with how the last turn left it -- an Undo back to before a step reopens it, any
+  other change is said and the step is worked out from the files as they are; a question
+  in between keeps the plan and does not absorb a change; a bare "yes" means the plan
+  only straight after it was offered; a plan's step is never planned again; no "say next".
+- **The Project panel says what changed** (`MarkDelegate`): "● new" / "● changed" in the
+  palette's muted green beside each file the last message touched, until the next message
+  or an Undo; one click shows its code in Build / Preview with those lines marked, and
+  "Show the game" / "Show the page" goes back.
+- **A Blank project's game plays in the panel** (`plays_in_panel`): before, Run gave it a
+  window of its own and "still running after 120 seconds, so it was stopped". The
+  playtest and the Fast Path's Blank rule are unchanged.
+
+### 27D. The walks, and what each one found
+
+Every change above was driven by a real-model walk, not by reasoning about the 4B model;
+five runs, each on the previous run's fixes (`results/walk2..5.json`, then `final.json`):
+
+| run | what it found (then fixed) |
+|---|---|
+| baseline | 27B: nothing ever created, three false claims relayed, invented controls |
+| walk 1-2 | the starting game set up and Run playing it; then the 4B **looping** the same paragraphs to its output cap, with unfenced code; a question ("everything ok? what do i do now") drawing edits and then being **planned into steps**; **"what are the controls?" routed to a recipe that changed the controls**; a Blank "what do I do now?" writing a file |
+| walk 3 | the answer turn truthful ("The game still has only the orange square") but not answering; a **line-by-line loop** the paragraph check missed; a step "done" whose eagle was created and never drawn; "Look for the eagle moving" straight after the starter was set up (the named-thing check skipped scaffolded turns) |
+| walk 4 | **"next" re-planned step 1 into three new steps**, dropping the plan's other two; an edit whose new text equalled its old text reported as a change of 0 lines and a step counted done; "The cars are parked below" read against comments |
+| walk 5 | Website, Research and Pi added: Preview placed "in the middle panel", "where did my chart go?" answered before anything had run; the loop fix working; a Blank game **running in a window of its own for 120 s** |
+| final | below |
+
+**Final, on the finished code** (`final.json`, then `final_blank_web.json` and
+`final_blank.json` re-running the two projects touched after it): six projects -- a Game
+begun empty (the owner's own first message and follow-ups), a Game with its starter, a
+Blank one, a Website begun empty, Research and a Raspberry Pi project.
+
+- **32 turns, 0 with tool syntax or code in the chat. 19 questions, 0 changed a file.**
+  All 6 runs showed the game or the page in Build / Preview (the baseline's 2 showed
+  "nothing to run").
+- **Every empty project was set up on its first request** -- Game, Website, and Blank once
+  it was asked for a game -- and not for "what do I do now?".
+- **How to play, from the code**: "The orange square is the player. Use arrow keys to move
+  it. Press Escape to quit... Click ▶ Run Game to start"; "Arrow keys: move the player.
+  Escape: quit the game." (Game); "Press Run. Click inside the game window... Use the left
+  and right arrow keys to move the orange square. The cars appear at the bottom" (Blank,
+  whose code draws five cars).
+- **What to do now, from the state**: "Click ▶ Run Game to start. The eagle and cars
+  aren't in the game yet."; "No chart was generated. Run Analysis to create one."
+  (Research, nothing run yet); "Press the "Preview Website" button at the bottom."
+- **Plans**: every step's status matched the files. A failed step: "Step 1 of 3: Fly the
+  eagle across the screen. I haven't changed that yet. That step didn't get made, so I
+  haven't moved on to step 2. Want me to try it again...?"; "next" after it: "Step 1 of 3
+  didn't get made last time, so I'm trying it again"; "next" after a file changed by hand:
+  "Your project changed since the last step, so I looked at it again and I'm working from
+  what's there now."; a Website step a recipe made counted done, the next one Gary did not
+  make counted not done.
+- **A false description replaced**: the Blank game's "Eagle is now flying", about code
+  with no eagle, corrected once and repeated, became "I changed src/main.py. Right now:
+  The player is the orange square, moved with the arrow keys. It draws other things too".
+- **The Phase 12 app walk: 41/41, with the same four recipe routes and results** as the
+  pre-13 run (`results/app_walk_owner_pass.txt`; offscreen this time, cocoa before).
+- The suite: **1398 passed** (1318 before), ruff clean.
+
+### 27E. What this does not establish
+
+- **The 4B model still mostly cannot build the eagle game.** In the final walk the
+  eagle steps' edits were refused (new code that does not parse, or old text that is not
+  there) and, where one landed, it was often the 12.3 shape. This pass makes that
+  truthful and visible; it does not make it succeed.
+- **Motion is not checked.** "It flies left and right" about code that moves on a key,
+  or not at all, is not decided by the parser; "made again every frame" and "never drawn"
+  are the two shapes that are.
+- **Answers are a 4B model reading a guide.** Most final answers were right; a few still
+  said something loose ("It will go back to the version before the eagle was added",
+  about an eagle never added). A stronger selected model is where the answer turn gains
+  first; the checked facts it gets are the same.
+- **The named-thing check is word-level and games-only.** A thing Gary made under another
+  name costs one correction; Website and Research claims have only the general guards.
+- **The build prompt grew ~30 %** (1557 -> 2029 tokens, a Games turn). Tool selection was
+  not re-benchmarked; the app walk is the regression check that was run, on one machine.
+- **The owner's `test02` memory is still poisoned** by the pre-fix summary. Nothing
+  rewrites a child's memory files.
+- **Blank games play in the panel but are still never tested** after a change.
