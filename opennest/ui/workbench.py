@@ -934,6 +934,11 @@ class Workbench(QWidget):
         lines. A game playing in the panel keeps playing; "Show the game" brings it back.
         """
         relative = item.text()
+        if Path(relative).suffix.lower() in outputs.IMAGE_SUFFIXES:
+            # A chart a run drew, or any picture: shown, not refused as "not text".
+            self._panel_text("")
+            self._show_any_chart(relative)
+            return
         content = self._text_of(relative)
         if content is None:
             self._panel_text(f"{relative} is not a text file.")
@@ -1117,7 +1122,8 @@ class Workbench(QWidget):
         # Gary is told, and a plan waiting for "next" is checked against it: the owner's
         # test found a plan carrying on as if nothing underneath it had moved.
         self.controller.note_outside_change(
-            f"Undo went back to the version saved as \u201c{restored.label}\u201d")
+            f"Undo went back to the version saved as \u201c{restored.label}\u201d",
+            undone=True)
         self._panel_text("")
         self._say(ASSISTANT_NAME, f"Went back to: {restored.label}")
 
@@ -1164,7 +1170,12 @@ class Workbench(QWidget):
             self._output.setPlainText("The project is running. Press Stop when you are done.")
             self._stop_button.setEnabled(True)
             return
-        if run.ok:
+        if run.ok and self.project.profile.can_compile:
+            # What a compile shows and what it does not: nothing is known about a board.
+            self._output.setPlainText(
+                "It compiles. That checks the code; Send to Board puts it on your Arduino."
+                f"\n\n{run.stdout.strip()}")
+        elif run.ok:
             self._output.setPlainText(run.stdout or "(no output)")
         else:
             self._show_failure(run)
@@ -1531,15 +1542,41 @@ class Workbench(QWidget):
         if profile.can_run and self._game is not None and plays_in_panel(self.project):
             self._start_game()
             return
+        if profile.can_compile and arduino.available() and \
+                not self.project.manifest.arduino_board:
+            # The tool's own answer here is written for Gary ("Ask the child which
+            # board..."); the parity walk showed it in the panel as it was.
+            self._panel_text("Choose which Arduino you have first, in the list beside "
+                             "Compile. Then press Compile again.")
+            return
         tool = "run_project" if profile.can_run else "compile_project"
         result = self.toolbox.dispatch(tool, {})
         self._ran(result)
+        self._tell_gary(result)
 
     def _ran(self, result) -> None:
         if result.run is not None:
             self._show_run(result)
         elif not result.ok:
             self._panel_text(result.content)
+
+    def _tell_gary(self, result) -> None:
+        """What the child's own press of the button did, for Gary next time.
+
+        Measured on the parity walk: straight after the child pressed Run Analysis and
+        a chart appeared, "why isn't this working?" was answered "No run was made"."""
+        label = self.project.profile.run_label
+        run = result.run
+        if run is None or run.still_running:
+            return
+        if run.ok:
+            drew = f" and drew {', '.join(result.made_files)}" if result.made_files else ""
+            what = "compiled" if self.project.profile.can_compile else "ran"
+            said = f"The child pressed {label}: it {what}{drew}."
+        else:
+            said = f"The child pressed {label}, and it failed (the error is in Last run)."
+        with contextlib.suppress(Exception):
+            self.controller.note_event(said)
 
     def _start_game(self) -> None:
         """Run Game, for a game drawn here: started off the UI thread (``RunWorker``).
@@ -1579,6 +1616,16 @@ class Workbench(QWidget):
         """
         if self.project.entrypoint_path.is_file():
             return True
+        src = self.project.directory / "src"
+        blank_page = self.project.profile.id == "blank" and any(
+            next(src.rglob(pattern), None) is not None for pattern in ("*.html", "*.ino"))
+        if blank_page:
+            # A page or a sketch Gary wrote in a Blank project: kept, and not something
+            # Blank can show or compile. Said, rather than "nothing to run" (parity walk).
+            self._panel_text("This is a Blank project, so it can only run src/main.py. To see "
+                             "a web page or compile a sketch, start a Website or Arduino "
+                             "project from the Flight Deck.")
+            return False
         # No file names: the owner-test pass found a child told about src/game.py and
         # left to discover the starter button. Asking Gary is enough -- the first request
         # sets the starting files up -- and the button is still there for a child who

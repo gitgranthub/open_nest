@@ -3862,3 +3862,68 @@ Blank one, a Website begun empty, Research and a Raspberry Pi project.
 - **The owner's `test02` memory is still poisoned** by the pre-fix summary. Nothing
   rewrites a child's memory files.
 - **Blank games play in the panel but are still never tested** after a change.
+
+### 27F. The cross-preset parity pass
+
+The owner's follow-up: check that the same fixes hold beyond Games -- build or change,
+ask about the project, ask how to use Open Nest, answers from real state, no tool syntax,
+changed files marked and viewable, Undo and hand changes noticed by plans, no claim the
+project does not support -- in Website, Research, Arduino, Raspberry Pi and Blank; small
+corrections only, no classifier, recipe or Fast Path work.
+
+`benchmarks/owner_pass/parity_walk.py`: the owner's own questions per preset through the
+real Workbench and model, plus the mouse steps -- adding a CSV, choosing a board (then a
+real `arduino-cli` compile), clicking the file just changed, changing a file by hand --
+and Blank begun five ways. Four runs (`parity1..3`, `parity_final`), each on the last
+one's fixes, then confirming runs on the presets touched after it.
+
+**What the runs found, and the correction each got:**
+
+| preset | found | corrected |
+|---|---|---|
+| all | an answer judged against *this* turn: a true "I added the Fossils section" (a recipe had just done it) was "corrected" with "Call edit_file now" in a turn with no tools | answers are checked only when nothing changed in the last three turns, with a correction that fits an answer |
+| all | the 4B weighed its own earlier replies over the facts: "BCM pin 17" after the pin was changed to 22 by hand | the checked facts are repeated beside the question in an answer turn; a file changed between messages is noticed and said |
+| all | a raw `{"name": "edit_file", "arguments": ...}` in an answer | a bare JSON call is read as a call, and never shown |
+| all | "Let me create...", "I'll edit..." ending a turn that did nothing; "I see." openings | promises read as a pattern; the acknowledgement dropped |
+| Website | after an Undo, "The gallery is now in the page"; "why didn't that section show up?" answered with an invented CSS fix; a menu (`<nav>`) read as "no menu" | the page read with the parser: headings, sections, menu links, figures, pictures, ids, and pictures that are not in the project; the named-thing check reads page text, knows `<nav>` is a menu, and runs only when the page is not Gary's fresh work; an Undo marks the reply it took back |
+| Website | a step pointed an `<img>` at a file that does not exist and described the picture | the reply ends with which picture is missing and how to add one |
+| Research | "what's in my data?" named four cities the file does not have | each CSV summarised from the file: rows, the words in text columns, number ranges |
+| Research | "Graph this." ran the starter, which drew charts/chart.png -- and the turn was treated as having done nothing | a run records the pictures it drew (`ToolResult.made_files`); a chart drawn is something done |
+| Research | "What changed the most?" answered "Nothing changed" once questions skipped the recipes | a question in a data project may still reach an analysis recipe (every question-shaped Research message in both label sets is gold "other") |
+| Research | per-city numbers the analysis never printed; "the chart shows..." | numbers in a data answer must be in the output, the checked facts, the child's words or a range worked from them; "the chart shows" is a look nobody took; either said twice is replaced with what happened |
+| Research | clicking the chart in the Project panel: "not a text file" | a picture clicked is shown |
+| Arduino | "I compiled the project" with nothing compiled; the compile tool's "Ask the child which board..." shown in the panel | a run, compile, test or upload claim is checked whatever else changed; no-board and compiled-OK messages written for the child ("It compiles. That checks the code; Send to Board puts it on your Arduino.") |
+| Pi | (the pin above) | -- |
+| Games (re-checked after) | "The car appears at the right edge" about a game with no car: "flies over cars" has no "the", so "cars" was never read as a thing asked for | a plural after "over", "about", "with"... is read as one |
+| Blank | "Make a Pi project." became a "Hello from Pi!" script; "Analyze this CSV." took three repairs and 170 s; "Make me a website." a page Blank cannot show; "Write an Arduino project." a Python loop that hit the 120 s limit | Blank becomes a game, a data project or a Pi project from the matching kit (all things `python src/main.py` can run); for a website or a sketch it says plainly that Blank cannot, and names the project type that can -- no model call |
+
+**Final state** (`parity_final.json`, plus `parity_final_web_data.json`,
+`parity_final_web.json` and `final_dealership.json` for what was touched after it; the
+Phase 12 app walk 41/41 with the same four recipe routes, `app_walk_parity.txt`): nine projects, **49 turns, 0
+with tool syntax or code in the chat; 36 questions, 0 changed a file, 0 treated as a
+build request; 5 of 5 file clicks showed the real file or picture; every changed file
+marked**. Arduino, Pi and all five Blank starts clean; Research clean once its chart and
+number checks were in; Website clean but for loose wording (below).
+
+What the owner asked to have reported:
+
+- **Passed cleanly**: Arduino, Raspberry Pi, Blank (all five intents), Research after its
+  fixes. **Website**: correct and grounded, with the weakest answers of the five.
+- **Preset-specific gaps left**: a Website's answers still sometimes wander ("No change
+  was made to the page" after a recipe made one); the 4B's edits to HTML are often
+  refused, so multi-part website requests are planned more than built.
+- **Remaining false or loose claims seen in the final runs**: "It shows temperature by
+  city" about a chart whose code labels by date; "the temperature changed the most in
+  Seville" (the range is across all three cities); "Click Save a Version... It's saved
+  now."; a Blank "how do I see it?" saying a Website project creates src/main.py. None
+  is about hardware, none claims a change or a test that did not happen.
+- **Help questions misclassified as build requests**: none in the final runs.
+- **File and change visibility**: the same in every preset -- new/changed marks, a click
+  shows the code with the last message's lines marked (or the picture), and Show the
+  game / Show the page returns.
+- **Blank scaffolding**: game, data and Pi become that project; website and Arduino are
+  told to use the project type that can show or compile them.
+- **What would need real architecture work**: turning a Blank project *into* a Website
+  or Arduino project in place (the Workbench's controls are built per project type); and
+  checking what a picture or a chart *shows* rather than that it exists -- which is image
+  input, and no provider sends image bytes yet.

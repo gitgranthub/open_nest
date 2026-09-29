@@ -36,6 +36,8 @@ UNDERWAY_START = re.compile(
 #: it red" is left alone.
 CLAIMED_SIGHT = ("i see the", "i see that", "i see it", "i see your", "i see a ",
                   "i see there", "i see no", "i can see", "i could see",
+                  # A chart is a picture too, and nobody has looked at it (parity walk):
+                  "the chart shows", "the graph shows", "the plot shows", "chart shows the",
                   "i watched", "i looked at the game", "i played it", "i can tell it")
 
 
@@ -58,6 +60,10 @@ _NOT_THINGS = frozenset((
 ))
 
 
+#: Words a plural thing follows without a determiner: "over cars", "about dinosaurs".
+_BEFORE_PLURALS = frozenset(("over", "about", "with", "of", "under", "near", "around",
+                             "avoid", "dodge", "catch", "shoot", "collect", "and", "some"))
+
 _DETERMINERS = frozenset((
     "a", "an", "the", "some", "my", "more", "two", "three", "four", "five", "six", "ten",
     "many", "lots",
@@ -68,7 +74,8 @@ _DESCRIBING = frozenset((
     "fast", "faster", "slow", "slower", "red", "orange", "yellow", "green", "blue",
     "purple", "pink", "white", "black", "grey", "gray", "brown", "gold", "silver", "dark",
     "light", "bright", "flying", "parked", "moving", "falling", "shiny", "cute", "scary",
-    "funny", "angry", "happy", "new", "old", "other",
+    "funny", "angry", "happy", "new", "old", "other", "fun", "cool", "simple", "short",
+    "long", "little", "few", "nice", "real",
 ))
 #: Words that follow a determiner and are not things: "a lot", "the same", "that".
 _NOT_NOUNS = frozenset((
@@ -82,6 +89,14 @@ def child_nouns(text: str) -> set[str]:
     words = re.findall(r"[a-z']+", text.lower())
     found = set()
     for index, word in enumerate(words[:-1]):
+        following = words[index + 1]
+        if word in _BEFORE_PLURALS and following.endswith("s") and len(following) > 3 \
+                and following not in _NOT_THINGS and following not in _DESCRIBING:
+            # "flies over cars", "a site about dinosaurs": a plural needs no "the".
+            # Measured: "The car appears at the right edge" went unquestioned because
+            # "over cars" was never read as a thing the child asked for.
+            found.add(following)
+            continue
         if word not in _DETERMINERS:
             continue
         noun = words[index + 1]
@@ -94,15 +109,40 @@ def child_nouns(text: str) -> set[str]:
 
 
 #: Saying it will do it now -- which, at the end of a turn that changed nothing, it did not.
-PROMISES = ("i'll do that now", "i'll do it now", "let me do that", "let me make",
-             "i'll add", "i will add", "i'll make", "i will make", "i'll now", "i will now",
-             "i'm going to", "i am going to", "let me add", "i'll fix", "i will fix",
-             "i'll change", "i will change", "i'll update", "i'll create", "i'll build")
+PROMISES = re.compile(
+    r"\b(?:i'll|i will|let me|i'm going to|i am going to)\s+(?:now\s+|first\s+|just\s+)?"
+    r"(?:add|make|create|edit|build|write|change|update|fix|put|set|do|draw|move|"
+    r"style|insert)\b", re.IGNORECASE)
+
+
+def promises(text: str) -> bool:
+    """Whether a reply says Gary will do something -- which is only true if he then does.
+
+    A pattern, not a list: the list missed "Let me create the basic structure" and
+    "I'll edit index.html" on the parity walk, and the turn that said them changed
+    nothing."""
+    return bool(PROMISES.search(text or ""))
 
 
 #: What the model is told when it describes a result no file change made.
+#: Saying it was run, compiled or tested -- a claim when nothing was.
+CLAIMED_RUN = ("i compiled", "i've compiled", "i have compiled", "compiled it and",
+               "i tested it", "i've tested", "i have tested", "i ran it", "i've run it",
+               "i have run it", "i uploaded", "i've uploaded", "i sent it to", "i've sent it")
+
+RUN_CORRECTION = (
+    "Nothing was run, compiled or tested this turn, so do not say it was. Say only what "
+    "you changed, and tell them how to run or compile it themselves."
+)
+
+ANSWER_CORRECTION = (
+    "Nothing in this project has changed lately, so do not describe anything as new, "
+    "added or under way. Answer their question again from what Open Nest has checked "
+    "below, and say plainly what is and is not there yet."
+)
+
 RESULT_CORRECTION = (
-    "No file has changed, so nothing you just described as new is in the game. If they "
+    "No file has changed, so nothing you just described as new is in the project. If they "
     "asked for a change, make it now with a tool call. If they asked a question, answer "
     "it from what Open Nest has checked about the project, and say plainly what is and "
     "is not there yet."
@@ -143,6 +183,9 @@ def presentable(text: str) -> str:
     """
     if not text:
         return text
+    # "I see." / "I see," as an opening acknowledgement: nothing was seen, and the owner's
+    # rule is that Gary never says it without evidence. Dropping two words costs nothing.
+    text = _ACKNOWLEDGED.sub("", text)
     kept, block, fenced, opened = [], [], False, "```"
     for line in text.split("\n"):
         if line.strip().startswith("```"):
@@ -218,7 +261,12 @@ def _without_code_runs(lines: list[str]) -> list[str]:
     return kept[:-1]
 
 
+_ACKNOWLEDGED = re.compile(r"^\s*(?:ok(?:ay)?[,.]?\s+)?i see[.,!]\s*", re.IGNORECASE)
+
 #: The longest code block left in the chat. Anything longer is in Build / Preview.
 _SHORT_CODE = 6
-#: ``old_text="..."`` / ``"new_text": "..."``: a tool call's argument, never prose.
-_ARGUMENT_LINE = re.compile(r'^\s*"?(?:old_text|new_text|content|arguments)"?\s*[:=]')
+#: ``old_text="..."`` / ``"new_text": "..."``: a tool call's argument, never prose -- and
+#: Open Nest's own "[Open Nest: ...]" note, which a model reading its history may copy.
+_ARGUMENT_LINE = re.compile(
+    r'^\s*(?:"?(?:old_text|new_text|content|arguments)"?\s*[:=]|\[Open Nest:|'
+    r'\{"name"\s*:\s*"(?:read_file|edit_file|write_file|run_project|compile_project)")')

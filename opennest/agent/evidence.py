@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Sequence
+from pathlib import Path
 
 from opennest.projects import starters as starter_kits
 from opennest.projects.manager import Project, plays_in_panel, source_fingerprint
@@ -256,6 +257,270 @@ def _screen_lines(project: Project, toolbox) -> list[str]:
     return lines
 
 
+# ------------------------------------------------------------- the other project types
+
+def family(project: Project) -> str | None:
+    """Which kind of project this is: its type, or what a Blank one's files have become."""
+    try:
+        from opennest.fastpath.kinds import family_for  # lazily: an optional collaborator
+    except ImportError:
+        return project.profile.id
+    found, _why = family_for(project)
+    return found
+
+
+class _Page:
+    """Headings, sections and pictures in an HTML file, read with the standard parser."""
+
+    def __init__(self, text: str) -> None:
+        from html.parser import HTMLParser
+
+        self.headings: list[tuple[str, str]] = []
+        self.sections = 0
+        self.pictures: list[str] = []
+        self.menu: list[str] = []
+        self.ids: list[str] = []
+        self.figures = 0
+        page = self
+
+        class Reader(HTMLParser):
+            heading: str | None = None
+            words: list[str] = []
+            in_nav = 0
+            link: list[str] | None = None
+
+            def handle_starttag(self, tag, attrs):
+                named = dict(attrs).get("id")
+                if named and named not in page.ids:
+                    page.ids.append(named)
+                if tag == "figure":
+                    page.figures += 1
+                if tag == "nav":
+                    self.in_nav += 1
+                elif tag == "a" and self.in_nav:
+                    self.link = []
+                if tag in ("h1", "h2", "h3"):
+                    self.heading, self.words = tag, []
+                elif tag == "section":
+                    page.sections += 1
+                elif tag == "img":
+                    source = dict(attrs).get("src") or ""
+                    if source:
+                        page.pictures.append(source)
+
+            def handle_data(self, data):
+                if self.heading:
+                    self.words.append(data)
+                if self.link is not None:
+                    self.link.append(data)
+
+            def handle_endtag(self, tag):
+                if tag == "nav":
+                    self.in_nav = max(0, self.in_nav - 1)
+                elif tag == "a" and self.link is not None:
+                    words = " ".join("".join(self.link).split())
+                    if words:
+                        page.menu.append(words)
+                    self.link = None
+                if tag == self.heading:
+                    words = " ".join("".join(self.words).split())
+                    if words:
+                        page.headings.append((tag, words))
+                    self.heading = None
+
+        Reader().feed(text)
+
+
+def missing_pictures(project: Project, pages=None) -> list[str]:
+    """Pictures a page shows that are not files in the project (remote ones aside)."""
+    found = []
+    paths = ([project.directory / page for page in pages] if pages is not None
+             else sorted((project.directory / "src").rglob("*.html")))
+    for path in paths:
+        try:
+            page = _Page(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError):
+            continue
+        found += [src for src in page.pictures if "://" not in src and not src.startswith(
+            "data:") and not (path.parent / src).exists() and not (project.directory / src)
+            .exists() and src not in found]
+    return found
+
+
+def _website_lines(project: Project) -> list[str]:
+    lines = []
+    for path in sorted((project.directory / "src").rglob("*.html")):
+        try:
+            page = _Page(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError):
+            continue
+        name = str(path.relative_to(project.directory))
+        titles = "; ".join(f"\u201c{words}\u201d" for _tag, words in page.headings[:12])
+        menu = ", ".join(page.menu[:10])
+        ids = ", ".join(page.ids[:14])
+        # Things that are not sections with headings count too: measured, a gallery of
+        # five figures with no heading was answered "No gallery of dinosaur cards exists".
+        extras = [f"{page.figures} figure{'' if page.figures == 1 else 's'}"] \
+            if page.figures else []
+        extras += [f"{len(page.pictures)} picture{'' if len(page.pictures) == 1 else 's'}"] \
+            if page.pictures else []
+        lines.append(f"- {name}, read from the file: {page.sections} section"
+                     f"{'' if page.sections == 1 else 's'}; headings {titles or '(none)'}; "
+                     f"{'menu links ' + menu if menu else 'no menu'}"
+                     f"{'; ' + ', '.join(extras) if extras else ''}"
+                     f"{'; element ids ' + ids if ids else ''}.")
+        missing = [src for src in page.pictures if "://" not in src
+                   and not (path.parent / src).exists() and not (project.directory / src).exists()]
+        if missing:
+            lines.append(f"- It shows pictures that are not in the project, so they appear "
+                         f"broken: {', '.join(missing[:6])}.")
+    lines.append("- Nobody in Open Nest can see the page -- only the child, with Preview. What "
+                 "is known is what the files say.")
+    return lines
+
+
+def _arduino_lines(project: Project, toolbox) -> list[str]:
+    import re as _re
+
+    lines = []
+    sketch = project.entrypoint_path
+    try:
+        source = sketch.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        source = ""
+    pins = _re.findall(r"^\s*(?:const\s+)?(?:int|byte|uint8_t)\s+(\w*PIN\w*)\s*=\s*([^;]+);",
+                       source, _re.MULTILINE)
+    if pins:
+        said = "; ".join(f"{name} = {value.strip()}"
+                         + (" (the board's own light, no wire)"
+                            if value.strip() == "LED_BUILTIN" else "")
+                         for name, value in pins)
+        lines.append(f"- Pins the sketch uses, read from the code: {said}.")
+    else:
+        lines.append("- The sketch names no pins.")
+    board = project.manifest.arduino_board
+    lines.append(f"- Board chosen beside Compile: {board}." if board else
+                 "- No board is chosen yet. They pick theirs beside the Compile button; "
+                 "until then it cannot compile, and no pin on a real board is known.")
+    run = getattr(toolbox, "last_run", None)
+    if run is not None and not run.still_running:
+        lines.append("- The last compile worked. That checks the code only, not a board."
+                     if run.ok else "- The last compile FAILED (the error is above).")
+    lines.append("- Nothing in Open Nest can see or test the board. After Send to Board, only "
+                 "the child can say what it does.")
+    return lines
+
+
+def _pi_lines(project: Project) -> list[str]:
+    lines = []
+    try:
+        from opennest.fastpath.kinds import raspberry_pi
+
+        facts = raspberry_pi.facts(project)
+        about = raspberry_pi.brief(facts)
+    except Exception:  # noqa: BLE001 - a fact that cannot be read is simply not said
+        about = ""
+    if about:
+        lines.append(f"- What it does, read from the code: {about}")
+    lines.append("- Test on Mac runs it here with pretend pins and prints what the pins would "
+                 "do. Nothing has run on a real Raspberry Pi, so nobody has seen a light or a "
+                 "motor.")
+    return lines
+
+
+def _table_lines(path: Path, name: str) -> list[str]:
+    """What is really in a CSV: rows, columns, the words in each text column, number
+    ranges. Measured: asked "what's in my data?" the model named four cities the file
+    does not have."""
+    import csv
+
+    try:
+        with path.open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.reader(handle))
+    except (OSError, UnicodeDecodeError, csv.Error):
+        return []
+    if not rows:
+        return [f"- {name} is empty."]
+    header, body = rows[0], rows[1:5001]
+    parts = []
+    for index, column in enumerate(header[:12]):
+        cells = [row[index].strip() for row in body if index < len(row) and row[index].strip()]
+        try:
+            numbers = [float(cell) for cell in cells]
+        except ValueError:
+            numbers = []
+        if numbers:
+            parts.append(f"{column} from {min(numbers):g} to {max(numbers):g}")
+        else:
+            values = list(dict.fromkeys(cells))
+            shown = ", ".join(values[:6]) + (f" and {len(values) - 6} more"
+                                             if len(values) > 6 else "")
+            parts.append(f"{column} ({shown})" if values else column)
+    return [f"- {name}, read from the file: {len(rows) - 1} rows. " + "; ".join(parts) + "."]
+
+
+def _data_and_picture_lines(project: Project, toolbox) -> list[str]:
+    from opennest.execution import outputs
+    from opennest.security.sandbox import visible_files
+
+    lines = []
+    tables = [p for p in sorted((project.directory / "data").rglob("*.csv"))]
+    tables += [p for p in sorted((project.directory / "src").rglob("*.csv"))]
+    for table in tables[:3]:
+        lines += _table_lines(table, str(table.relative_to(project.directory)))
+    pictures = [relative for relative in visible_files(project.directory)
+                if Path(relative).suffix.lower() in outputs.IMAGE_SUFFIXES
+                and not relative.startswith(("assets/", "data/"))]
+    made = set(getattr(toolbox, "last_made", ()) or ())
+    if pictures:
+        said = ", ".join(f"{picture}{' (drawn by the last run)' if picture in made else ''}"
+                         for picture in pictures[:6])
+        lines.append(f"- Pictures the project's own code has drawn: {said}. The newest shows "
+                     f"in Build / Preview after a run; clicking one in the Project panel shows "
+                     f"it too.")
+    elif tables:
+        lines.append(f"- No chart exists yet: the code has not drawn one. Running it "
+                     f"({project.profile.run_label}, or run_project) is what draws one.")
+    return lines
+
+
+def summary_for_child(project: Project) -> str:
+    """One or two plain sentences on what the project has, from its files -- for the
+    replies Open Nest writes itself when Gary's answer could not be used."""
+    kind = family(project)
+    if kind == "website":
+        entry = project.entrypoint_path
+        try:
+            page = _Page(entry.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError):
+            return ""
+        titles = ", ".join(f"\u201c{words}\u201d" for _tag, words in page.headings[:8])
+        return (f"Right now the page has {page.sections} section"
+                f"{'' if page.sections == 1 else 's'}{': ' + titles if titles else ''}. "
+                f"Press {project.profile.run_label} to see it.")
+    lines = (_arduino_lines(project, None) if kind == "arduino" else
+             _pi_lines(project) if kind == "raspberry_pi" else [])
+    lines += _data_and_picture_lines(project, None)
+    said = " ".join(line[2:] for line in lines[:2])
+    return f"Right now: {said}" if said else ""
+
+
+def _blank_limits(project: Project, kind: str | None) -> list[str]:
+    """What a Blank project cannot do, when its files have become something that needs to.
+
+    Blank's one button runs ``src/main.py``. A web page or an Arduino sketch in it is
+    written and kept, but not shown or compiled -- a real limit, said rather than hidden."""
+    if project.profile.id != "blank":
+        return []
+    if kind == "website":
+        return ["- This is a Blank project: its Run button runs src/main.py, so it cannot "
+                "show a web page. A Website project can preview one."]
+    if kind == "arduino":
+        return ["- This is a Blank project: it cannot compile or send a sketch to a board. "
+                "An Arduino project can."]
+    return []
+
+
 def checked_block(project: Project, toolbox=None, notes: Sequence[str] = (),
                   asked=()) -> str:
     """The lines Gary is given about what is true now. Empty only if nothing is known."""
@@ -266,7 +531,19 @@ def checked_block(project: Project, toolbox=None, notes: Sequence[str] = (),
     lines += [f"- {note}" for note in notes if note]
     if project.profile.generates:
         return "\n".join(lines) if len(lines) > 1 else ""
+    kind = family(project)
+    kind_lines = []
+    if kind == "website":
+        kind_lines = _website_lines(project)
+    elif kind == "arduino" or project.profile.can_compile:
+        kind_lines = _arduino_lines(project, toolbox)
+    elif kind == "raspberry_pi":
+        kind_lines = _pi_lines(project)
+    kind_lines += _blank_limits(project, kind)
+    if project.profile.can_run:
+        kind_lines += _data_and_picture_lines(project, toolbox)
     if not path.is_file():
+        lines += kind_lines
         thing = "game" if project.profile.playtest == "pygame" else "project"
         lines.append(f"- There is no {entry} yet, so there is no {thing} to run or play. If "
                      f"they want to build something, Open Nest sets up the starting files "
@@ -278,16 +555,20 @@ def checked_block(project: Project, toolbox=None, notes: Sequence[str] = (),
         return "\n".join(lines)
     starter = unchanged_starter(project, source)
     if starter is not None:
-        lines.append(f"- {entry} is exactly the {starter.name} starter, unchanged: "
+        kit = starter.name if starter.name.lower().endswith("starter") else \
+            f"{starter.name} starter"
+        lines.append(f"- {entry} is exactly the {kit}, unchanged: "
                      f"{starter.description} Nothing anyone has described since is in it.")
     if _is_game(project, source):
         lines += _game_lines(project, source, asked)
+    lines += kind_lines
     if toolbox is not None:
         if project.profile.can_run and getattr(toolbox, "last_run", None) is None:
             # Measured: "where did my chart go?" was answered "the chart didn't generate"
             # before anything had run. Nothing had, and that is a fact to hand over.
-            lines.append(f"- Nothing has been run yet in this session: no output and no "
-                         f"chart exist until they press {project.profile.run_label}.")
+            chart = " and no chart" if kind == "research" else ""
+            lines.append(f"- Nothing has been run yet in this session: no output{chart} "
+                         f"exists until they press {project.profile.run_label}.")
         lines += _screen_lines(project, toolbox)
     return "\n".join(lines)
 

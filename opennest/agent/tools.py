@@ -22,7 +22,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from opennest.execution import arduino, playtest
+from opennest.execution import arduino, outputs, playtest
 from opennest.execution.python_runner import RunResult, run_project, stop_project
 from opennest.projects.manager import Project, plays_in_panel, source_fingerprint
 from opennest.security.sandbox import PathNotAllowed, resolve_in_project
@@ -59,6 +59,10 @@ class ToolResult:
     #: Which bounded repair made an edit land, empty when the text matched exactly.
     #: Phase 12.2 measures the recovery path's usage through this.
     recovered: str = ""
+    #: Pictures a run wrote -- a Research chart above all -- found by comparing the
+    #: project before and after (``execution.outputs``), never reported by the model.
+    #: A run that drew a chart did something, whether or not a file was edited.
+    made_files: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -205,6 +209,8 @@ class Toolbox:
         #: told the result only while it is still about the current code.
         self.last_playtest: playtest.Playtest | None = None
         self.last_playtest_files: tuple = ()
+        #: The pictures the last finished run drew, for "where is my chart?".
+        self.last_made: tuple[str, ...] = ()
         #: Told each :class:`Step` as it happens, or None. Set for one turn by
         #: ``AgentController.send(on_progress=...)``; the Workbench shows the steps.
         self.observer: Callable[[Step], None] | None = None
@@ -459,6 +465,7 @@ class Toolbox:
             raise ToolError("This kind of project cannot be run.", reason="unavailable")
         self.stop_running()
         files = source_fingerprint(self.project.directory)
+        pictures = outputs.snapshot(self.project.directory)
         # Drawn inside the Workbench rather than in a window of its own -- whoever started
         # it, the child's Run Game or Gary. Phase 13; and a Blank project's game too.
         live = plays_in_panel(self.project)
@@ -477,10 +484,15 @@ class Toolbox:
             self._record_success()
         if result.still_running:
             return ToolResult(True, "It started and is running now.", run=result)
+        made = tuple(outputs.images_written(self.project.directory, pictures))
+        self.last_made = made
+        drew = f"\n\nIt drew: {', '.join(made)}" if made else ""
         if result.ok:
             body = result.stdout.strip() or "(the project produced no output)"
-            return ToolResult(True, f"It ran successfully.\n\n{body}", run=result)
-        return ToolResult(False, result.failure_text or "It failed with no output.", run=result)
+            return ToolResult(True, f"It ran successfully.\n\n{body}{drew}", run=result,
+                              made_files=made)
+        return ToolResult(False, (result.failure_text or "It failed with no output.") + drew,
+                          run=result, made_files=made)
 
     def _playing(self, stream) -> None:
         """The game has started and its pictures are arriving: say so, with the stream."""

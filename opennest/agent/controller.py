@@ -35,17 +35,20 @@ from opennest.agent.budget import (
     TurnUsage,
 )
 from opennest.agent.replies import (
+    ANSWER_CORRECTION,
     CLAIMED_RESULT,
+    CLAIMED_RUN,
     CLAIMED_SIGHT,
     NOT_ASSERTED,
-    PROMISES,
     RESULT_CORRECTION,
+    RUN_CORRECTION,
     SIGHT_CORRECTION,
     UNDERWAY_START,
     child_nouns,
     is_question,
     looped,
     presentable,
+    promises,
 )
 from opennest.agent.tools import Step, Toolbox, ToolResult, normalise_tool_name, schemas_for
 from opennest.ai import provider as provider_module
@@ -200,6 +203,9 @@ _FIRST_STEPS: dict[str, tuple[str, ...]] = {
     "raspberry_pi": ("Make it blink 10 times",),
 }
 
+#: How many turns back "nothing has changed lately" looks (``_quiet_lately``).
+QUIET_TURNS = 3
+
 #: How many refused edits, with nothing changed, before Open Nest stops Gary retrying the
 #: same change and splits it into steps instead. Measured on the pre-13 acceptance run:
 #: six refusals in a row, nothing landed, all twelve calls and 162 seconds spent.
@@ -226,6 +232,39 @@ _YES = re.compile(
 #: A Blank project is given a game only when the child says "game" -- the rule the whole-
 #: game recipes already keep (SPIKES.md section 25N).
 _NAMES_A_GAME = re.compile(r"\bgames?\b", re.IGNORECASE)
+
+#: How a page says a thing a child names by another word. Measured on the parity walk:
+#: "a menu at the top" is a ``<nav>``, the word "menu" appeared nowhere, and a false "no
+#: menu" correction led Gary to deny a change that had really been made.
+_PAGE_FORMS = {
+    "menu": ("<nav",), "navigation": ("<nav",), "picture": ("<img",), "photo": ("<img",),
+    "image": ("<img",), "pic": ("<img",), "link": ("href",), "title": ("<h1", "<title"),
+    "heading": ("<h1", "<h2", "<h3"), "headline": ("<h1",), "list": ("<ul", "<ol"),
+    "table": ("<table",), "form": ("<form",), "box": ("<input", "<div"),
+}
+
+#: What a Blank project can become by itself, from the child's own words: only what its
+#: one Run button (``python src/main.py``) can really run. The kit's entry file becomes
+#: ``src/main.py``; its other files go beside it. Measured on the parity walk: without
+#: this, "Make a Pi project." became a script printing "Hello from Pi!" and "Analyze
+#: this CSV." took Gary three repairs and 170 seconds.
+_BLANK_BECOMES = (
+    (_NAMES_A_GAME, "pygame_basic", (), "as a game"),
+    (re.compile(r"\b(?:csv|data|dataset|spreadsheet|graph|chart|analy[sz]e|analysis)\b",
+                re.IGNORECASE), "research_basic", ("matplotlibrc",), "as a data project"),
+    (re.compile(r"\b(?:raspberry|pi|gpio)\b", re.IGNORECASE), "raspberry_pi_basic", (),
+     "as a Raspberry Pi project"),
+)
+#: ...and what it cannot: a page to preview, a sketch to compile. Said plainly, with the
+#: project type that can. Measured: Blank "Make me a website." wrote a page that its Run
+#: button reported as "nothing to run", and "Write an Arduino project." became a Python
+#: loop that ran until the 120-second limit.
+_BLANK_CANNOT = (
+    (re.compile(r"\b(?:website|web ?page|web ?site|html)\b", re.IGNORECASE),
+     "show a web page", "Website"),
+    (re.compile(r"\b(?:arduino|sketch)\b", re.IGNORECASE),
+     "compile a sketch or send it to a board", "Arduino"),
+)
 
 
 
@@ -337,6 +376,9 @@ class Turn:
     step_from: int = 0
     #: Whether the message was a question, answered without tools or recipes.
     answered: bool = False
+    #: A Blank project asked for something it cannot do (a web page, a sketch), and told
+    #: which project type can -- nothing built, no model call.
+    routed: bool = False
 
 
 def build_system_prompt(
@@ -549,6 +591,9 @@ class AgentController:
         #: Both are cleared once a turn has been told them (``evidence``).
         self._last_outcome = ""
         self._outside: list[str] = []
+        #: The project's files as the last turn left them, so a change made between
+        #: messages -- a file edited outside Open Nest -- is noticed, not assumed away.
+        self._files_after = source_fingerprint(project.directory)
         #: The things the child has asked for in this conversation ("eagle", "cars"), so
         #: a reply that says the game has one its code does not can be caught.
         self._asked_for: set[str] = set()
@@ -602,12 +647,25 @@ class AgentController:
         return [note for note in (getattr(self, "_last_outcome", ""),
                                   *getattr(self, "_outside", ())) if note]
 
-    def note_outside_change(self, what: str) -> None:
+    def note_outside_change(self, what: str, *, undone: bool = False) -> None:
         """Something changed the project outside a message: an Undo, a starter added.
 
         Gary is told on his next turn, among the things Open Nest has checked, and a plan
         waiting for "next" is compared with the files before its next step runs.
+
+        ``undone``: an Undo took the last change back out, so the reply that announced it
+        is marked as undone where it sits in the history. Measured on the parity walk:
+        after an Undo removed a gallery, the next turn read its own "The gallery section
+        is now added with five dinosaur cards" and told the child it was already there.
         """
+        if undone:
+            for index in range(len(self.history) - 1, 0, -1):
+                message = self.history[index]
+                if message.role == "assistant" and not message.tool_calls:
+                    self.history[index] = Message(role="assistant", content=(
+                        f"{message.content}\n\n[Open Nest: the child pressed Undo after "
+                        f"this, so the change described here is no longer in the files.]"))
+                    break
         self._outside.append(what)
         if self._plan is not None:
             self._plan.changes.append(what)
@@ -699,6 +757,9 @@ class AgentController:
 
     def _answer(self, text: str, attachments: Sequence[assets.Asset],
                 on_text: Callable[[str], None] | None) -> Turn:
+        self._notice_changes_since_last_turn()
+        self._missing_before = (evidence.missing_pictures(self.project)
+                                if evidence.family(self.project) == "website" else [])
         step, opening = self._resume_plan(text)
         if step is not None:
             # "next": the child is not made to retype the step Open Nest offered.
@@ -756,22 +817,44 @@ class AgentController:
         # Before anyone works on it: a project with nothing to build on gets its
         # starting files, so neither a recipe nor Gary edits a file that does not exist.
         self._set_up_if_empty(turn, text)
+        if turn.routed:
+            # Blank asked for something it cannot do: said, and nothing built.
+            self.history.append(Message(role="assistant", content=turn.text))
+            return self._finish_turn(turn)
         # A question is answered, never built for: no recipe, no tools (``ANSWER_RULES``).
         # In both labelled sets every question-shaped message is gold "other", so no
         # recipe route is lost; "what are the controls?" no longer rewrites the controls.
         answering = step is None and is_question(text)
+        # ...except a question about a data project's data: "What changed the most?" is
+        # answered by an analysis recipe that computes it, and measured on the parity
+        # walk, answered without one it became "Nothing changed". Every question-shaped
+        # Research message in both label sets is gold "other", so the recipe steps aside
+        # for the rest and they are answered below as before.
+        analysis = answering and evidence.family(self.project) == "research"
         outcome = "gary"
-        if self.fastpath is not None and not answering:
+        if self.fastpath is not None and (not answering or analysis):
             outcome = self._fast_path(turn, text, previous, attachments, on_text)
         if outcome == "handled":
             return self._finish_turn(turn)
         if outcome == "rest":
+            answering = False
             text = " and ".join(turn.fastpath.get("remaining") or ()) or text
 
         self._answering = answering
         if answering:
             turn.answered = True
             self.refresh_state()
+            # The checked facts again, beside the question itself. Measured on the parity
+            # walk: with them only in the system prompt, a 4B answer followed its own
+            # earlier replies instead ("The LED is on BCM pin 17" after it became 22).
+            # Only in what is sent; the settled history keeps the child's own words.
+            checked = evidence.checked_block(self.project, self.toolbox, self._notes(),
+                                             sorted(self._asked_for))
+            if checked:
+                self.history[-1] = Message(role="user", content=(
+                    f"{text}\n\n({checked.splitlines()[0].split(' -- ')[0]}:\n"
+                    + "\n".join(checked.splitlines()[1:]) + ")"))
+                self._asked_text = text
         try:
             turn = self._exchange(turn, text, on_text, challenged, corrected)
         except BudgetExhausted:
@@ -800,17 +883,47 @@ class AgentController:
         - **Rollover**, last, so a handover summarises that and nothing else.
         """
         self._settle_plan(turn)
-        turn.text = "\n\n".join(part for part in (turn.opening, turn.text, turn.plan_note)
-                                 if part)
+        broken = self._pictures_this_turn_broke(turn)
+        turn.text = "\n\n".join(part for part in (turn.opening, turn.text, broken,
+                                                   turn.plan_note) if part)
         self._settle_history(start, turn.text)
         self._record_outcome(turn)
         if not turn.hit_call_limit:
             self._roll_over_if_needed(turn)
 
+    def _pictures_this_turn_broke(self, turn: Turn) -> str:
+        """A page this turn changed now points at a picture the project has not got.
+
+        Measured on the parity walk: a step added ``<img src="../assets/dinosaurs.jpg">``
+        with no such file, and Gary described the picture ("It shows T-Rex, Stegosaurus
+        and Triceratops"). Open Nest cannot say what a picture shows; it can say one is
+        missing, which is what the child will see."""
+        changed = [path for _, result in turn.tool_results for path in result.changed_files
+                   if path.endswith(".html")]
+        if not changed or evidence.family(self.project) != "website":
+            return ""
+        before = set(getattr(self, "_missing_before", ()))
+        missing = [src for src in evidence.missing_pictures(self.project, changed)
+                   if src not in before]
+        if not missing:
+            return ""
+        many = len(missing) > 1
+        return (f"The page now points at {', '.join(missing[:3])}"
+                f"{' and more' if len(missing) > 3 else ''}, which "
+                f"{'are' if many else 'is'} not in the project yet, so "
+                f"{'they' if many else 'it'} will show as broken "
+                f"{'pictures' if many else 'a broken picture'}. Add "
+                f"{'pictures' if many else 'one'} with + Add to Project and I can use "
+                f"{'them' if many else 'it'}.")
+
     def _settle_history(self, start: int, shown: str) -> None:
         """This turn's history, reduced to the child's message, the calls and their
         results, and the reply the child actually read."""
         turn = self.history[start:]
+        asked = getattr(self, "_asked_text", None)
+        if asked is not None and turn and turn[0].role == "user":
+            turn[0] = Message(role="user", content=asked)   # the child's words, as said
+            self._asked_text = None
         kept = turn[:1]
         for message in turn[1:]:
             if message.role == "tool":
@@ -826,15 +939,51 @@ class AgentController:
         """What this turn really changed, for Gary next time (``evidence``)."""
         changed = sorted({path for _, result in turn.tool_results
                           for path in result.changed_files} | set(turn.scaffolded))
+        made = sorted({path for _, result in turn.tool_results for path in result.made_files})
         if changed:
             line = f"Last time, these files changed: {', '.join(changed)}."
             if turn.gave_up:
                 line += " The game then failed its test and was not fixed."
+        elif made:
+            line = f"Last time, no file changed; a run drew {', '.join(made)}."
         else:
             line = "Last time, no file changed -- so nothing described in that reply was made."
         self._last_outcome = line
+        self._recent_changes = [*getattr(self, "_recent_changes", []),
+                                bool(changed or made)][-QUIET_TURNS:]
         self._outside = []
+        self._files_after = source_fingerprint(self.project.directory)
         self.refresh_state()
+
+    def note_event(self, what: str) -> None:
+        """Something the child did that changed no file -- pressed Run, say. Gary is told
+        next turn; a plan is not affected."""
+        self._outside.append(what)
+        self.refresh_state()
+
+    def _notice_changes_since_last_turn(self) -> None:
+        """Files that changed since the last turn when nothing Open Nest knows of did it.
+
+        Measured on the parity walk: LED_PIN changed from 17 to 22 between messages and
+        Gary, reading his own earlier answers, still said 17. An Undo or a starter says
+        so itself (``note_outside_change``); anything else is found here, by content.
+        """
+        now = source_fingerprint(self.project.directory)
+        before = getattr(self, "_files_after", now)
+        if now == before or self._outside:
+            self._files_after = now
+            return
+        old, new = dict(before), dict(now)
+        # The code, not a picture the child imported: that is described in the asset block.
+        changed = sorted(path for path in set(old) | set(new)
+                         if old.get(path) != new.get(path) and path.startswith("src/"))
+        self._files_after = now
+        if changed:
+            what = (f"{', '.join(changed[:4])} changed since your last reply, and not by you "
+                    f"-- read it again before saying what it has")
+            self._outside.append(what)
+            if self._plan is not None:
+                self._plan.changes.append(f"{', '.join(changed[:4])} changed")
 
     # -- a project with nothing in it yet -------------------------------------
 
@@ -863,16 +1012,33 @@ class AgentController:
         if starter_kits.has_own_files(src) or is_question(text) or project.profile.generates:
             return
         blank = project.profile.id == "blank"
+        began = ""
         try:
             if blank:
-                if not _NAMES_A_GAME.search(text):
+                becomes = [entry for entry in _BLANK_BECOMES if entry[0].search(text)]
+                cannot = [entry for entry in _BLANK_CANNOT if entry[0].search(text)]
+                if cannot and not becomes:
+                    _pattern, verb, kind = cannot[0]
+                    turn.routed = True
+                    article = "an" if kind[0] in "AEIOU" else "a"
+                    turn.text = (f"A Blank project can't {verb}, so I'd be making something "
+                                 f"you couldn't see or use. Go back to the Flight Deck and "
+                                 f"start {article} {kind} project instead -- it sets itself "
+                                 f"up with everything it needs.")
                     return
-                starter = starter_kits.get_starter("pygame_basic")
+                if len(becomes) != 1:
+                    return            # nothing named, or several at once: Gary asks
+                _pattern, starter_id, extras, began = becomes[0]
+                starter = starter_kits.get_starter(starter_id)
                 target = project.entrypoint_path
                 source = starter.directory / starter.entry_point
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
-                written = (project.manifest.entrypoint,)
+                written = [project.manifest.entrypoint]
+                for extra in extras:
+                    if (starter.directory / extra).is_file():
+                        (src / extra).write_bytes((starter.directory / extra).read_bytes())
+                        written.append(extra)
                 project.manifest.starter_id = starter.id
                 project.manifest.starter_version = starter.version
                 project.save()
@@ -883,7 +1049,8 @@ class AgentController:
                 written = add_starter(project, starter.id)
         except (ProjectError, starter_kits.StarterError, OSError):
             return
-        what = "game" if blank or project.profile.playtest == "pygame" else "project"
+        what = "game" if "game" in began or project.profile.playtest == "pygame" \
+            else "project"
         self.toolbox.report(Step("recipe", f"setting up the starting {what}"))
         paths_written = []
         for name in written:
@@ -895,7 +1062,7 @@ class AgentController:
                                          content=content, created=True))
         turn.scaffolded = tuple(paths_written)
         description = starter.description[:1].lower() + starter.description[1:]
-        began = "as a game" if blank else f"from the {starter.name}"
+        began = began or f"from the {starter.name}"
         turn.opening = " ".join(part for part in (
             turn.opening,
             f"There was nothing in the project yet, so I started it {began}: {description}",
@@ -1282,7 +1449,7 @@ class AgentController:
         challenged: bool,
         corrected: bool,
     ) -> Turn:
-        looked = named = False
+        looked = named = counted = False
         while True:
             reply = self._generate(on_text, turn=turn)
             self.history.append(
@@ -1316,12 +1483,19 @@ class AgentController:
                 # nothing at all, ``reply.text`` was "", the check saw no claim, and the
                 # *previous* reply's "I replaced the old player movement" went to the
                 # child unexamined. Gary is answerable for the sentence on screen.
-                claim = self._claim_in(turn, turn.text)
+                claim = self._claim_in(turn, turn.text) or (
+                    "run" if self._claimed_a_run_it_did_not_do(turn, turn.text) else "")
+                if claim == "run" and challenged:
+                    # Said again after its correction: Open Nest says what really happened.
+                    turn.text = self._describe_what_happened(turn) or self._as_it_is_text()
+                    return self._finish_turn(turn)
                 if claim:
                     if not challenged:
                         challenged = True
                         self._metered.kind = CORRECTION
                         self.history.append(Message(role="user", content=(
+                            RUN_CORRECTION if claim == "run" else
+                            ANSWER_CORRECTION if turn.answered else
                             RESULT_CORRECTION if claim == "result" else
                             "You did not actually change any file. Call edit_file now "
                             "with the exact text to replace, or say plainly that you "
@@ -1371,13 +1545,34 @@ class AgentController:
                     named = True
                     self._metered.kind = CORRECTION
                     about = evidence.describe_game(self.project)
-                    about = f"Right now, from the code: {about}" if about else ""
+                    about = (f"Right now, from the code: {about}" if about
+                             else evidence.summary_for_child(self.project))
                     # Their question stays the point: measured, "say plainly that the
                     # eagle isn't there" turned "how do I undo that?" into an eagle report.
+                    what = "game" if plays_in_panel(self.project) else "project"
                     self.history.append(Message(role="user", content=(
-                        f"Answer this again: \u201c{text}\u201d. Do not say the game has "
-                        f"a {missing} -- its code has none. {about}")))
+                        f"Answer this again: \u201c{text}\u201d. Do not say the {what} has "
+                        f"a {missing} -- its files have none. {about}")))
                     continue
+                invented = None if counted else self._numbers_nobody_printed(turn.text, text)
+                if invented:
+                    # "Leeds: 14.5°C, Seville: 18.2°C, Oslo: 19.0°C" -- about a chart
+                    # nobody looked at, and numbers the analysis never printed (parity walk).
+                    counted = True
+                    self._metered.kind = CORRECTION
+                    # Their question stays the point, and the numbers are not repeated
+                    # back: measured, naming them made the answer about them.
+                    self.history.append(Message(role="user", content=(
+                        f"Answer this again: \u201c{text}\u201d. Some numbers in your answer "
+                        f"are not in anything the analysis printed or Open Nest checked, so "
+                        f"leave them out -- use only numbers the output shows, or say what "
+                        f"would have to be run to find out.")))
+                    continue
+                if looked and self._claimed_to_see(turn.text):
+                    # Said again after its correction ("The chart shows temperature by
+                    # city", parity walk): Open Nest says what it knows instead.
+                    turn.text = self._describe_what_happened(turn) or self._as_it_is_text()
+                    return self._finish_turn(turn)
                 if not looked and self._claimed_to_see(turn.text):
                     # Nothing shows Gary the game or the screen, so "I see the eagle is
                     # missing" is an observation nobody made. After the picture check,
@@ -1430,8 +1625,7 @@ class AgentController:
             # An answer that was only a call, which a question does not run: what the
             # project has is still an answer, and silence is not.
             turn.text = self._as_it_is_text()
-        if not turn.plan_note and "?" not in turn.text and any(
-                phrase in turn.text.lower() for phrase in PROMISES):
+        if not turn.plan_note and "?" not in turn.text and promises(turn.text):
             # "I'll add the eagle now." in an answer, which changes nothing, or "I'll fix
             # that now." as the last word of a turn that has ended (the owner-test walk).
             # Either way it is an offer, so it is said as one; "yes" then asks -- for the
@@ -1445,7 +1639,13 @@ class AgentController:
 
     @staticmethod
     def _changed_anything(turn: Turn) -> bool:
-        return any(result.changed_files for _, result in turn.tool_results[turn.gary_from:])
+        """A file changed, or a run drew a chart, in Gary's share of the turn.
+
+        The chart counts: on the parity walk "Graph this." ran the Research starter, which
+        drew charts/chart.png, and the turn was treated as having done nothing -- planned
+        into steps and reported "I haven't changed anything yet"."""
+        return any(result.changed_files or result.made_files
+                   for _, result in turn.tool_results[turn.gary_from:])
 
     @staticmethod
     def _describe_what_happened(turn: Turn) -> str:
@@ -1472,15 +1672,17 @@ class AgentController:
         ran = [result for _, result in mine if result.run is not None]
         last_run_ok = ran and ran[-1].ok
         only_launched = last_run_ok and ran[-1].run.still_running
+        made = ran[-1].made_files if ran else ()
+        drew = f" It drew {', '.join(made)}." if made else ""
 
         if changed and only_launched:
             return f"I changed {', '.join(changed)} and started it."
         if changed and last_run_ok:
-            return f"I changed {', '.join(changed)} and ran it. It works."
+            return f"I changed {', '.join(changed)} and ran it. It works.{drew}"
         if changed:
             return f"I changed {', '.join(changed)}."
         if last_run_ok:
-            return "I ran it."
+            return f"I ran it.{drew}"
         if ran:
             return "I ran it, and it did not work."
         return ""
@@ -1568,22 +1770,53 @@ class AgentController:
         any file yet. ... The eagle is now flying from left to right."
         """
         mine = turn.tool_results[turn.gary_from:]
-        if any(result.changed_files for _, result in mine):
+        if any(result.changed_files or result.made_files for _, result in mine):
             return ""
         lowered = (text or "").lower()
-        if self._quiet_lately(turn) and (any(phrase in lowered for phrase in CLAIMED_RESULT)
-                                         or UNDERWAY_START.search(text or "")):
+        quiet = self._quiet_lately(turn)
+        if turn.answered:
+            # An answer changes nothing by design, so "I added the Fossils section" is
+            # about an earlier turn -- true if one changed a file. Measured on the parity
+            # walk: judged against this turn alone, a true answer was "corrected" with
+            # "Call edit_file now" in a turn that has no tools.
+            if not quiet:
+                return ""
+            claimed = (any(phrase in lowered for phrase in CLAIMED_RESULT)
+                       or UNDERWAY_START.search(text or "")
+                       or self._claimed_a_change_it_did_not_make(turn, text))
+            return "result" if claimed else ""
+        if quiet and (any(phrase in lowered for phrase in CLAIMED_RESULT)
+                      or UNDERWAY_START.search(text or "")):
             return "result"
         return "change" if self._claimed_a_change_it_did_not_make(turn, text) else ""
 
+    @staticmethod
+    def _claimed_a_run_it_did_not_do(turn: Turn, text: str) -> bool:
+        """"I compiled the project", "I tested it" -- with nothing run, compiled or tested.
+
+        Measured on the parity walk: an Arduino turn edited the sketch and said "I
+        compiled the project" with no compile. Checked whatever else the turn changed,
+        because a real edit does not make a claimed compile true. A game's headless test
+        counts as testing it, and a run or a compile of any kind counts as running it.
+        """
+        lowered = (text or "").lower()
+        if not any(phrase in lowered for phrase in CLAIMED_RUN):
+            return False
+        mine = turn.tool_results[turn.gary_from:]
+        return not (turn.playtests or any(result.run is not None for _, result in mine))
+
     def _quiet_lately(self, turn: Turn) -> bool:
-        """No file changed in this turn, in the last one, or outside a turn since."""
-        if turn.scaffolded or any(result.changed_files for _, result in turn.tool_results):
+        """No file changed in this turn, in the last few, or outside a turn since.
+
+        "The last few", not "the last one": measured on the parity walk, a question in
+        between ("how do I undo that?") made a gallery added two turns earlier count as
+        never made, and "What did you change?" was corrected into denying it."""
+        if turn.scaffolded or any(result.changed_files or result.made_files
+                                  for _, result in turn.tool_results):
             return False
         if self._outside:
             return False
-        return not self._last_outcome or self._last_outcome.startswith(
-            "Last time, no file changed")
+        return not any(getattr(self, "_recent_changes", [])[-QUIET_TURNS:])
 
     def _not_drawn(self, text: str) -> list[str]:
         """Things named in ``text`` that the game's code has and never draws."""
@@ -1605,7 +1838,7 @@ class AgentController:
         lowered = (turn.text or "").lower()
         if "?" in lowered:
             return False
-        return any(phrase in lowered for phrase in PROMISES)
+        return promises(lowered)
 
     def _names_what_is_not_there(self, turn: Turn, text: str) -> str | None:
         """A thing the child asked for, said to be in the game, when its code has none.
@@ -1621,29 +1854,77 @@ class AgentController:
         and it costs one correction, never a wrong word on screen.
         """
         project = self.project
-        if not plays_in_panel(project):
-            return None               # a game: a Game project, or a Blank one that is one
         wanted = self._asked_for
         if not wanted or not text:
             return None
         source = ""
-        for path in sorted((project.directory / "src").rglob("*.py")):
-            try:
-                words = evidence.code_words(path.read_text(encoding="utf-8"))
-            except (OSError, UnicodeDecodeError):
-                continue
-            if words is None:
-                return None           # code that does not parse: nothing can be said
-            source += words + "\n"
+        if plays_in_panel(project):
+            # A game: its code's names and strings, never its comments.
+            for path in sorted((project.directory / "src").rglob("*.py")):
+                try:
+                    words = evidence.code_words(path.read_text(encoding="utf-8"))
+                except (OSError, UnicodeDecodeError):
+                    continue
+                if words is None:
+                    return None       # code that does not parse: nothing can be said
+                source += words + "\n"
+        elif evidence.family(project) == "website":
+            # A website: everything its page files say. Measured on the parity walk: after
+            # an Undo took the gallery out, "The gallery is now in the page" was relayed.
+            # Only when the page is not Gary's fresh work -- nothing changed by him this
+            # turn or the last, or something (an Undo) changed it since: word by word
+            # against HTML, a false "no menu" made him deny a change he had just made.
+            fresh = any(result.changed_files for _, result in turn.tool_results) or (
+                not self._outside and self._last_outcome.startswith("Last time, these"))
+            if fresh:
+                return None
+            for path in sorted((project.directory / "src").rglob("*")):
+                if path.suffix.lower() in (".html", ".css", ".js"):
+                    try:
+                        source += path.read_text(encoding="utf-8").lower() + "\n"
+                    except (OSError, UnicodeDecodeError):
+                        continue
+        else:
+            return None
         for sentence in re.split(r"(?<=[.!?])\s+|\n+", text):
             lowered = sentence.lower()
             if NOT_ASSERTED.search(lowered):
                 continue
             for word in sorted(wanted):
                 stem = word[:-1] if word.endswith("s") and len(word) > 3 else word
-                if re.search(rf"\b{stem}s?\b", lowered) and stem not in source:
+                forms = (stem, *_PAGE_FORMS.get(stem, ())) if not plays_in_panel(project) \
+                    else (stem,)
+                if re.search(rf"\b{stem}s?\b", lowered) and not any(
+                        form in source for form in forms):
                     return word
         return None
+
+    def _numbers_nobody_printed(self, reply: str, asked: str) -> list[str]:
+        """In a data project, numbers in the reply that no output or check contains.
+
+        Only numbers with a decimal point or of two digits and more -- "3 cities" is a
+        count anyone can make -- and only against what exists: the last run's output, the
+        data summary Open Nest read (``evidence``), and the child's own words."""
+        if evidence.family(self.project) != "research" or not reply:
+            return []
+        known = " ".join((
+            getattr(getattr(self.toolbox, "last_run", None), "stdout", "") or "",
+            evidence.checked_block(self.project, self.toolbox, (), ()),
+            asked,
+        ))
+        found = re.findall(r"(?<![\w.])(\d+\.\d+|\d{2,})(?![\w.])", reply)
+        # A range worked out from what is known is not a guess: measured, "27.6" was
+        # 31.5 - 3.9, from "temp_c from 3.9 to 31.5". Only those spans -- allowing any
+        # sum or difference of every known number would let almost anything through.
+        spans = [float(high) - float(low) for low, high in re.findall(
+            r"from (-?\d+(?:\.\d+)?) to (-?\d+(?:\.\d+)?)", known)]
+
+        def derived(number: str) -> bool:
+            return any(abs(span - float(number)) < 0.051 for span in spans)
+
+        return [number for number in dict.fromkeys(found)
+                if number not in known and number.rstrip("0").rstrip(".") not in known
+                and not derived(number)]
 
     def _claimed_to_see(self, text: str) -> bool:
         """"I see", "I can see" -- when nothing has shown Gary anything to see.
@@ -1678,13 +1959,24 @@ class AgentController:
             about = evidence.describe_game(project, for_child=True)
         except Exception:  # noqa: BLE001 - a description must never break a turn
             about = ""
+        try:
+            source = project.entrypoint_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            source = ""
+        # Only claim nothing has changed when the files say so -- measured, the generic
+        # sentence was said about a page two recipes had just changed.
+        untouched = evidence.unchanged_starter(project, source) is not None
         if about:
             play = ""
             if plays_in_panel(project):
                 play = (f" To play it, press {project.profile.run_label} and click inside "
                         f"the game so it gets the keys.")
-            return f"I haven't changed anything in the game yet. Right now: {about}{play}"
-        return "I haven't changed anything in the project yet."
+            lead = "I haven't changed anything in the game yet. " if untouched else ""
+            return f"{lead}Right now: {about}{play}"
+        summary = evidence.summary_for_child(project)
+        lead = "I haven't changed anything in the project yet." if untouched else ""
+        return " ".join(part for part in (lead, summary) if part) or \
+            "Here's where things are: the files are in the Project panel on the left."
 
     @staticmethod
     def _claimed_a_change_it_did_not_make(turn: Turn, text: str) -> bool:
@@ -1700,7 +1992,7 @@ class AgentController:
         is what keeps the second one from being mistaken for the first.
         """
         mine = turn.tool_results[turn.gary_from:]
-        if any(result.changed_files for _, result in mine):
+        if any(result.changed_files or result.made_files for _, result in mine):
             return False
         lowered = (text or "").lower()
         if any(phrase in lowered for phrase in _DENIED_CHANGE):

@@ -297,3 +297,23 @@ Raspberry Pi project. Results and each step's source are in `benchmarks/owner_pa
   automatically.
 - **Website claims are checked only by the general guards**; the named-thing and "drawn"
   checks are games-only, where they were measured.
+
+### 7A. The cross-preset parity pass -- then frozen
+
+The same fixes, checked beyond Games (SPIKES §27F): Website, Research (a real CSV),
+Arduino (a real `arduino-cli` compile), Raspberry Pi, and Blank begun five ways, through
+`benchmarks/owner_pass/parity_walk.py`. Small corrections only, each from a measured
+miss: answers checked against the last three turns, with a correction that fits an
+answer; the checked facts beside the question; a file changed between messages noticed;
+bare JSON calls read and never shown; per-preset facts read from the files (a page's
+headings, sections, menu, figures and missing pictures; a CSV's rows, words and ranges;
+an Arduino's pins, board and last compile, and that nothing can test the board; a Pi's
+pin with pretend pins); a run's charts counted as work done and clickable; numbers in a
+data answer that nothing printed caught; compile claims checked; child-facing compile
+messages; Blank becoming a game, data or Pi project, and saying plainly it cannot be a
+website or an Arduino project.
+
+Final: 49 turns across nine projects, no tool syntax or code in the chat, 36 questions
+and none changed a file, every click showed the real file, every change marked.
+Remaining loose wording and the two things that would need architecture work are in
+SPIKES §27F. **Frozen; 13B next.**

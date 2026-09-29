@@ -35,6 +35,10 @@ from opennest.ai.provider import (
 #: Qwen-family chat templates wrap calls in these tags.
 _TOOL_CALL_BLOCK = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL)
 _FENCED_JSON = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+#: A call written as a JSON object on a line of its own, with no fence and no tag --
+#: measured on the parity walk, in the middle of Gary's answer:
+#: ``{"name": "edit_file", "arguments": {"path": "src/main.py", ...}}``.
+_BARE_JSON = re.compile(r'^[ \t]*(\{"name"\s*:.*\})[ \t]*$', re.MULTILINE)
 #: A reasoning model's internal monologue. Also matches an unclosed block, because a
 #: reply cut off by ``max_tokens`` mid-thought has an opening tag and no closing one --
 #: and that is the case where the most reasoning is on screen.
@@ -354,7 +358,8 @@ def reply_from_completion(raw: str, *, prompt_tokens: int = 0,
                           generated_tokens: int = 0) -> Reply:
     """A finished completion as a :class:`Reply`: the calls, and only the prose."""
     calls = parse_tool_calls(raw)
-    begun = raw.count("<tool_call>")
+    begun = raw.count("<tool_call>") or len(
+        [blob for blob in _BARE_JSON.findall(raw) if _names_a_tool(blob)])
     if not begun and not _FENCED_JSON.search(raw):
         read, unreadable = _text_call_spans(raw)
         begun = len(read) + len(unreadable)
@@ -376,7 +381,8 @@ def parse_tool_calls(text: str) -> tuple[ToolCall, ...]:
     normalisation happens in the toolbox, not here -- this layer reports what the model
     said, and dispatch decides what it meant.
     """
-    blobs = _TOOL_CALL_BLOCK.findall(text) or _FENCED_JSON.findall(text)
+    blobs = (_TOOL_CALL_BLOCK.findall(text) or _FENCED_JSON.findall(text)
+             or [blob for blob in _BARE_JSON.findall(text) if _names_a_tool(blob)])
     if not blobs:
         # Only when the model wrote no call the ordinary way: a line of Python naming a
         # tool is then the call it meant, and dispatch checks it like any other.
@@ -416,6 +422,7 @@ def strip_tool_calls(text: str) -> str:
     text = _TOOL_CALL_BLOCK.sub("", _THINK_BLOCK.sub("", text))
     text = _UNCLOSED_TOOL_CALL.sub("", text).replace("</tool_call>", "")
     text = _FENCED_JSON.sub("", text)
+    text = _BARE_JSON.sub(lambda m: "" if _names_a_tool(m.group(1)) else m.group(0), text)
     # A call written as Python is protocol too, run or not; one that never closes goes
     # from where it starts, the same as an unclosed block.
     spans, begun = _text_call_spans(text)
@@ -429,6 +436,15 @@ def strip_tool_calls(text: str) -> str:
     kept.append(text[position:cut])
     stripped = "".join(kept)
     return _EMPTY_FENCE.sub("", stripped) if spans or begun else stripped
+
+
+def _names_a_tool(blob: str) -> bool:
+    """Whether a JSON object is a call of one of the tools, and not some other JSON."""
+    try:
+        parsed = json.loads(blob)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(parsed, dict) and parsed.get("name") in _TEXT_CALL_TOOLS
 
 
 def _text_call_spans(text: str) -> tuple[list[tuple[int, int, ToolCall]], list[int]]:

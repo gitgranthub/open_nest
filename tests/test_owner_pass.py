@@ -19,6 +19,7 @@ the last message changed, and shows their code when clicked.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 
@@ -40,6 +41,8 @@ from opennest.execution import playtest  # noqa: E402
 from opennest.fastpath.kinds import games  # noqa: E402
 from opennest.projects.manager import create_project, source_fingerprint  # noqa: E402
 from tests.conftest import ScriptedProvider  # noqa: E402
+
+INPUTS = Path(__file__).resolve().parents[1] / "benchmarks" / "fastpath" / "inputs"
 
 #: The owner's own words, and the 4B model's own reply to them, from the project archive.
 OWNER_ASKED = ("Hi Gary. build a game that s an eagle flying over cars parked in a "
@@ -343,7 +346,10 @@ def test_is_now_with_nothing_changed_is_caught_even_after_a_denial(project) -> N
                                           Reply(text="There's no eagle in the game yet.")])
     turn = controller.send("everything ok? what do i do now")
     assert "now flying" not in turn.text
-    assert "No file has changed" in provider.calls[-1][-1].content
+    # A question: the correction fits an answer -- no "call edit_file", there are no tools.
+    correction = provider.calls[-1][-1].content
+    assert correction.startswith("Nothing in this project has changed lately")
+    assert "edit_file" not in correction
 
 
 def test_is_now_twice_for_a_question_gets_what_the_project_has(project) -> None:
@@ -526,7 +532,8 @@ def test_undo_clears_the_marks_and_tells_gary(bench, monkeypatch) -> None:
     from opennest.ui.workbench import MARK_ROLE
 
     noted = []
-    monkeypatch.setattr(bench.controller, "note_outside_change", noted.append)
+    monkeypatch.setattr(bench.controller, "note_outside_change",
+                        lambda what, **_: noted.append(what))
 
     class Restored:
         label = "Before Gary made changes"
@@ -588,14 +595,20 @@ def test_a_call_written_into_an_answer_is_not_run(project) -> None:
 
 
 def test_a_question_never_reaches_a_recipe(project) -> None:
+    asked = []
+
     class Router:
+        # Recorded, not raised: the controller catches whatever the Fast Path raises, so
+        # a raising stand-in could never fail this test (HANDOFF section 4's vacuous-
+        # assertion traps).
         def handle(self, *args, **kwargs):
-            raise AssertionError("a question went to the Fast Path")
+            asked.append(args)
+            raise RuntimeError("should not be asked")
 
     controller, _ = make(project, [Reply(text="The arrow keys move the square.")])
     controller.fastpath = Router()
     turn = controller.send("what are the controls?")
-    assert turn.text == "The arrow keys move the square."
+    assert turn.text == "The arrow keys move the square." and asked == []
 
 
 def test_an_answer_naming_a_thing_the_code_has_not_got_is_corrected(project) -> None:
@@ -735,7 +748,7 @@ def test_work_said_to_be_under_way_in_an_answer_is_caught(tmp_path) -> None:
                                                    "you'd like to make.")])
     turn = controller.send("what do I do now?")
     assert "Creating" not in turn.text and not blank.entrypoint_path.exists()
-    assert provider.calls[-1][-1].content.startswith("No file has changed")
+    assert provider.calls[-1][-1].content.startswith("Nothing in this project has changed")
 
 
 def test_clicking_a_file_while_the_game_plays_keeps_the_game_one_click_away(bench) -> None:
@@ -911,3 +924,322 @@ def test_things_gary_drew_under_his_own_names_are_not_said_to_be_absent(project)
     assert "It draws other things too" in about
     assert "Nothing else is in the game yet" in evidence.describe_game(
         create_project("Plain", "games", root=project.directory.parent))
+
+
+# ------------------------------------------------------------ the parity pass
+
+def test_a_run_that_drew_a_chart_did_something(tmp_path) -> None:
+    """Measured: "Graph this." ran the Research starter, which drew charts/chart.png, and
+    the turn was planned into steps and reported as having changed nothing."""
+    from opennest.assets import manager as assets
+
+    research = create_project("Weather", "research", root=tmp_path)
+    assets.import_file(research, INPUTS / "weather.csv")
+    controller, provider = make(research, [Reply(tool_calls=(ToolCall("run_project", {}),)),
+                                           Reply(text="")])
+    from opennest.security.process_sandbox import sandbox_available
+
+    if not sandbox_available():
+        pytest.skip("the process sandbox cannot be applied here")
+    turn = controller.send("graph this")
+    made = turn.tool_results[0][1].made_files
+    assert made and made[0].startswith("charts/")
+    assert not turn.reduced and f"It drew {made[0]}." in turn.text
+    state = project_state(research, toolbox=controller.toolbox)
+    assert f"{made[0]} (drawn by the last run)" in state
+
+
+def test_each_preset_is_described_from_its_own_files(tmp_path) -> None:
+    from opennest.assets import manager as assets
+
+    site = create_project("Site", "website", root=tmp_path)
+    (site.directory / "src" / "index.html").write_text(
+        "<h1>Dino World</h1><section><h2>Fossils</h2><img src='assets/trex.png'></section>")
+    state = project_state(site, toolbox=Toolbox(site))
+    assert "1 section; headings “Dino World”; “Fossils”" in state
+    assert "not in the project, so they appear broken: assets/trex.png" in state
+    assert "Nobody in Open Nest can see the page" in state
+
+    sketch = create_project("Blink", "arduino", root=tmp_path)
+    state = project_state(sketch, toolbox=Toolbox(sketch))
+    assert "LED_PIN = LED_BUILTIN (the board's own light, no wire)" in state
+    assert "No board is chosen yet" in state and "Nothing in Open Nest can see or test" in state
+
+    pi = create_project("Car", "raspberry_pi", root=tmp_path)
+    main = pi.entrypoint_path
+    main.write_text(main.read_text().replace("LED_PIN = 17", "LED_PIN = 22"))
+    state = project_state(pi, toolbox=Toolbox(pi))
+    assert "BCM pin 22" in state and "Nothing has run on a real Raspberry Pi" in state
+
+    research = create_project("Weather", "research", root=tmp_path)
+    assets.import_file(research, INPUTS / "weather.csv")
+    state = project_state(research, toolbox=Toolbox(research))
+    assert "data/weather.csv, read from the file: 180 rows" in state
+    assert "city (Leeds, Seville, Oslo)" in state and "No chart exists yet" in state
+
+
+def test_a_blank_project_says_what_it_cannot_do_for_what_it_has_become(tmp_path) -> None:
+    blank = create_project("Blank", "blank", root=tmp_path)
+    (blank.directory / "src" / "index.html").write_text("<h1>Hi</h1>")
+    assert "cannot show a web page. A Website project can" in project_state(blank)
+
+
+def test_clicking_a_chart_shows_the_picture(qt_app, tmp_path) -> None:
+    import shutil as _shutil
+
+    from opennest.ui.workbench import Workbench
+
+    research = create_project("Weather", "research", root=tmp_path)
+    (research.directory / "charts").mkdir()
+    _shutil.copy(Path(__file__).resolve().parents[1] / "assets" / "nest_bw.png",
+                 research.directory / "charts" / "chart.png")
+    widget = Workbench(research, AgentController(research, ScriptedProvider([]),
+                                                 Toolbox(research)))
+    try:
+        widget.show()
+        widget._open_file(_item(widget, "charts/chart.png"))
+        assert not widget._chart.isHidden()
+        assert widget._chart_caption.text().startswith("charts/chart.png")
+    finally:
+        widget.release()
+        widget.close()
+
+
+def test_an_undo_marks_the_reply_it_took_back(project) -> None:
+    controller, provider = make(project, [Reply(text="The gallery is added."),
+                                          Reply(text="Ok.")])
+    controller.send("add a gallery")
+    controller.note_outside_change("Undo went back to X", undone=True)
+    assert "the change described here is no longer in the files" in \
+        controller.history[-1].content
+    turn = controller.send("what now?")
+    assert "[Open Nest" not in turn.text
+
+
+def test_i_see_as_an_opening_is_dropped() -> None:
+    assert presentable("I see. The section is in index.html.") == \
+        "The section is in index.html."
+    assert presentable("I see the problem.") == "I see the problem."   # the guard's job
+
+
+def test_promises_are_read_as_a_pattern() -> None:
+    from opennest.agent.replies import promises
+
+    for said in ("Let me create the basic structure.", "I'll edit index.html now.",
+                 "I'm going to draw a chart."):
+        assert promises(said), said
+    assert not promises("You could add a chart next.")
+
+
+
+def test_an_answer_about_a_real_earlier_change_is_not_pulled_up(project) -> None:
+    """Measured on the parity walk: "I added the Fossils section" -- true, a recipe had
+    just done it -- was "corrected" with "Call edit_file now" in a turn with no tools."""
+    controller, provider = make(project, [
+        Reply(tool_calls=(ToolCall("edit_file", {"path": "src/game.py",
+                                                 "old_text": "PLAYER_SPEED = 5",
+                                                 "new_text": "PLAYER_SPEED = 9"}),)),
+        Reply(text="Faster now."),
+        Reply(text="I increased the player speed from 5 to 9."),
+    ])
+    passing(controller)
+    controller.send("make it faster")
+    turn = controller.send("what did you change?")
+    assert turn.text == "I increased the player speed from 5 to 9." and len(provider.calls) == 3
+
+
+def test_a_website_is_checked_for_things_its_page_has_not_got(tmp_path) -> None:
+    site = create_project("Dino", "website", root=tmp_path)
+    controller, provider = make(site, [
+        Reply(text="Here's a start."),
+        Reply(text="The gallery is in the page with five dinosaur cards."),
+        Reply(text="There's no gallery on the page yet."),
+    ])
+    controller.send("add a gallery with five dinosaur cards")
+    controller.note_outside_change("Undo went back to X", undone=True)
+    turn = controller.send("why can't I see it?")
+    assert "no gallery" in turn.text
+    correction = provider.calls[-1][-1].content
+    assert "Do not say the project has a" in correction and "its files have none" in correction
+    assert "Right now the page has" in correction
+
+
+def test_blank_becomes_a_data_or_pi_project_and_says_what_it_cannot_become(tmp_path) -> None:
+    data = create_project("D", "blank", root=tmp_path / "d")
+    controller, _ = make(data, [Reply(text="Here's a start.")])
+    turn = controller.send("Analyze this CSV.")
+    assert "import pandas" in data.entrypoint_path.read_text()
+    assert (data.directory / "src" / "matplotlibrc").is_file()
+    assert turn.text.startswith("There was nothing in the project yet, so I started it as a "
+                                "data project")
+
+    pi = create_project("P", "blank", root=tmp_path / "p")
+    controller, _ = make(pi, [Reply(text="Here's a start.")])
+    controller.send("Make a Pi project.")
+    assert "LED_PIN = 17" in pi.entrypoint_path.read_text()
+
+    for said, kind in (("Make me a website.", "Website"),
+                       ("Write an Arduino project.", "Arduino")):
+        blank = create_project(kind, "blank", root=tmp_path / kind)
+        controller, provider = make(blank, [])
+        turn = controller.send(said)
+        assert turn.routed and provider.calls == [] and not blank.entrypoint_path.exists()
+        assert f"start {'an' if kind == 'Arduino' else 'a'} {kind} project instead" in turn.text
+
+
+def test_a_compile_claimed_with_nothing_compiled_is_caught(tmp_path) -> None:
+    sketch = create_project("Blink", "arduino", root=tmp_path)
+    controller, provider = make(sketch, [
+        Reply(tool_calls=(ToolCall("edit_file", {
+            "path": "src/project/project.ino",
+            "old_text": "const unsigned long ON_MILLISECONDS = 500;",
+            "new_text": "const unsigned long ON_MILLISECONDS = 100;"}),)),
+        Reply(text="I compiled the project. The LED now blinks every 100ms."),
+        Reply(text="The LED stays on for 100ms now. Press Compile to check it."),
+    ])
+    turn = controller.send("make the light stay on shorter")
+    assert "I compiled" not in turn.text
+    assert provider.calls[-1][-1].content.startswith("Nothing was run, compiled or tested")
+
+
+def test_a_file_changed_between_messages_is_noticed(project) -> None:
+    controller, provider = make(project, [Reply(text="Ok."), Reply(text="Ok.")])
+    controller.send("hello")
+    game = project.entrypoint_path
+    game.write_text(game.read_text().replace("PLAYER_SPEED = 5", "PLAYER_SPEED = 2"))
+    controller.send("how fast is the square?")
+    assert "src/game.py changed since your last reply, and not by you" in \
+        provider.system_prompt
+
+
+def test_an_answer_gets_the_checked_facts_beside_the_question(project) -> None:
+    controller, provider = make(project, [Reply(text="The arrow keys.")])
+    controller.send("how do I play this?")
+    sent = provider.calls[-1][-1].content
+    assert sent.startswith("how do I play this?\n\n(WHAT OPEN NEST HAS CHECKED:")
+    assert "the arrow keys (hold down)" in sent
+    assert controller.history[1].content == "how do I play this?"   # kept as said
+
+
+def test_a_bare_json_call_is_read_and_never_shown() -> None:
+    raw = ('I will now edit it.\n\n{"name": "edit_file", "arguments": {"path": "src/main.py",'
+           ' "old_text": "BLINKS = 3", "new_text": "BLINKS = 10"}}\n\nWant me to go ahead?')
+    reply = reply_from_completion(raw)
+    assert [c.name for c in reply.tool_calls] == ["edit_file"]
+    assert "edit_file" not in reply.text and "Want me to go ahead?" in reply.text
+    assert presentable('{"name": "edit_file", "arguments": {}}\nOk.') == "Ok."
+
+
+def test_compiling_without_a_board_is_said_to_the_child(qt_app, tmp_path,
+                                                        monkeypatch) -> None:
+    from opennest.execution import arduino
+    from opennest.ui.workbench import Workbench
+
+    monkeypatch.setattr(arduino, "available", lambda: True)
+    monkeypatch.setattr(arduino, "boards", lambda: [])
+    sketch = create_project("Blink", "arduino", root=tmp_path)
+    widget = Workbench(sketch, AgentController(sketch, ScriptedProvider([]),
+                                               Toolbox(sketch)))
+    try:
+        widget._run()
+        said = widget._output.toPlainText()
+        assert said.startswith("Choose which Arduino you have first")
+        assert "Ask the child" not in said
+    finally:
+        widget.release()
+        widget.close()
+
+
+def test_a_page_turn_that_points_at_a_missing_picture_says_so(tmp_path) -> None:
+    site = create_project("Dino", "website", root=tmp_path)
+    page = site.directory / "src" / "index.html"
+    old = page.read_text().split("\n")[0]
+    controller, _ = make(site, [
+        Reply(tool_calls=(ToolCall("edit_file", {
+            "path": "src/index.html", "old_text": old,
+            "new_text": old + "\n<img src=\"../assets/dinosaurs.jpg\" alt=\"dinos\">"}),)),
+        Reply(text="The picture shows a T-Rex."),
+    ])
+    turn = controller.send("add a picture of dinosaurs")
+    assert "The page now points at ../assets/dinosaurs.jpg, which is not in the project" \
+        in turn.text
+
+
+def test_a_menu_is_a_nav_on_a_page(tmp_path) -> None:
+    site = create_project("Dino", "website", root=tmp_path)
+    page = site.directory / "src" / "index.html"
+    page.write_text("<nav><a href='#a'>About</a></nav><h1>Dinos</h1>")
+    controller, provider = make(site, [Reply(text="Ok."),
+                                       Reply(text="The menu is at the top of the page.")])
+    controller.send("give it a menu at the top")
+    turn = controller.send("where is the menu?")
+    assert turn.text == "The menu is at the top of the page." and len(provider.calls) == 2
+
+
+def test_numbers_no_analysis_printed_are_pulled_up(tmp_path) -> None:
+    from opennest.assets import manager as assets
+
+    research = create_project("Weather", "research", root=tmp_path)
+    assets.import_file(research, INPUTS / "weather.csv")
+    controller, provider = make(research, [
+        Reply(text="Leeds averages 14.5 degrees and Oslo 19.0."),
+        Reply(text="The temperatures go from 3.9 to 31.5; run it to see averages."),
+    ])
+    turn = controller.send("what's the warmest city?")
+    assert "14.5" not in turn.text and "3.9 to 31.5" in turn.text
+    correction = provider.calls[-1][-1].content
+    assert correction.startswith("Answer this again") and "14.5" not in correction
+    # A range worked out from the checked facts is not a guess.
+    controller, provider = make(research, [Reply(text="Temperatures span 27.6 degrees.")])
+    controller.send("how much does the temperature vary?")
+    assert len(provider.calls) == 1
+
+
+def test_a_chart_described_is_a_picture_nobody_looked_at() -> None:
+    from opennest.agent.replies import CLAIMED_SIGHT
+
+    assert any(phrase in "the chart shows average temperature by city" for phrase in
+               CLAIMED_SIGHT)
+
+
+
+def test_a_page_gallery_without_a_heading_is_still_described(tmp_path) -> None:
+    site = create_project("Dino", "website", root=tmp_path)
+    (site.directory / "src" / "index.html").write_text(
+        "<h1>Dinos</h1><div id='gallery'><figure><img src='a.png'></figure>"
+        "<figure><img src='b.png'></figure></div>")
+    state = project_state(site, toolbox=Toolbox(site))
+    assert "2 figures, 2 pictures; element ids gallery" in state
+
+
+def test_a_look_claimed_twice_is_replaced_with_what_happened(project) -> None:
+    controller, _ = make(project, [Reply(text="I see the square is orange."),
+                                   Reply(text="I can see it is orange.")])
+    turn = controller.send("is the square orange?")
+    assert "see" not in turn.text.lower()
+
+
+
+def test_a_change_a_few_turns_back_still_counts_as_lately(project) -> None:
+    controller, provider = make(project, [
+        Reply(tool_calls=(ToolCall("edit_file", {"path": "src/game.py",
+                                                 "old_text": "PLAYER_SPEED = 5",
+                                                 "new_text": "PLAYER_SPEED = 9"}),)),
+        Reply(text="Faster now."),
+        Reply(text="Press Undo at the bottom."),
+        Reply(text="I increased the player speed from 5 to 9."),
+    ])
+    passing(controller)
+    controller.send("make it faster")
+    controller.send("how do I undo that?")
+    turn = controller.send("what did you change?")
+    assert turn.text == "I increased the player speed from 5 to 9." and len(provider.calls) == 4
+
+
+
+def test_plural_things_need_no_determiner() -> None:
+    from opennest.agent.replies import child_nouns
+
+    assert {"eagle", "cars"} <= child_nouns("make me a game where an eagle flies over cars")
+    assert "dinosaurs" in child_nouns("a website about dinosaurs")
+    assert "keys" not in child_nouns("move it with keys")      # not a thing a game has

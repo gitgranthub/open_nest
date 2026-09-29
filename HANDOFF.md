@@ -79,6 +79,13 @@ panel marks what changed and shows a file's code with the lines marked; a Blank 
 in the panel. **All of it works in every project type**; the game-only parts are the
 controls, "drawn", the stale-game check and the named-thing check.
 
+**Then a cross-preset parity pass (PHASE_13_HANDOFF §7A, SPIKES §27F)** checked the same
+behaviour in Website, Research, Arduino, Raspberry Pi and five Blank starts with the real
+model, and corrected what it found -- per-preset facts read from the files, answers checked
+against recent turns, data answers held to printed numbers, compile claims checked, Blank
+becoming a data or Pi project and routing a website or sketch to the type that can. Frozen;
+**13B is next.**
+
 **Phase 12.5 — the Fast Path — is implemented, measured, and worth keeping. It is
 committed (552627f) on `phase-12-test-drive`.** Before Gary writes anything, the model
 already in memory answers two closed questions -- which kind of change is this, and is it
@@ -295,7 +302,7 @@ turn cloud on, and the child can switch to Claude or OpenAI after a warning, or 
 pictures with an image model. Everything except Image Creation still works with cloud off,
 which is the default.
 
-1398 tests pass, ruff is clean.
+1421 tests pass, ruff is clean.
 
 **The application icon is deliberately unresolved, and that is a ruling rather than a
 gap.** Phase 10D was told not to design or simplify one: it needs a separately approved
@@ -328,7 +335,7 @@ privileged-action pattern in §5, not a new mechanism.
 ## 2. Get running in five minutes
 
 ```bash
-.venv/bin/python -m pytest -q      # 1398 passing, about 3 minutes
+.venv/bin/python -m pytest -q      # 1421 passing, about 3 minutes
 ```
 
 It is slower than it was (7 s at Phase 6, 55 s at Phase 12.2). Phase 12.4 made every Games
@@ -899,6 +906,18 @@ does.** Do not "clean up" these without re-measuring:
   step 1 into three new steps and silently dropped the plan's other two.
 - **An edit that changes nothing is refused** (`reason="no_change"`). It used to succeed,
   be reported as a change of 0 lines, and count a plan step done.
+- **An answer is checked against the last three turns** (`QUIET_TURNS`), never this
+  turn alone: an answer changes nothing by design, so "I added the Fossils section" is
+  about an earlier turn. And its correction never says "call edit_file" -- there are no
+  tools in an answer.
+- **The website named-thing check runs only when the page is not Gary's fresh work.**
+  Word by word against HTML it produced a false "no menu", and he denied a change he had
+  just made. `_PAGE_FORMS` maps a child's word to the tag (`menu` -> `<nav`).
+- **A run's pictures are work done** (`ToolResult.made_files`): a Research turn that ran
+  the analysis and drew a chart is not "nothing changed".
+- **Blank can become a game, a data project or a Pi project**; for a website or a sketch it
+  says it cannot and names the project type that can (`_BLANK_CANNOT`, no model call).
+  Making a Blank project *into* another type in place is architecture work, not done.
 - **The owner's `test02` project still has the poisoned memory** written before this
   pass (its bible's Decisions describe an eagle that was never made). Nothing rewrites a
   child's memory files automatically; deleting that project, or those lines, is the fix.
