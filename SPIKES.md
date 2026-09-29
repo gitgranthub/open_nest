@@ -3693,6 +3693,30 @@ Still not covered here: quitting during the first model load. `MainWindow.closeE
 gives the loader five seconds and parks it (Phase 12, SPIKES 20C); a load slower than
 that -- a larger model on a slow Mac -- could still be parked at exit. Not measured.
 
+### 26J. 13B: pop out and put back
+
+The game view is a widget Open Nest owns, so popping it out is reparenting that widget
+into a window Open Nest also owns (`ui/game_window.py`) -- the same stream, reader
+thread and poll timer; the game's process and sandbox untouched.
+
+- **Pictures keep arriving through both moves.** The real Basic Game under the real
+  sandbox, a key held through the stream: new pictures while popped out, and again once
+  put back, through one stream the whole time (`test_a_real_game_keeps_drawing_through_
+  pop_out_and_put_back`). The test first failed for a reason worth knowing: a still game
+  sends no pictures at all -- frames go out only when the picture changes -- so "no new
+  pictures" needs a moving game to mean anything.
+- **The Phase 13 walk, offscreen: 40/45, the same 40 as the pre-13B commit run the same
+  way**, the five misses both times the focus checks (the game has the keyboard after
+  Run Game, before Tab, Tab leaves it, a held key let go, clicking gives it the keyboard).
+  Offscreen has no window activation, the §3 caveat in another form; under cocoa the walk
+  was 45/45. Frame rates unchanged: 56.5 fps drawn, 54.9 pictures a second in the panel.
+  The Phase 12 app walk: 41/41, the same four recipe routes (`benchmarks/owner_pass/
+  results/app_walk_13b.txt`, and the two live-walk logs beside it).
+- **Closing the window never stops the game**, the game goes home before anything takes
+  it away, code on screen does not hide it, Tab leaves it for Put back -- each a test.
+- **Not measured**: a person popping it out on a real screen (focus in the popped window
+  is Qt-activated in the tests); the window's own frame rate on an 8 GB Mac.
+
 ---
 
 ## 27. The Phase 13 owner test -- traced, reproduced, and corrected before 13B

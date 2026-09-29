@@ -1,0 +1,74 @@
+qt.qpa.fonts: Populating font family aliases took 108 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost. 
+This plugin does not support raise()
+  [PASS] the local model finishes loading at launch
+  [note] macOS made the window active: True
+  [note] Qt active window is the walk's window: True
+This plugin does not support propagateSizeHints()
+  [PASS] the game view is hidden until a game runs
+  [PASS] the game's first picture is in the panel
+  [PASS] ...before the four-second startup check has finished
+  [note] first picture 0.25s after pressing Run Game
+  [PASS] Send waits while the game is starting
+  [PASS] the startup check finishes
+  [PASS] the run is a live one, in its own process
+  [PASS] the game's process has no window of its own (dummy video driver)
+  [PASS] the game's process is the confined shim
+  [FAIL] the game has the keyboard after Run Game
+  [PASS] the caption carries the game's own title
+  [PASS] holding right moves the player, in the panel
+  [PASS] letting go stops it
+  [FAIL] the game has the keyboard before Tab
+  [FAIL] Tab leaves the game
+  [FAIL] ...and a key held when it left is let go — 320 -> 180
+  [PASS] the caption says how to get back in
+  [FAIL] clicking the game gives it the keyboard
+  [PASS] Stop ends the game's process
+  [PASS] the panel says it stopped
+  [PASS] the picture is marked as not running
+  [PASS] Stop is no longer offered
+  [PASS] Escape ends the starter by itself
+  [PASS] the panel says the game ended
+  [PASS] a game with a hidden fault starts fine
+  [PASS] space crashes it
+  [PASS] the panel leads with the error line
+  [PASS] with the rest behind Show technical details
+  [PASS] Gary's facts now say the last run failed, with the child's own line
+  [PASS] a change while the game plays: the turn finished
+  [PASS] the old game is stopped when its code changes
+  [PASS] ...and taken out of the panel
+  [PASS] the test's still is shown instead
+  [PASS] Run Game plays the new version
+  [PASS] a game is playing before Undo
+  [PASS] Undo stops the game it made stale
+  [PASS] ...and takes it out of the panel
+  [PASS] Gary asked to run the game: the turn finished
+  [note] Gary did not run the game this time (model choice): ['edit_file']
+  [note] no game running: 84.6 tokens/s; 0.0 game pictures/s in the panel
+  [note] an animated game drew 56.7 fps; 56.7 pictures a second reached the panel
+  [PASS] the panel shows (nearly) every picture the game draws
+  [PASS] the game draws at a windowed game's rate (>= 50 fps)
+  [note] an animated game streaming into the panel: 86.0 tokens/s; 55.0 game pictures/s in the panel
+  [PASS] generation keeps at least 80% of its speed with a game playing
+  [PASS] the game keeps drawing while the model generates
+  [note] Open Nest CPU with a game streaming: 19.2% (sampled), then 14.7%
+  [PASS] going back to the Flight Deck stops the game
+This plugin does not support propagateSizeHints()
+  [PASS] quitting Open Nest with a game playing leaves no game behind
+  [PASS] no stray game process anywhere
+
+=== live-walk: 40/45 checks passed ===
+  FAILED: the game has the keyboard after Run Game
+  FAILED: the game has the keyboard before Tab
+  FAILED: Tab leaves the game
+  FAILED: ...and a key held when it left is let go — 320 -> 180
+  FAILED: clicking the game gives it the keyboard
+  notes:
+    - macOS made the window active: True
+    - Qt active window is the walk's window: True
+    - first picture 0.25s after pressing Run Game
+    - Gary did not run the game this time (model choice): ['edit_file']
+    - no game running: 84.6 tokens/s; 0.0 game pictures/s in the panel
+    - an animated game drew 56.7 fps; 56.7 pictures a second reached the panel
+    - an animated game streaming into the panel: 86.0 tokens/s; 55.0 game pictures/s in the panel
+    - Open Nest CPU with a game streaming: 19.2% (sampled), then 14.7%
+  6 screenshots in /Users/grantcheney/Documents/Grant/github/open_nest/.opennest-sandbox/phase12

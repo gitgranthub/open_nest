@@ -587,7 +587,8 @@ def _run_line(profile, live: bool = False) -> str:
     if profile.live_view or live:
         return (f"\u201c\u25b6 {label}\u201d plays it in Build / Preview -- they click "
                 f"inside the game first so it gets the keys, and Tab leaves it; \u201cStop\u201d "
-                f"ends it.")
+                f"ends it. \u201cPop out\u201d beside the game gives it a window of its own; "
+                f"\u201cPut back\u201d (or closing that window) brings it home, still playing.")
     return (f"\u201c\u25b6 {label}\u201d runs it and shows what it printed or drew in "
             f"Build / Preview; \u201cStop\u201d ends one that keeps running.")
 

@@ -4,6 +4,11 @@ Read [HANDOFF.md](HANDOFF.md) first. This file is what Phase 13 built, what it m
 and what is left. The measurements are SPIKES.md section 26; the specification was
 PHASE_12_HANDOFF.md section 6.
 
+**13A and 13B are built. Run Game plays the child's game inside the Build / Preview
+panel, and "Pop out" gives it a window of its own and "Put back" brings it home -- the
+same widget moved, the game never restarted (§8).** Before 13B, the owner-test pass (§7)
+and a cross-preset parity pass (§7A) corrected the flow around it.
+
 **13A is built and verified: Run Game plays the child's game inside the Build / Preview
 panel.** The game still runs in its own sandboxed process — the profile is byte-for-byte
 unchanged — and opens no window; Open Nest paints what it draws and sends it the child's
@@ -154,9 +159,7 @@ What changed, because Publish does not exist yet and so **nothing shows them tod
 
 ## 5. What is not done
 
-- **13B — pop out and put back.** The owner's original ask. Now small: the game is a
-  widget Open Nest owns, so it moves into a window of its own at the game's full size
-  and back, the stream never interrupted. Do it next, once 13A has been used.
+- ~~**13B — pop out and put back.**~~ **Built** (§8).
 - **Nobody has clicked it.** The walk's focus checks are Qt-activated (§3). A person
   should press Run Game in the real window, play with the arrow keys, click the chat and
   back, and press Tab out of the game.
@@ -317,3 +320,43 @@ Final: 49 turns across nine projects, no tool syntax or code in the chat, 36 que
 and none changed a file, every click showed the real file, every change marked.
 Remaining loose wording and the two things that would need architecture work are in
 SPIKES §27F. **Frozen; 13B next.**
+
+
+---
+
+## 8. 13B -- pop out and put back
+
+The owner's original ask from the test drive ("an optional popout window and put back
+option"), and small because of 13A: the game is a widget Open Nest owns
+(`GameView`), so popping it out moves that widget into a window Open Nest also owns, and
+putting it back moves it home. **The game never notices**: its process, its unchanged
+sandbox profile and its one socket are exactly as they were, and the stream, its reader
+and the view's poll timer carry on -- no restart, no missed picture.
+
+| file | |
+|---|---|
+| `ui/game_window.py` | `GameWindow`: the game, a caption, and "Put back in Open Nest"; `window_size` -- the game's own size, fitted whole to 90 % of the screen, never narrower than the bar |
+| `ui/workbench.py` | "Pop out" / "Put back" beside the game's caption; `_pop_out`, `_put_back`, `_popped`; every place that showed or hid the game in the panel now asks where it is |
+| `agent/evidence.py` | the guide tells Gary the button exists, so "can I make the game bigger?" has a real answer |
+
+**The rules it keeps:**
+
+- **Closing the window puts the game back; it never stops it.** Stop is in the Workbench.
+- **No keyboard trap.** In the window, Tab moves from the game to Put back.
+- **The game goes home before anything takes it away**: a change that makes it stale, a
+  run that replaces it, closing the project. Each puts it back first and then does what it
+  always did, so there is one path for stopping a game, not two.
+- **Code on screen does not hide a popped game.** While Gary builds, the code has the
+  panel to itself and the game keeps playing in its window.
+- **The panel says where the game is** ("Your game is playing in its own window. Put back
+  brings it here.") and so does Gary, from the guide.
+
+**Verified**: 10 new tests (`tests/test_game_view.py`), including **the real Basic Game
+under the real sandbox drawing new pictures while popped out and again once put back,
+through one stream the whole time**; the suite (1430), ruff clean; the Phase 13 walk and
+the Phase 12 app walk re-run (SPIKES §26J). Rendered offscreen: the panel with the game,
+the panel while it is out, and the window.
+
+**Not done**: nobody has clicked it on a real screen -- the same caveat as 13A (§5): macOS
+will not activate a background process, so focus in the popped window is Qt-activated in
+the tests. A person should pop it out, play, press Tab to Put back, and close the window.

@@ -304,7 +304,8 @@ def test_the_guide_is_the_workbench_as_it_is() -> None:
 
     text = evidence.guide(get_profile("games"))
     for part in ("Run Game", "click inside the game", "Tab", "Undo", "Save a Version",
-                 "Flight Deck", "+ Add to Project", "ASSETS", "no Publish or Share"):
+                 "Flight Deck", "+ Add to Project", "ASSETS", "no Publish or Share",
+                 "Pop out", "Put back"):
         assert part in text, part
     assert "Compile" in evidence.guide(get_profile("arduino"))
 

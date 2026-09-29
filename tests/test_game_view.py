@@ -456,3 +456,138 @@ def test_run_game_plays_in_the_panel_through_the_real_thread(game_bench) -> None
     pump(0.3)
     assert game_bench._output.toPlainText() == "Stopped."
     assert not game_bench._stop_button.isEnabled()
+
+
+# ----------------------------------------------------- Phase 13B: pop out, put back
+
+def _playing(bench):
+    run = live_run()
+    bench._show_run(_Result(run))
+    return run
+
+
+def test_a_playing_game_can_be_popped_out_and_is_the_same_game(game_bench) -> None:
+    from opennest.ui.workbench import POP_OUT, PUT_BACK
+
+    run = _playing(game_bench)
+    assert game_bench._pop_button.isVisibleTo(game_bench)
+    assert game_bench._pop_button.text() == POP_OUT
+    game = game_bench._game
+    game_bench._pop_out()
+    window = game_bench._game_window
+    assert window is not None and not window.isHidden()
+    assert game.window() is window, "the game moved into its own window"
+    assert game.stream is run.live, "the same stream -- nothing restarted"
+    assert game_bench._pop_button.text() == PUT_BACK
+    assert game_bench._popped_note.isVisibleTo(game_bench)
+    assert window.windowTitle().startswith("Eagle Patrol")
+    assert game_bench._output.toPlainText().startswith("Your game is in its own window")
+
+
+def test_put_back_brings_it_home_still_playing(game_bench) -> None:
+    run = _playing(game_bench)
+    game = game_bench._game
+    game_bench._pop_out()
+    game_bench._game_window.back.click()
+    assert game.window() is game_bench.window(), "back in the Workbench"
+    assert game_bench._game_window.isHidden()
+    assert game.stream is run.live and game.running
+    assert game.isVisibleTo(game_bench)
+    assert not game_bench._popped_note.isVisibleTo(game_bench)
+
+
+def test_closing_the_window_puts_it_back_and_does_not_stop_it(game_bench, stops) -> None:
+    run = _playing(game_bench)
+    game_bench._pop_out()
+    game_bench._game_window.close()
+    assert not game_bench._popped and game_bench._game.running
+    assert stops == [], "closing the window is not Stop"
+    assert run.output.stopped is False
+
+
+def test_code_on_screen_leaves_a_popped_game_where_it_is(game_bench) -> None:
+    _playing(game_bench)
+    game_bench._pop_out()
+    game_bench._progress(Step("changed", "changed src/game.py", path="src/game.py",
+                              content="A = 1\n", changed_lines=(0,)))
+    assert not game_bench._game.isHidden(), "the game in its own window is not hidden"
+    assert game_bench._output.toPlainText() == "A = 1\n"
+
+
+def test_a_stale_game_is_taken_home_and_away(game_bench, stops) -> None:
+    run = _playing(game_bench)
+    game_bench._pop_out()
+    game = game_bench.project.entrypoint_path
+    game.write_text(game.read_text() + "\n# changed\n")
+    game_bench._retire_game_if_stale()
+    assert not game_bench._popped and game_bench._game_window.isHidden()
+    assert run in stops and game_bench._game.isHidden()
+
+
+def test_closing_the_project_with_the_game_out_is_clean(qt_app, project, stops) -> None:
+    from opennest.ui.workbench import Workbench
+
+    bench = Workbench(project, AgentController(project, ScriptedProvider([]),
+                                               Toolbox(project)))
+    bench.show()
+    run = live_run()
+    bench._show_run(_Result(run))
+    bench._pop_out()
+    window = bench._game_window
+    bench.release()
+    bench.close()
+    assert window.isHidden() and run in stops
+
+
+def test_the_window_opens_at_the_games_own_size_and_never_bigger_than_the_screen() -> None:
+    from PySide6.QtCore import QSize
+
+    from opennest.ui.game_window import BAR_HEIGHT, window_size
+
+    assert window_size(640, 480, QSize(2000, 1200)) == QSize(640, 480 + BAR_HEIGHT)
+    assert window_size(320, 240, QSize(2000, 1200)).width() == 600   # room for the bar
+    small = window_size(1280, 960, QSize(1000, 700))
+    assert small.width() <= 900 and small.height() <= 630
+    assert abs(small.width() / (small.height() - BAR_HEIGHT) - 1280 / 960) < 0.02
+
+
+def test_tab_in_the_window_reaches_put_back(game_bench) -> None:
+    _playing(game_bench)
+    game_bench._pop_out()
+    window = game_bench._game_window
+    order = []
+    widget = game_bench._game
+    for _ in range(3):
+        widget = widget.nextInFocusChain()
+        order.append(widget)
+    assert window.back in order, "Tab leaves the game for the Put back button"
+
+
+@needs_sandbox
+def test_a_real_game_keeps_drawing_through_pop_out_and_put_back(game_bench) -> None:
+    """The real game, the real sandbox: pictures keep arriving in both places."""
+    game_bench._run()
+    assert pump(6, lambda: game_bench._game.current_frame() is not None), "no picture"
+    assert pump(8, lambda: game_bench._thread is None)
+
+    def sequence():
+        frame = game_bench._game.current_frame()
+        return frame.sequence if frame is not None else -1
+
+    # A picture is sent only when it changes, and the Basic Game only moves on a key:
+    # hold one down through the stream, in both places.
+    stream = game_bench._game.stream
+    game_bench._pop_out()
+    popped_at = sequence()
+    stream.send_key("K_RIGHT", True)
+    assert pump(3, lambda: sequence() > popped_at + 5), "no new pictures once popped out"
+    stream.send_key("K_RIGHT", False)
+    game_bench._put_back()
+    back_at = sequence()
+    stream.send_key("K_LEFT", True)
+    assert pump(3, lambda: sequence() > back_at + 5), "no new pictures once put back"
+    stream.send_key("K_LEFT", False)
+    assert game_bench._game.stream is stream, "one stream the whole time"
+    process = game_bench._live_run.process
+    game_bench._stop()
+    assert pump(6, lambda: process.poll() is not None)

@@ -57,7 +57,8 @@ the old version. The invisible playtest is untouched and still the verification 
 Also fixed on the way: **any interactive project that printed a lot froze** once its
 unread output pipe filled (SPIKES §26B). **The white sunglasses are now reserved for a
 child publishing a version** (owner's ruling, brand guide §38): nothing shows them today.
-**13B — pop out and put back — is next.** SPIKES §26 has every measurement.
+**13B — pop out and put back — is built** (PHASE_13_HANDOFF §8): the same game widget
+moved into a window of its own and back, never restarted. SPIKES §26 has every measurement.
 
 **Then the owner tested 13A, and the flow around it was not sound; the owner-test pass
 corrected it before 13B (PHASE_13_HANDOFF §7, SPIKES §27).** Traced from the owner's own
@@ -84,7 +85,7 @@ behaviour in Website, Research, Arduino, Raspberry Pi and five Blank starts with
 model, and corrected what it found -- per-preset facts read from the files, answers checked
 against recent turns, data answers held to printed numbers, compile claims checked, Blank
 becoming a data or Pi project and routing a website or sketch to the type that can. Frozen;
-**13B is next.**
+then **13B was built** (above).
 
 **Phase 12.5 — the Fast Path — is implemented, measured, and worth keeping. It is
 committed (552627f) on `phase-12-test-drive`.** Before Gary writes anything, the model
@@ -158,7 +159,7 @@ child asking for a spaceship game still does not get one. PHASE_12_HANDOFF §8 k
 ergonomics (an anchor or line-numbered edit a small model can actually hit), not tone,
 and it wants a measurement before a redesign.
 
-**Phase 13A is built (above); 13B and Phase 14 are not started.** Phase 14 — getting work
+**Phase 13A and 13B are built (above); Phase 14 is not started.** Phase 14 — getting work
 out of Open Nest at all — is PHASE_12_HANDOFF §7, and the owner has since reshaped it
 around **Publish Version**: a frozen, named release a child decides is ready to show,
 with project-type outputs, an `.opennest` package that opens play-first, and Share kept
@@ -280,7 +281,7 @@ it belongs in section 4.
 | 12.3 — does the child get a game? | **measured, and the answer is no.** 1 of 24 conversations produced the game that was asked for. 4B vs 8B did not solve it, prompt tuning did not solve it, starter markers made it worse, and tool execution is no longer the dominant problem. `RunResult.ok` is True for any game that merely launched, so the repair loop cannot react to "runs but does not work". SPIKES §23 |
 | 12.4 — Playability Feedback Loop | **closed.** A headless playtest after every change feeds crashed / no picture / closed itself / frozen to the repair loop, sharing its three attempts and the call budget. The 12.3 spike graded 7 of 10 working games frozen and was rebuilt, not wired in. 14 real conversations: 0 false failures, 0 crashes reaching the child as "done". 1104 tests, ruff clean. PHASE_12_HANDOFF §12, SPIKES §24 |
 | **12.5 — The Fast Path** | **implemented, closed out and frozen; committed (552627f).** A classifier on whichever local model Gary is -- closed questions, no generation, no second model -- routes a recognised single change to a recipe that edits through the Toolbox, is checked, and reports truthfully; everything else goes to Gary as before. Games (Phase 12 requests) 4/18 → 17/18; all 44 conversations 14/44 → 33/44; median 20.1 s → 3.2 s; tokens −73%. Closure pass: Blank eligibility from files, the three known misses, one website gap; UI walk 41/41. Pre-13 pass: natural wording, several requests per message, a planning fallback, the test's still frame. 63 recipes (41 deterministic, 22 guidance-only). ~210 MB cache. 1256 tests, ruff clean. PHASE_12_HANDOFF §13, SPIKES §25-25N |
-| **13 — The game preview in the workbench** | **13A built and verified on `phase-13-live-preview`**: the game drawn in the Build / Preview panel from its own sandboxed process, input sent back, same profile. 56 pictures/s, first picture ~0.3 s; the printing-game freeze fixed; the sunglasses reserved for Publish. 1303 tests, ruff clean; Phase 13 walk 45/45, Phase 12 app walk 41/41. **13B (pop out / put back) not started.** [PHASE_13_HANDOFF.md](PHASE_13_HANDOFF.md), SPIKES §26 |
+| **13 — The game preview in the workbench** | **13A built and verified on `phase-13-live-preview`**: the game drawn in the Build / Preview panel from its own sandboxed process, input sent back, same profile. 56 pictures/s, first picture ~0.3 s; the printing-game freeze fixed; the sunglasses reserved for Publish. 1303 tests, ruff clean; Phase 13 walk 45/45, Phase 12 app walk 41/41. **13B (pop out / put back) built** -- the same widget moved, never restarted. [PHASE_13_HANDOFF.md](PHASE_13_HANDOFF.md), SPIKES §26 |
 | 13 owner-test pass | **done, before 13B.** The owner's first test of 13A, traced from the project archive and corrected across every project type: set-up on first request, calls written as text, questions answered without tools, checked facts every turn, history as shown, evidence-based claim checks, plans that re-check the files, file marks and click-to-code. PHASE_13_HANDOFF §7, SPIKES §27 |
 | 14 — Getting work out of Open Nest (export / PDF / share) | **not started.** Specified in PHASE_12_HANDOFF §7. Nothing can currently leave the app |
 
@@ -302,7 +303,7 @@ turn cloud on, and the child can switch to Claude or OpenAI after a warning, or 
 pictures with an image model. Everything except Image Creation still works with cloud off,
 which is the default.
 
-1421 tests pass, ruff is clean.
+1430 tests pass, ruff is clean.
 
 **The application icon is deliberately unresolved, and that is a ruling rather than a
 gap.** Phase 10D was told not to design or simplify one: it needs a separately approved
@@ -335,7 +336,7 @@ privileged-action pattern in §5, not a new mechanism.
 ## 2. Get running in five minutes
 
 ```bash
-.venv/bin/python -m pytest -q      # 1421 passing, about 3 minutes
+.venv/bin/python -m pytest -q      # 1430 passing, about 3 minutes
 ```
 
 It is slower than it was (7 s at Phase 6, 55 s at Phase 12.2). Phase 12.4 made every Games
@@ -394,6 +395,7 @@ opennest/
 │   ├── workbench.py        project workspace
 │   ├── worker.py           QThread plumbing; generation never blocks the UI
 │   ├── game_view.py        Phase 13: paints a LiveStream, sends it the child's input
+│   ├── game_window.py      13B: the same game view, in a window of its own and back
 │   └── main_window.py      shell; owns the provider, VersionHistory and memory lifecycle
 ├── ai/
 │   ├── provider.py         ModelProvider interface, Message/ToolCall/Reply
@@ -878,6 +880,10 @@ does.** Do not "clean up" these without re-measuring:
   budget (`AgentController.stop` -> `CallBudget.stop`) and waits with the event loop
   running (`ui.worker.wait_for_thread`) -- never a blocking `wait()`, which deadlocks
   with a permission prompt the turn is waiting on (SPIKES §26I).
+- **A popped-out game goes home before anything takes it away** (13B). Stale, replaced,
+  project closing: `_put_back()` first, then the old path. And closing its window puts
+  it back -- it never stops the game. Anything new that hides or shows the game in the
+  panel must check `_popped` first.
 - **The sunglasses are reserved for Publish Version.**
   `test_the_sunglasses_are_reserved_for_publishing_a_version` fails if a screen reaches
   for them; Publish is the change that updates it.

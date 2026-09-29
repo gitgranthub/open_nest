@@ -61,6 +61,7 @@ from opennest.ui import about_gary, brand, theme
 from opennest.ui import web_preview as web_preview_ui
 from opennest.ui.common import horizontal_rule, section_label, status_row
 from opennest.ui.game_view import GameView
+from opennest.ui.game_window import GameWindow
 from opennest.ui.worker import (
     AgentWorker,
     ImageWorker,
@@ -83,6 +84,9 @@ SHOW_CODE = "Show the code that changed"
 SHOW_RESULT = "Show the result"
 #: After clicking a file while the game plays: back to the game, which kept running.
 SHOW_GAME = "Show the game"
+#: Phase 13B's one button, in its two states.
+POP_OUT = "Pop out"
+PUT_BACK = "Put back"
 #: ...and while a website's page is showing: back to the page.
 SHOW_PAGE = "Show the page"
 
@@ -461,7 +465,24 @@ class Workbench(QWidget):
         self._game_title = QLabel()
         self._game_title.setProperty("role", "mono")
         self._game_title.hide()
-        layout.addWidget(self._game_title)
+        # Phase 13B: the same game, in a window of its own and back (``GameWindow``).
+        self._pop_button = QPushButton(POP_OUT)
+        self._pop_button.setToolTip("Play the game in a window of its own -- it keeps "
+                                    "playing, and Put back brings it home")
+        self._pop_button.clicked.connect(self._toggle_pop)
+        self._pop_button.hide()
+        title_row = QHBoxLayout()
+        title_row.addWidget(self._game_title, 1)
+        title_row.addWidget(self._pop_button)
+        layout.addLayout(title_row)
+        self._popped_note = QLabel("Your game is playing in its own window. Put back "
+                                   "brings it here.")
+        self._popped_note.setProperty("role", "cardBody")
+        self._popped_note.setWordWrap(True)
+        self._popped_note.hide()
+        layout.addWidget(self._popped_note)
+        #: The window the game is in while popped out, made the first time it is needed.
+        self._game_window: GameWindow | None = None
         # A Blank project can become a game (the owner-test pass), so it has the view too.
         if self.project.profile.live_view or (self.project.profile.id == "blank"
                                               and self.project.profile.can_run):
@@ -470,6 +491,8 @@ class Workbench(QWidget):
             self._game.ended.connect(self._game_ended)
             self._game.focus_changed.connect(self._game_focus)
             self._game.title_changed.connect(self._game_titled)
+            #: Where the game lives in the panel, to put it back exactly there.
+            self._game_home = (layout, layout.count())
             layout.addWidget(self._game, 3)
 
         # Which file the code below is, while a turn is building it (``_show_code``).
@@ -946,7 +969,7 @@ class Workbench(QWidget):
         recent = self._recent.get(relative)
         current = recent is not None and recent.content == content
         game_showing = self._game is not None and self._live_run is not None and \
-            not self._game.isHidden()
+            not self._popped and not self._game.isHidden()
         page_showing = self._web is not None and not self._web.isHidden()
         if game_showing or page_showing:
             self._run_view = (self._output.toPlainText(), "", "", False)
@@ -1161,9 +1184,11 @@ class Workbench(QWidget):
                 and self._game.stream is not getattr(self._live_run, "live", None):
             # Its pictures were showing from the start, and it fell over during the
             # startup check: the failure below is the thing to read now.
+            self._put_back()
             self._game.detach()
             self._game.hide()
             self._game_title.hide()
+            self._refresh_game_caption()
         if run.still_running:
             # Not "close its window": a Raspberry Pi test loop is a console program and
             # has no window to close. Stop is true for both, and it is right there.
@@ -1214,9 +1239,10 @@ class Workbench(QWidget):
         self._chart.hide()
         self._chart_caption.hide()
         self._code_caption.hide()
-        self._game.show()
+        if not self._popped:
+            self._game.show()
+            self._output.setMaximumHeight(110)
         self._game_title.show()
-        self._output.setMaximumHeight(110)
         self._refresh_game_caption()
 
     def _refresh_game_caption(self) -> None:
@@ -1230,6 +1256,13 @@ class Workbench(QWidget):
         else:
             hint = "click the game to play"
         self._game_title.setText(f"{title}   \u00b7   {hint}" if hint else title)
+        attached = self._game.stream is not None
+        self._pop_button.setVisible(attached and (self._popped or not self._game.isHidden()))
+        self._pop_button.setText(PUT_BACK if self._popped else POP_OUT)
+        self._popped_note.setVisible(self._popped)
+        if self._popped:
+            self._game_window.caption.setText(f"{title}   \u00b7   {hint}" if hint else title)
+            self._game_window.set_title(f"{title} \u2014 {self.project.name}")
 
     def _game_focus(self, _focused: bool = False) -> None:
         self._refresh_game_caption()
@@ -1297,14 +1330,60 @@ class Workbench(QWidget):
             return
         run = self._live_run
         self._live_run = None
+        self._put_back()
         self._game.detach()
         if run is not None and run.process is not None and run.process.poll() is None:
             stop_project(run)
         self._game.hide()
         self._game_title.hide()
+        self._refresh_game_caption()
         self._stop_button.setEnabled(False)
         if self._web is None:
             self._output.setMaximumHeight(16777215)
+
+    # -- pop out and put back (Phase 13B) -------------------------------------
+
+    @property
+    def _popped(self) -> bool:
+        return self._game_window is not None and self._game_window.game is not None
+
+    def _toggle_pop(self) -> None:
+        if self._popped:
+            self._put_back()
+        else:
+            self._pop_out()
+
+    def _pop_out(self) -> None:
+        """The same game widget, moved into a window of its own. Nothing restarts."""
+        if self._game is None or self._game.stream is None or self._popped:
+            return
+        layout, _index = self._game_home
+        layout.removeWidget(self._game)
+        if self._game_window is None:
+            self._game_window = GameWindow(self)
+            self._game_window.put_back_requested.connect(self._put_back)
+        title = self._live_title or self.project.name
+        self._game_window.hold(self._game, f"{title} \u2014 {self.project.name}")
+        if self._web is None:
+            self._output.setMaximumHeight(16777215)
+        if self._thread is None:
+            self._output.setPlainText("Your game is in its own window. Press Stop when you "
+                                      "are done, or Put back to bring it here.")
+        self._refresh_game_caption()
+
+    def _put_back(self) -> None:
+        """Home again, where it was in the panel, still playing. Safe when not out."""
+        if not self._popped:
+            return
+        game = self._game_window.give_back()
+        layout, index = self._game_home
+        layout.insertWidget(index, game, 3)
+        game.setVisible(self._live_run is not None or game.stream is not None)
+        self._output.setMaximumHeight(110)
+        if self._thread is None and game.running:
+            self._output.setPlainText("Your game is running here. Press Stop when you are "
+                                      "done.")
+        self._refresh_game_caption()
 
     # -- section 30's technical detail --------------------------------------
 
@@ -1369,10 +1448,12 @@ class Workbench(QWidget):
             # to watch. ``_page_back`` puts the page back when the turn ends.
             self._web.hide()
             self._output.setMaximumHeight(16777215)
-        if self._game is not None and not self._game.isHidden():
-            # The same for a game: the code is on screen while it is being changed.
+        if self._game is not None and not self._popped and not self._game.isHidden():
+            # The same for a game: the code is on screen while it is being changed. A
+            # game in its own window stays there -- the code has the panel to itself.
             self._game.hide()
             self._game_title.hide()
+            self._pop_button.hide()
             self._output.setMaximumHeight(16777215)
         self._panel_text(step.content)
         if step.kind == "undone":
@@ -1443,10 +1524,11 @@ class Workbench(QWidget):
             if self._turn_code is None:
                 # Back from a file the child clicked: there is no turn's code to offer.
                 self._code_button.hide()
-            if self._live_run is not None and self._game is not None:
+            if self._live_run is not None and self._game is not None and not self._popped:
                 self._game.show()
                 self._game_title.show()
                 self._output.setMaximumHeight(110)
+                self._refresh_game_caption()
             if self._web is not None and self._web.isHidden():
                 self._web.show()
                 self._output.setMaximumHeight(110)
@@ -1461,10 +1543,12 @@ class Workbench(QWidget):
         if self._web is not None and self._web.isHidden():
             self._web.show()
             self._output.setMaximumHeight(110)
-        if self._game is not None and self._live_run is not None and self._game.isHidden():
+        if self._game is not None and self._live_run is not None and not self._popped \
+                and self._game.isHidden():
             self._game.show()
             self._game_title.show()
             self._output.setMaximumHeight(110)
+            self._refresh_game_caption()
 
     def _clear_details(self) -> None:
         self._technical_detail = ""
@@ -1737,6 +1821,9 @@ class Workbench(QWidget):
             stop_project(self.toolbox.last_run)
         if self._live_run is not None:
             stop_project(self._live_run)
+        self._put_back()
+        if self._game_window is not None:
+            self._game_window.close()
         if self._game is not None:
             self._game.detach()
         if self._web is not None:
