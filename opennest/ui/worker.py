@@ -18,7 +18,11 @@ from opennest.ai.provider import ProviderError
 class AgentWorker(QObject):
     """Runs one agent turn off the UI thread."""
 
-    chunk = Signal(str)        # streamed text as it arrives
+    #: Streamed text as it arrives -- *raw*, before ``agent.replies.presentable``: tool
+    #: protocol, reasoning and all, from whichever model. Nothing shows it; the chat shows
+    #: the finished turn's text, which every provider's reply reaches only through that
+    #: filter. Connect it to the chat and the filter is bypassed.
+    chunk = Signal(str)
     #: Each Step as it happens -- thinking, a file changed and what it now says. Emitted
     #: on this thread and delivered queued on the GUI thread, like the others.
     progress = Signal(object)

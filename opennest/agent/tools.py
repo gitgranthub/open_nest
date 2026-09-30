@@ -246,6 +246,25 @@ def schemas_for(tool_names: tuple[str, ...]) -> list[dict]:
     return [SCHEMAS[name] for name in tool_names if name in SCHEMAS]
 
 
+def offers_graphics(project: Project) -> bool:
+    """Whether a Blank project has clearly become a pygame game, and so is offered the
+    graphics layer's ``game_object`` as Games projects are.
+
+    Read from the files every time, by the same rule the Fast Path uses to treat a
+    Blank project as a game (``fastpath.kinds.family_for``): its entry file imports
+    pygame and nothing else claims it. Measured before it was allowed (SPIKES.md section
+    28L): a Blank project whose files are the Basic Game, the same 94 requests, the real
+    4B -- 50 of 94 first moves acceptable with its four tools, 68 with the fifth, the
+    same gain Games measured (43 -> 62). A Blank project that is anything else, or not
+    yet anything, keeps its four.
+    """
+    if project.profile.id != "blank":
+        return False
+    from opennest.fastpath.kinds import family_for  # lazily: it reads the project's files
+
+    return family_for(project)[0] == "games"
+
+
 # --------------------------------------------------------------------------- the tools
 
 class Toolbox:
@@ -309,7 +328,10 @@ class Toolbox:
 
     @property
     def allowed(self) -> tuple[str, ...]:
-        return tuple(self.project.profile.tools)
+        tools = tuple(self.project.profile.tools)
+        if "game_object" not in tools and offers_graphics(self.project):
+            tools += ("game_object",)
+        return tools
 
     def dispatch(self, name: str | None, arguments: dict | str | None) -> ToolResult:
         """Run one tool call. Never raises for model error -- it returns a message."""

@@ -134,9 +134,17 @@ def _parse(source: str):
 _HEX = re.compile(r"^#?([0-9a-fA-F]{6})$")
 
 
-def colour(value, notes: list[str] | None = None, *, default: str = "white"):
+class Constant(str):
+    """One of the game's own colour constants -- ``ASTEROID_COLOUR`` -- written as its
+    name, so the number at the top of the game keeps deciding the colour. The same idea
+    as a sky drawn in ``BACKGROUND``: the child's constant is the colour."""
+
+
+def colour(value, notes: list[str] | None = None, *, default: str = "white",
+           constants=()):
     """A colour the kit will draw, as the code should say it: a name the kit's palette
-    has, ``"#rrggbb"``, or an (r, g, b) tuple. Unknown names become the nearest thing
+    has, ``"#rrggbb"``, an (r, g, b) tuple, or -- written exactly as the game writes it --
+    one of the game's own colour ``constants``. Unknown names become the nearest thing
     with a note, never an error the child sees."""
     notes = notes if notes is not None else []
     if isinstance(value, (list, tuple)) and len(value) in (3, 4) and all(
@@ -145,6 +153,8 @@ def colour(value, notes: list[str] | None = None, *, default: str = "white"):
     if not isinstance(value, str) or not value.strip():
         return default
     text = value.strip()
+    if text in constants and text.isupper():
+        return Constant(text)
     match = _HEX.match(text)
     if match:
         return "#" + match.group(1).lower()
@@ -170,6 +180,8 @@ def rgb(value) -> tuple[int, int, int] | None:
     """A colour ``colour()`` returned, as (red, green, blue) -- for a constant."""
     if isinstance(value, tuple):
         return value
+    if isinstance(value, Constant):
+        return None                      # its value is the game's, read from the game
     if isinstance(value, str) and value.startswith("#") and len(value) == 7:
         return tuple(int(value[i:i + 2], 16) for i in (1, 3, 5))
     if isinstance(value, str):
@@ -178,6 +190,8 @@ def rgb(value) -> tuple[int, int, int] | None:
 
 
 def colour_code(value) -> str:
+    if isinstance(value, Constant):
+        return str(value)
     return quoted(value) if isinstance(value, str) else \
         f"({value[0]}, {value[1]}, {value[2]})"
 
@@ -347,12 +361,13 @@ def _extent(shape: dict) -> tuple[float, float, float, float] | None:
     return None
 
 
-def _shape_code(shape: dict, dx: float, dy: float, notes: list[str]) -> str | None:
+def _shape_code(shape: dict, dx: float, dy: float, notes: list[str],
+                constants=()) -> str | None:
     """One shape as the kit's code, moved by (-dx, -dy). None for a shape it cannot use."""
-    fill = colour(shape.get("color", shape.get("colour")), notes)
+    fill = colour(shape.get("color", shape.get("colour")), notes, constants=constants)
     if isinstance(shape.get("color"), (list, tuple)) and len(shape["color"]) == 2 and all(
             isinstance(c, str) for c in shape["color"]):
-        top, bottom = (colour(c, notes) for c in shape["color"])
+        top, bottom = (colour(c, notes, constants=constants) for c in shape["color"])
         fill_code = f"({colour_code(top)}, {colour_code(bottom)})"
     else:
         fill_code = colour_code(fill)
@@ -397,8 +412,9 @@ def _shape_code(shape: dict, dx: float, dy: float, notes: list[str]) -> str | No
     return None
 
 
-def shapes_look(shapes, size, at, notes: list[str]) -> Look | None:
-    """Gary's shapes as a Drawing, placed in their own box -- or None if none are usable."""
+def shapes_look(shapes, size, at, notes: list[str], constants=()) -> Look | None:
+    """Gary's shapes as a Drawing, placed in their own box -- or None if none are usable.
+    ``constants`` are the game's colour constants a shape's colour may name."""
     if not isinstance(shapes, (list, tuple)):
         return None
     usable = [s for s in shapes if isinstance(s, dict) and _extent(s) is not None]
@@ -431,7 +447,8 @@ def shapes_look(shapes, size, at, notes: list[str]) -> Look | None:
         grown = (max(box[0], math.ceil(x2 - dx)), max(box[1], math.ceil(y2 - dy)))
         notes.append(f"its shapes reach past its size, so its box is {grown[0]}x{grown[1]}")
         box = grown
-    codes = [code for code in (_shape_code(s, dx, dy, notes) for s in usable) if code]
+    codes = [code for code in (_shape_code(s, dx, dy, notes, constants) for s in usable)
+             if code]
     if not codes:
         return None
     return Look("shapes", shapes=codes, box=(int(box[0]), int(box[1])))

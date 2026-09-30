@@ -475,7 +475,8 @@ class FastPathRouter:
                 if decision.reason in _PATTERN_REASONS and decision.classification:
                     pattern = self.registry.for_profile(family).for_intent(
                         decision.classification.name)
-                result.guidance = self._context(kind, facts, project, pattern)
+                result.guidance = self._context(kind, facts, project, pattern,
+                                                toolbox.allowed)
                 record["context"] = "facts" + (f"+{pattern.id}" if pattern else "")
             record["seconds"] = round(time.monotonic() - started, 3)
             return result
@@ -512,7 +513,7 @@ class FastPathRouter:
             record["stepped_aside"] = "guide-only recipe"
 
         result.guidance = self._guidance(recipe, kind, facts, record.get("stepped_aside"),
-                                         record.get("needs_answer"), project.profile.tools)
+                                         record.get("needs_answer"), toolbox.allowed)
         record["seconds"] = round(time.monotonic() - started, 3)
         return result
 
@@ -588,7 +589,7 @@ class FastPathRouter:
                 guidance.append(self._guidance(recipe, kind, facts, entry.get("stepped_aside"),
                                                made.record.get("needs_answer")
                                                if entry.get("recipe") else None,
-                                               project.profile.tools))
+                                               toolbox.allowed))
             before = part
 
         record["remaining"] = list(remaining)
@@ -597,7 +598,7 @@ class FastPathRouter:
         if kind is not None and remaining:
             # Read again: a recipe part may have moved every line Gary is about to edit.
             now = kind.facts(project, attachments)
-            guidance.insert(0, self._context(kind, now, project))
+            guidance.insert(0, self._context(kind, now, project, None, toolbox.allowed))
         result.guidance = "\n\n".join(dict.fromkeys(g for g in guidance if g))
         if not done:
             # Nothing a recipe could make: Gary takes the whole message, as before.
@@ -730,7 +731,7 @@ class FastPathRouter:
         return f"{said}\n\n{sentence}" if "\n" in sentence else f"{said} {sentence}"
 
     @staticmethod
-    def _context(kind, facts, project, pattern: Recipe | None = None) -> str:
+    def _context(kind, facts, project, pattern: Recipe | None = None, tools=None) -> str:
         """What Gary is given when no recipe makes the change: the project, and a pattern.
 
         The facts -- where things are in the file, what the constants are called -- can
@@ -744,7 +745,8 @@ class FastPathRouter:
         checked = getattr(kind, "CHECKED", "")
         if checked and kind.verifiable(project):
             lines.append(f"HOW IT WILL BE CHECKED: {checked}")
-        guide = guide_for(pattern, project.profile.tools) if pattern is not None else ""
+        tools = project.profile.tools if tools is None else tools
+        guide = guide_for(pattern, tools) if pattern is not None else ""
         if guide.strip():
             lines += ["A PATTERN THIS PROJECT CAN USE -- only if it fits what they asked; if "
                       "they asked a question, answer it and change nothing:",

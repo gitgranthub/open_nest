@@ -417,25 +417,71 @@ def test_test03s_try_that_draws_a_square_when_the_picture_fails_is_taken_out(eag
 # ------------------------------------------------------------- a recipe's things
 
 
+DODGE_CARS = ("make a game where I avoid cars",
+              {"motion": "drift", "noun": "car", "many": True, "on_touch": "reset_player"})
+
+
+def apply_recipe(project, change):
+    """A recipe's change made the way the product makes it: edits, then its calls."""
+    from opennest.fastpath.executor import RecipeExecutor
+
+    return RecipeExecutor().apply(change, Toolbox(project))
+
+
 @pytest.fixture
 def dodging(eagle):
     """The Fast Path's dodging game, with cars: what "make a game where I avoid cars" makes."""
-    ctx = Context(eagle, games.facts(eagle), "make a game where I avoid cars",
-                  {"motion": "drift", "noun": "car", "many": True, "on_touch": "reset_player"})
-    eagle.entrypoint_path.write_text(next(iter(games.add_things(ctx).files.values())))
+    ctx = Context(eagle, games.facts(eagle), *DODGE_CARS)
+    apply_recipe(eagle, games.add_things(ctx))
     return eagle
 
 
+@pytest.fixture
+def hand_drawn(eagle):
+    """The same game with its cars drawn by hand, in a loop after the fill -- what games
+    from before 13C, and Gary's own edit_file cars, look like."""
+    change = games.add_things(Context(eagle, games.facts(eagle), *DODGE_CARS))
+    source = change.files["src/game.py"].replace(
+        "    pygame.display.flip()",
+        "    for car in cars:\n        pygame.draw.rect(screen, CAR_COLOUR, car)\n"
+        "    pygame.display.flip()")
+    eagle.entrypoint_path.write_text(source)
+    return eagle
+
+
+def test_the_recipes_cars_are_in_the_scene_drawn_on_their_own_rects(dodging) -> None:
+    source = game(dodging)
+    assert 'scene.add("cars", Vehicle(CAR_COLOUR, size=(' in source
+    assert "rects=cars" in source
+    # The only drawing by hand left is the starter's own square for the player.
+    assert source.count("pygame.draw.") == 1 and "pygame.draw.rect(screen, PLAYER_COLOUR" \
+        in source
+    assert "player.collidelist(cars)" in source and "car.x -= CAR_SPEED" in source
+    assert games.motion_of(games.facts(dodging), "CAR")[0] == "drift"
+
+
 def test_a_recipes_cars_get_a_new_look_and_keep_moving_and_colliding(dodging) -> None:
-    before = game(dodging)
     outcome = call(dodging, name="cars", drawing="vehicle", color="blue", size=[80, 40])
     assert outcome.ok, outcome.result
     after = game(dodging)
     assert 'scene.add("cars", Vehicle("blue", size=(80, 40)), rects=cars' in after
     assert "player.collidelist(cars)" in after            # the rule is kept
     assert "car.x -= CAR_SPEED" in after                  # so is the movement
-    assert "for wheel_x in" in before and "for wheel_x in" not in after   # old drawing gone
+    assert outcome.result["moves"] == "the game's own code moves them"
+    assert outcome.result["touch"].startswith("touching one sends the player back")
     assert games.motion_of(games.facts(dodging), "CAR") is not None
+
+
+def test_cars_drawn_by_hand_are_drawn_by_the_scene_instead(hand_drawn) -> None:
+    before = game(hand_drawn)
+    outcome = call(hand_drawn, name="cars", drawing="vehicle", color="blue", size=[80, 40])
+    assert outcome.ok, outcome.result
+    after = game(hand_drawn)
+    assert 'scene.add("cars", Vehicle("blue", size=(80, 40)), rects=cars' in after
+    assert "pygame.draw.rect(screen, CAR_COLOUR, car)" in before
+    assert "pygame.draw.rect(screen, CAR_COLOUR, car)" not in after   # old drawing gone
+    assert outcome.result["replaced"] == "the loop that drew cars before"
+    assert "car.x -= CAR_SPEED" in after and "player.collidelist(cars)" in after
 
 
 def test_a_recipes_cars_asked_onto_the_road_are_handed_to_the_scene(dodging) -> None:
@@ -459,6 +505,223 @@ def test_the_recipe_colour_change_steps_aside_once_the_scene_draws_them(dodging)
     ctx = Context(dodging, games.facts(dodging), "make the cars red", {})
     with pytest.raises(NotApplicable):
         games.thing_look(ctx)
+
+
+def test_the_recipes_own_colour_constant_still_colours_its_things(dodging) -> None:
+    """The look reads CAR_COLOUR, so the recipe that changes colours -- and the child
+    editing the number at the top -- still change what is on screen."""
+    change = games.thing_look(Context(dodging, games.facts(dodging), "make the cars red", {}))
+    assert change.values["changed"] == "CAR_COLOUR"
+    after = change.files["src/game.py"]
+    assert "CAR_COLOUR = (220, 60, 60)" in after and "Vehicle(CAR_COLOUR" in after
+
+
+def test_gary_recolours_a_recipes_things_through_their_constant(dodging) -> None:
+    outcome = call(dodging, name="cars", color="blue")
+    assert outcome.ok, outcome.result
+    source = game(dodging)
+    blue = looks.palette()["blue"]
+    assert f"CAR_COLOUR = ({blue[0]}, {blue[1]}, {blue[2]})" in source
+    assert "Vehicle(CAR_COLOUR" in source                    # still drawn in the constant
+    assert any("CAR_COLOUR is its colour" in note for note in outcome.result["notes"])
+
+
+def test_the_recipes_things_can_be_moved_to_another_layer_and_given_a_rule(dodging) -> None:
+    outcome = call(dodging, name="cars", layer="effects")
+    assert outcome.ok and 'layer="effects"' in game(dodging)
+    touched = call(dodging, name="cars", touch="avoid")
+    # The game already sends the player back when a car touches it: that is kept, once.
+    assert any("already does something" in note for note in touched.result.get("notes", [])) \
+        or not touched.ok
+
+
+def test_a_recipes_things_can_wear_a_childs_picture(dodging) -> None:
+    outcome = game_object.run(dodging, {"name": "cars", "picture": "assets/eagle.png"},
+                              message=("use my eagle picture for the cars", ()))
+    assert outcome.ok, outcome.result
+    for relative, text in outcome.files.items():
+        (dodging.directory / relative).write_text(text, encoding="utf-8")
+    source = game(dodging)
+    assert 'scene.add("cars", Picture("assets/eagle.png")' in source
+    assert "car.x -= CAR_SPEED" in source and "player.collidelist(cars)" in source
+
+
+def test_shapes_handed_to_the_scene_keep_their_size(tmp_path) -> None:
+    from opennest.fastpath.executor import RecipeExecutor
+    from opennest.projects.manager import create_project
+
+    project = create_project("Rocks", "games", root=tmp_path)
+    change = games.add_things(Context(project, games.facts(project), "add asteroids",
+                                      {"motion": "drift", "noun": "asteroid", "many": True}))
+    RecipeExecutor().apply(change, Toolbox(project))
+    size = games.facts(project).get("constants")["ASTEROID_SIZE"].value
+    call(project, name="road", drawing="road")
+    outcome = call(project, name="asteroids", moves="left")
+    assert outcome.ok and outcome.result["now"] == "the scene moves asteroids instead of the loop"
+    assert f"size=({size}, {size})" in game(project)
+    assert "Drawing((" in game(project) and "ASTEROID_COLOUR" in game(project)
+
+
+def test_rects_gary_made_with_edit_file_and_never_drew_are_drawn_by_the_scene(eagle) -> None:
+    source = game(eagle).replace(
+        "running = True",
+        "enemies = []\nfor i in range(3):\n    enemies.append(pygame.Rect(100 + i * 150, 60, "
+        "30, 30))\n\nrunning = True")
+    eagle.entrypoint_path.write_text(source)
+    outcome = call(eagle, name="enemies", shapes=[{"circle": [15, 15, 15], "color": "purple"}])
+    assert outcome.ok, outcome.result
+    assert outcome.result["action"] == "added" and "replaced" not in outcome.result
+    assert 'scene.add("enemies", Drawing((30, 30), [' in game(eagle) and \
+        "rects=enemies" in game(eagle)
+
+
+def test_a_colour_alone_recolours_the_look_a_thing_already_has(eagle) -> None:
+    call(eagle, name="sign", drawing="sign", text="Trent Motors", at=[200, 40])
+    outcome = call(eagle, name="sign", color="yellow")
+    assert outcome.ok, outcome.result
+    assert 'Sign("yellow", words="Trent Motors")' in game(eagle)   # its words are kept
+    call(eagle, name="player", drawing="vehicle", color="red")
+    assert call(eagle, name="player", color="blue").ok
+    assert 'scene.add("player", Vehicle("blue")' in game(eagle)
+
+
+def test_a_drawing_of_shapes_changes_its_main_colour_and_keeps_the_rest(eagle) -> None:
+    call(eagle, name="ufo", size=[40, 40], at=[300, 50], shapes=[
+        {"ellipse": [0, 16, 40, 12], "color": "silver"},
+        {"circle": [20, 16, 9], "color": "lime"},
+        {"ellipse": [4, 20, 32, 4], "color": "silver"}])
+    outcome = call(eagle, name="ufo", color="red")
+    assert outcome.ok, outcome.result
+    ufo = game(eagle).split('scene.add("ufo"', 1)[1].split("layer=", 1)[0]
+    assert ufo.count('"red"') == 2 and "(0, 255, 0)" in ufo
+    assert any("other colours were kept" in note for note in outcome.result["notes"])
+
+
+@pytest.mark.parametrize("name, drawing", [("planet", "planet"), ("player", "rocket"),
+                                           ("jellyfish", "jellyfish")])
+def test_a_drawing_the_kit_does_not_have_is_composed_not_boxed(eagle, name, drawing) -> None:
+    """The worlds walk (SPIKES.md section 28M): asked for a "planet", the 8B was given a
+    plain box and told the child it had added a planet. A new thing is composed from
+    shapes or a picture -- the answer says so, and nothing changes until it is."""
+    before = game(eagle)
+    outcome = game_object.run(eagle, {"name": name, "drawing": drawing, "color": "purple"})
+    assert not outcome.ok and outcome.reason == "no_such_drawing"
+    message = outcome.result["message"]
+    assert "shapes" in message and "picture" in message and "vehicle" in message
+    assert game(eagle) == before and not (eagle.directory / "src" / "scene.py").exists()
+    composed = call(eagle, name=name, drawing=drawing, size=[40, 40], at=[300, 60],
+                    shapes=[{"circle": [20, 20, 18], "color": "purple"},
+                            {"ellipse": [0, 16, 40, 8], "color": "gold"}])
+    assert composed.ok and "Circle(20, 20, 18" in game(eagle)
+
+
+@pytest.mark.parametrize("name, drawing, drawn", [("traffic", "cars", "Vehicle"),
+                                                  ("car", "sportscar", "Vehicle"),
+                                                  ("skyline", "town", "Building")])
+def test_a_word_for_one_of_the_twelve_is_that_drawing(eagle, name, drawing, drawn) -> None:
+    outcome = call(eagle, name=name, drawing=drawing)
+    assert outcome.ok, outcome.result
+    assert f'scene.add("{name}", {drawn}(' in game(eagle)
+
+
+def test_a_picture_keeps_its_own_colours_and_says_so(eagle) -> None:
+    call(eagle, name="player", picture="assets/eagle.png")
+    outcome = game_object.run(eagle, {"name": "player", "color": "red"})
+    assert not outcome.ok and outcome.reason == "keeps_its_colours"
+
+
+def test_a_shape_may_be_drawn_in_one_of_the_games_colour_constants(eagle) -> None:
+    outcome = call(eagle, name="moon", size=[40, 40], at=[500, 40],
+                   shapes=[{"circle": [20, 20, 20], "color": "PLAYER_COLOUR"}])
+    assert outcome.ok and "Circle(20, 20, 20, PLAYER_COLOUR)" in game(eagle)
+    assert "PLAYER_COLOUR = " in game(eagle)                 # read, so it is kept
+
+
+def test_a_ship_the_scene_draws_is_still_the_players_colour_to_change(tmp_path) -> None:
+    from opennest.fastpath.executor import RecipeExecutor
+    from opennest.projects.manager import create_project
+
+    project = create_project("Ship", "games", root=tmp_path)
+    change = games.add_things(Context(
+        project, games.facts(project), "a spaceship game dodging asteroids",
+        {"motion": "drift", "noun": "asteroid", "many": True, "on_touch": "reset_player",
+         "ship_player": True}))
+    RecipeExecutor().apply(change, Toolbox(project))
+    ctx = Context(project, games.facts(project), "make my ship #2850c8",
+                  {"fact": "player_colour", "question": "?"})
+    after = games.set_colour(ctx).files["src/game.py"]
+    assert "PLAYER_COLOUR = (40, 80, 200)" in after and "PLAYER_COLOUR)" in after
+
+
+def test_a_thing_the_scene_never_showed_fails_its_drawn_check(dodging) -> None:
+    from opennest.fastpath.verifier import FAIL, VerifyContext
+
+    never = playtest.Playtest(playtest.PASSED, entry="src/game.py", frames=90, scene=(
+        {"name": "cars", "layer": "things", "look": "vehicle drawing", "count": 3,
+         "frames": 90, "on_screen": 0},))
+    box = Toolbox(dodging)
+    box.playtest = lambda *a, **k: never
+    ctx = VerifyContext(project=dodging, toolbox=box, expect={"list": "cars"},
+                        facts_after=games.facts(dodging))
+    check = games.CHECKS["thing_drawn"](ctx)
+    assert check.status == FAIL and "never on screen" in check.detail
+
+
+def test_a_new_thing_says_what_it_is_drawn_over_and_what_is_behind(eagle) -> None:
+    """The Luna walk (SPIKES.md section 28K): later in a layer is in front -- "background
+    buildings" covered the trees and were called "behind the town"."""
+    call(eagle, name="sky", drawing="sky")
+    call(eagle, name="ground", drawing="ground")
+    call(eagle, name="town", drawing="building", on="ground", count=5)
+    call(eagle, name="trees", drawing="tree", on="ground", count=4)
+    far = call(eagle, name="background buildings", drawing="building", on="ground", count=8)
+    said = far.result["drawn_over"]
+    assert said.startswith("ground, town, trees:") and "layer background puts it behind" in said
+    assert "sky" not in said.split(":")[0]
+    behind = call(eagle, name="hills", drawing="ground", layer="background")
+    assert "drawn_over" not in behind.result or "sky" not in behind.result["drawn_over"]
+
+
+def test_a_sky_is_never_said_to_be_below_the_road(eagle) -> None:
+    call(eagle, name="road", drawing="road", size=[640, 60])
+    call(eagle, name="sky", drawing="sky")
+    lines = scene_source.describe(scene_source.read(game(eagle)))
+    assert not any(line.startswith("sky:") and "road" in line for line in lines)
+
+
+def test_the_ready_made_drawings_are_twelve_generic_forms_and_stay_that_way() -> None:
+    """The ready-made drawings are defaults built from the basic shapes, not a catalogue.
+
+    SPIKES.md section 28B: the 4B cannot compose a car from shapes, so the kit carries a
+    dozen generic forms -- a vehicle is a car, a bus or a taxi -- which Gary (and the Fast
+    Path) size, colour, place, move, layer, replace with a picture, or leave for shapes.
+    The owner's 13C ruling: a new creative request is met by composing those, never by
+    adding another named drawing here. Adding one means re-running that prototype.
+    """
+    tree = ast.parse(looks.KIT.read_text(encoding="utf-8"))
+    ready = {node.name for node in tree.body if isinstance(node, ast.ClassDef)
+             and any(isinstance(base, ast.Name) and base.id == "Ready" for base in node.bases)}
+    assert ready == set(looks.DRAWINGS.values()) and len(ready) == 12
+    from opennest.agent.tools import SCHEMAS
+
+    offered = SCHEMAS["game_object"]["function"]["parameters"]["properties"]["drawing"]["enum"]
+    assert sorted(offered) == sorted(looks.DRAWINGS)
+
+
+def test_the_fast_path_says_looks_in_the_same_words_gary_has() -> None:
+    """Every look a recipe gives a thing is game_object's own vocabulary -- a ready-made
+    drawing or the basic shapes -- so nothing a recipe draws is beyond Gary's reach."""
+    from opennest.fastpath.kinds import game_things
+
+    shape_words = set(looks.SHAPES) | {"polygon", "text"}
+    for noun, look in game_things.NOUNS.items():
+        arguments = game_things.scene_look(look.drawing, look.size, "THING")
+        if "drawing" in arguments:
+            assert arguments["drawing"] in looks.DRAWINGS, noun
+            continue
+        for shape in arguments["shapes"]:
+            kinds = set(shape) - {"color", "round", "width", "dash", "at", "size"}
+            assert len(kinds) == 1 and kinds <= shape_words, (noun, shape)
 
 
 def test_the_player_is_described_by_its_picture(eagle) -> None:
@@ -515,6 +778,53 @@ def test_games_offer_game_object_and_nothing_else_does() -> None:
 
     for profile in load_profiles():
         assert ("game_object" in profile.tools) == (profile.id == "games"), profile.id
+
+
+def _blank(tmp_path, main: str):
+    from opennest.projects.manager import create_project
+
+    project = create_project("Something", "blank", root=tmp_path)
+    project.entrypoint_path.parent.mkdir(parents=True, exist_ok=True)
+    project.entrypoint_path.write_text(main)
+    return project
+
+
+STARTER = REPO / "opennest/projects/starters/pygame_basic/game.py"
+
+
+def test_a_blank_project_that_became_a_game_is_offered_game_object(tmp_path) -> None:
+    """Measured first (SPIKES.md section 28L): 50 -> 68 of 94 first moves acceptable."""
+    from opennest.agent.controller import build_system_prompt
+
+    project = _blank(tmp_path, STARTER.read_text())
+    box = Toolbox(project)
+    assert box.allowed == ("read_file", "edit_file", "write_file", "run_project",
+                           "game_object")
+    assert "game_object" not in project.profile.tools              # the profile is unchanged
+    prompt = build_system_prompt(project, toolbox=box)
+    assert "PICTURES, DRAWINGS AND THE SCENE" in prompt
+
+
+@pytest.mark.parametrize("main", ["print('hello')\n", "import pandas as pd\n", ""])
+def test_a_blank_project_that_is_not_a_game_keeps_its_four_tools(tmp_path, main) -> None:
+    from opennest.agent.controller import build_system_prompt
+
+    project = _blank(tmp_path, main)
+    box = Toolbox(project)
+    assert "game_object" not in box.allowed
+    assert "PICTURES, DRAWINGS" not in build_system_prompt(project, toolbox=box)
+    refused = box.dispatch("game_object", {"name": "sky", "drawing": "sky"})
+    assert not refused.ok and refused.reason == "not_available"
+
+
+def test_game_object_in_a_blank_game_draws_and_promises_no_test(tmp_path) -> None:
+    project = _blank(tmp_path, STARTER.read_text())
+    result = Toolbox(project).dispatch("game_object", {"name": "sky", "drawing": "sky"})
+    assert result.ok, result.content
+    assert set(result.changed_files) == {"src/main.py", "src/scene.py"}
+    said = json.loads(result.content)
+    assert said["check"] == game_object.UNTESTED and "does not test" in said["check"]
+    assert "scene.draw()" in project.entrypoint_path.read_text()
 
 
 # ================================================================= Gary's facts
@@ -735,12 +1045,15 @@ def test_the_sprite_recipe_says_it_already_is(eagle) -> None:
         games.use_sprite(Context(eagle, games.facts(eagle), "use my eagle", {}))
 
 
-def test_faster_asteroids_is_their_own_constant(dodging) -> None:
-    before = game(dodging)
-    outcome = call(dodging, name="cars", speed=6)
+@pytest.mark.parametrize("which", ["dodging", "hand_drawn"])
+def test_faster_asteroids_is_their_own_constant(request, which) -> None:
+    project = request.getfixturevalue(which)
+    before = game(project)
+    outcome = call(project, name="cars", speed=6)
     assert outcome.ok and "CAR_SPEED went from 2 to 6" in outcome.result["notes"][0]
-    assert "CAR_SPEED = 6" in game(dodging) and "scene" not in game(dodging)
-    assert before.replace("CAR_SPEED = 2", "CAR_SPEED = 6") == game(dodging)
+    assert before.replace("CAR_SPEED = 2", "CAR_SPEED = 6") == game(project)
+    if which == "hand_drawn":
+        assert "scene" not in game(project)        # no scene is added for a number
 
 
 def test_a_new_road_says_which_standing_things_are_not_on_it(eagle) -> None:

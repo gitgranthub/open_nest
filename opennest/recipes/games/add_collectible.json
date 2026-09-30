@@ -24,11 +24,11 @@
   ],
   "verify": [
     "playtest_passes",
-    "drawn_after_fill"
+    "thing_drawn"
   ],
   "report": [
     "I added $what, and a score in the top left corner. $touch",
-    "There is $what now, with a score in the top left. $touch",
+    "Now the game has $what, with a score in the top left. $touch",
     "I added $what and a score to count them. $touch"
   ],
   "teach": "player.colliderect checks whether two rectangles overlap -- that is how the game knows you touched it."

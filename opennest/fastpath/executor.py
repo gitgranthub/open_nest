@@ -69,14 +69,6 @@ class RecipeExecutor:
             path = resolve_in_project(project_dir, relative, for_write=True)
             applied.originals[relative] = path.read_text(encoding="utf-8") \
                 if path.is_file() else None
-        for tool, arguments in change.calls:
-            call = ToolCall(name=tool, arguments=dict(arguments), id=f"fastpath_{number}")
-            number += 1
-            result = toolbox.dispatch(call.name, call.arguments)
-            applied.calls.append((call, result))
-            if not result.ok:
-                self.rollback(applied, toolbox)
-                raise EditRefused(f"{tool} refused ({result.reason}): {result.content}")
         for relative, wanted in change.files.items():
             path = resolve_in_project(project_dir, relative, for_write=True)
             if not path.is_file():
@@ -101,6 +93,16 @@ class RecipeExecutor:
                 # bounded repair in edit_file moved something. Not worth guessing about.
                 self.rollback(applied, toolbox)
                 raise EditRefused(f"{relative} did not come out as intended")
+        # Tool calls after the edits: each reads the files as the edits left them -- the
+        # things a recipe set up, then their look given through game_object (Phase 13C).
+        for tool, arguments in change.calls:
+            call = ToolCall(name=tool, arguments=dict(arguments), id=f"fastpath_{number}")
+            number += 1
+            result = toolbox.dispatch(call.name, call.arguments)
+            applied.calls.append((call, result))
+            if not result.ok:
+                self.rollback(applied, toolbox)
+                raise EditRefused(f"{tool} refused ({result.reason}): {result.content}")
         return applied
 
     @staticmethod

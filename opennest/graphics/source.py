@@ -276,6 +276,24 @@ def other_drawing_of(tree: ast.Module, items: str, keep: tuple[int, int] | None)
     return False
 
 
+def draws(tree: ast.Module, items: str) -> bool:
+    """Whether the game loop draws ``items`` by hand at all: a drawing call naming them,
+    or one inside a loop that walks them. A list of rects nothing draws yet -- the Fast
+    Path's things before their look is given, or Gary's own ``enemies`` -- is the scene's
+    to draw."""
+    loop = main_loop(tree)
+    if loop is None:
+        return False
+    for stmt in loop.body:
+        for node in ast.walk(stmt):
+            if _is_draw_call(node) and _mentions(node, {items}):
+                return True
+            if isinstance(node, ast.For) and _mentions(node.iter, {items}) and any(
+                    _is_draw_call(sub) for sub in ast.walk(node)):
+                return True
+    return False
+
+
 def top_level_lists(tree: ast.Module) -> dict[str, int]:
     """Lists of rects made above the loop: ``cars = []`` filled with ``pygame.Rect``s, or a
     list written out. Name -> the line it is made on."""
@@ -464,7 +482,10 @@ def _relation(entry: Entry, scene: GameScene) -> str:
     """Where a thing placed by corners is against a road or ground, in words -- the
     geometry neither model does from numbers (SPIKES.md section 28E)."""
     at, size = entry.literals.get("at"), entry.literals.get("size")
-    if entry.look_class in _BANDS or not (isinstance(at, tuple) and isinstance(size, tuple)):
+    # A sky is the whole screen, behind everything: "below the road" about it (the
+    # re-run 4B walk's evidence) is geometry, not something anyone would mean.
+    if entry.look_class in _BANDS + ("Sky",) or not (isinstance(at, tuple) and
+                                                    isinstance(size, tuple)):
         return ""
     for band in scene.entries.values():
         spot, span = band.literals.get("at"), band.literals.get("size")

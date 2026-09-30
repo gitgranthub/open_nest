@@ -30,12 +30,12 @@
   "verify": [
     "playtest_passes",
     "moves_by_itself",
-    "drawn_after_fill"
+    "thing_drawn"
   ],
   "report": [
     "I added $what, and a score in the top left corner. $touch Move with the arrow keys to catch them.",
     "It's a catching game now: $what. $touch The score is in the top left.",
-    "There are $what, and a score to count your catches. $touch"
+    "Now the game has $what, and a score to count your catches. $touch"
   ],
   "teach": "Each block moves down a little every frame. When one touches the player, the score goes up and the block goes back to the top.",
   "whole": true,

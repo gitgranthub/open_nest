@@ -12,13 +12,16 @@ branch, nothing merged to `main`). Five pieces, in order:
 | parity pass | the same behaviour checked and corrected in Website, Research, Arduino, Raspberry Pi and Blank | PHASE_13_HANDOFF §7A, SPIKES §27F |
 | 13B | Pop out / Put back: the same game widget moved into a window of its own and back, never restarted | PHASE_13_HANDOFF §8, SPIKES §26J |
 | **13C** | **the game graphics and scene layer**: a child's picture becomes the player; a scene -- sky, road, buildings, cars to dodge, coins to collect -- built from Gary's plain choices through one tool, `game_object`, drawn by `src/scene.py`, a small pygame kit in the project; look kept separate from movement and collisions; the playtest records what the scene drew | PHASE_13_HANDOFF §9, SPIKES §28 |
+| **13C finished** | the same building blocks for everyone: the Fast Path's add-a-thing recipes give every look through `game_object` (no inline pygame, no named drawings added); a Blank project that has become a game is offered `game_object` (measured first); Gary can change anything in the scene -- look, colour, size, place, motion, layer, touch; a made-up drawing name is answered with how to compose it; clicked through the real app under cocoa, 45/45 | PHASE_13_HANDOFF §9.11, SPIKES §28H-N |
 
-**1525 tests pass, ruff is clean** (1430 before 13C). Phase 12 app walk 41/41 with the
-same four recipe routes. The 13C acceptance walks -- the work order's eagle sequence
-through the real Workbench with the real 4B, and with Qwen3 8B as the stronger model --
-with every call, result, still and panel frame, are in `benchmarks/graphics/results/`;
-the tool-choice benchmark (four tools against five) beside them. The owner-test and
-parity walks are in `benchmarks/owner_pass/`.
+**1568 tests pass, ruff is clean** (1525 when 13C was paused, 1430 before 13C). The
+Phase 12 app walk 41/41 through MainWindow under cocoa, its dodging game now built with
+`game_object`. The 13C acceptance walks -- the work order's eagle sequence through the
+real Workbench with the real 4B and with Qwen3 8B, the real-app click-through, the
+different-worlds walks, and both tool-choice benchmarks (Games and Blank, four tools
+against five) -- with every call, result, still and panel frame, are in
+`benchmarks/graphics/results/`. The owner-test and parity walks are in
+`benchmarks/owner_pass/`.
 
 **13C in one paragraph.** The owner's `test03` eagle was not a picture: the 4B had written
 a sentence into `assets/eagle.png`, and the game loaded it every frame inside a `try` that
@@ -32,24 +35,61 @@ cannot draw a car from shapes (four prototype rounds); it can choose "a red vehi
 road that you avoid". Measured on 94 requests, the fifth tool raised acceptable first
 moves from 43 to 62. On the final walks the local 4B built the eagle game from those calls
 -- the eagle picture as the player, cars on the road, buildings standing on it, clouds,
-coins -- and the checks turned wrong claims into finished work. The API models could not
-be run: both Keychain keys were rejected (OpenAI's expired, Anthropic's invalid).
+coins -- and the checks turned wrong claims into finished work. On 2026-09-30 the owner
+handed over a new OpenAI key and **Luna walked the same sequence** (SPIKES §28K): the whole
+town from the first sentence, every playtest passed, the richest frames of any walk.
+Anthropic's key is still rejected, so Claude has not been run.
+
+**Finishing 13C, in one paragraph** (PHASE_13_HANDOFF §9.11). The owner's closing order kept
+the design and drew its line: Gary decides, the layer builds, and the twelve ready-made
+drawings are defaults -- never a catalogue to grow. So the Fast Path now builds with the
+same tool Gary has: its enemy, collectible, moving-thing, dodging and catching recipes
+write the thing's logic and give its look with one `game_object` call (a car is the kit's
+vehicle; everything else the basic shapes, drawn in the child's own `..._COLOUR`
+constants). Converting them showed where Gary could not change what the layer claims he
+can -- a colour on the player or the game's own rects, a sign's words, a drawing of
+shapes, rects nothing drew, layer and touch on the game's own rects -- and each is fixed
+generally. A Blank project that has clearly become a pygame game was measured (50 -> 68
+of 94 first moves acceptable) and now gets `game_object` too. Clicked through the real
+window: 45/45. Asked for five different worlds, every model built visibly different
+scenes from the same primitives -- the local models crudely, Luna richly (a fish,
+jellyfish, coral and a rocket drawn from shapes nothing in Open Nest names). The 8B kept
+asking for drawings that do not exist, so an unknown drawing name is now answered with
+how to compose it, never a silent box; a background recipe that swallowed "a black sky
+full of stars with a purple planet" into one colour now steps aside for Gary; and
+**every provider's reply -- local, Claude or OpenAI -- now meets the same chat filters**
+(`ai/protocol.py`, applied in `presentable`), after the 8B copied a tool's result, tool
+name and all, into the chat.
 
 **What is next:**
 
-1. **A person clicks it on a real screen** -- the one check no driver here can make:
-   Run Game, play with the keys, click the chat and back, Tab out; Pop out, play, Tab to
-   Put back, close the window. And one owner demo across project types.
-2. **Phase 14 -- Publish Version**, reshaped by the owner (PHASE_13_HANDOFF §6,
+1. **A person clicks it on a real screen.** The driver did it through the real window
+   under cocoa (45/45, SPIKES §28I), but Qt-activated: macOS will not activate a
+   background process. Run Game, play, click the chat and back, Tab out; Pop out, play,
+   Tab to Put back, close the window. And one owner demo across project types.
+2. **The picture how-to (decided by the owner, next).** When a thing cannot be drawn as
+   asked, Open Nest -- not the model -- adds how to get a picture: a PNG with a see-through
+   background, a size worked out from the thing in the game, + Add to Project, then "use my
+   <word> picture for the <thing>". Suggested tools: a drawing app, or an AI picture maker
+   *by type, never by site name, always with "ask a grown-up"* (the owner's ruling,
+   2026-09-30). And a picture with a solid background is said, and a flat background can be
+   cut out into a new file.
+3. **Phase 14 -- Publish Version**, reshaped by the owner (PHASE_13_HANDOFF §6,
    PHASE_12_HANDOFF §7). Not started. The sunglasses wait for it.
-3. **Known limits, recorded rather than hidden**: the 4B's layouts are its own and
-   uneven, and it makes one or two calls a turn (PHASE_13_HANDOFF §9.8, SPIKES §28G); the
-   Fast Path's add-a-thing recipes still write inline pygame rather than using the scene;
-   Blank projects do not have `game_object`; motion and what a picture *shows* are not
-   checked; a Blank project cannot become a Website or Arduino project in place
-   (architecture work). See SPIKES §27E-F and §28G.
-4. **A working cloud key**, to run the same acceptance walk with Claude or OpenAI:
-   `benchmarks/graphics/eagle_walk.py <label> claude-sonnet` (SPIKES §28F).
+4. **Hardening items, each separate and none the graphics layer's** (SPIKES §28N): the
+   playtest sees under two seconds of a game, so a crash behind a timer is missed (three
+   options, with their latency cost -- a parser check for pygame names that do not exist
+   is the cheap one); a touch counts on every frame it lasts, so a dodging game can pin its
+   player at the start and a hit counter counts 18 for one hit (`scene.touched`, true on the
+   frame a touch begins, is the proposal); Gary can repeat one refused call until the
+   turn's budget runs out.
+5. **Known limits, recorded rather than hidden**: the 4B's layouts are its own and
+   uneven; motion is left, right, up, down or bounce (a recipe's other motions stay its
+   own code); what a picture *shows* is not checked; a Blank project cannot become a
+   Website or Arduino project in place (architecture work). SPIKES §27E-F, §28G, §28N.
+6. **A working Anthropic key**, to run the same walks with Claude (Luna has been run):
+   `benchmarks/graphics/eagle_walk.py <label> claude-sonnet` and
+   `benchmarks/graphics/scenes_walk.py <label> claude-sonnet` (SPIKES §28K).
 
 Phase 12's own definition of done -- a child asks for a game and gets one -- is still the
 owner's call to close; everything below is the history that led here, and the traps.
@@ -1017,6 +1057,32 @@ does.** Do not "clean up" these without re-measuring:
   live stream -- bounded, typed, never a verdict.
 - **The fake picture was the model's.** `write_file` and `edit_file` refuse a picture's
   or sound's filename; do not relax it for "a placeholder image" -- that is test03.
+- **A recipe's look is a `game_object` call, never pygame it writes** (SPIKES §28J). The
+  recipe writes the thing's logic; the executor applies those edits *first* and then the
+  recipe's tool calls, so the call reads what the edits left. A new recipe that adds a
+  thing to see does the same; `test_every_noun_is_drawn_by_the_scene_from_generic_looks`
+  fails on a `pygame.draw` of its own.
+- **The ready-made drawings are twelve, and a test says so.** The owner's ruling: a new
+  creative request is composed from them, shapes and pictures -- by Gary or a recipe --
+  never answered by adding a named drawing (`test_the_ready_made_drawings_are_twelve_...`).
+- **A look can be drawn in the game's own colour constant** (`Circle(..., ASTEROID_COLOUR)`,
+  like `Sky(BACKGROUND)`). That is what keeps the child's constant and the colour recipe
+  meaningful once the scene draws a thing; `_recolour` changes the constant only when that
+  look is its only reader, and writes the colour into the look otherwise.
+- **What Gary can use is `toolbox.allowed`, not `profile.tools`.** A Blank project that has
+  become a game is offered `game_object` (`tools.offers_graphics`, measured in §28L); code
+  that reads the profile to decide what Gary has will be wrong for it.
+- **Reply filters are shared, never per provider.** Tool protocol written as text, a
+  `<think>` block, a sentence naming a tool: `ai/protocol.py` recognises them and
+  `agent.replies.presentable` applies them to every reply from every model before the chat
+  shows it. The local provider used to hold the only copy, so a cloud model's written-out
+  call would have reached the child. `AgentWorker.chunk` is the raw stream -- connect it to
+  the chat and the filter is bypassed.
+- **"The keys do not work" in a dodging game can be the game.** The avoid rule sends the
+  player back to its start on every frame it touches, so a car crossing the start pins it
+  there (§28I). A driver that reads the player's place after a key hold, not during it,
+  reports a working game as broken. And Run Game disables the chat box until its startup
+  check reports: a driver that types straight after Stop types into nothing.
 
 **Phase 11 traps:**
 

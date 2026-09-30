@@ -35,14 +35,14 @@
   "verify": [
     "playtest_passes",
     "moves_by_itself",
-    "drawn_after_fill"
+    "thing_drawn"
   ],
   "report": [
     "I added $what. $touch Move with the arrow keys and keep out of their way. $ship",
     "Here's a start: $what. $touch Dodge them with the arrow keys. $ship",
     "I made it a dodging game: $what. $touch $ship"
   ],
-  "teach": "The things are made once above the loop, moved every frame inside it, and drawn after screen.fill, and a collision check sends you back when one hits.",
+  "teach": "The things are made once above the loop and moved every frame inside it, the scene draws them, and a collision check sends you back when one hits.",
   "whole": true,
   "_note": "needs_words: a whole game is only built when the child asks for a game. Measured (SPIKES.md section 25N): as one part of a longer message, 'add some walls i have to get around' was read as this recipe at 1.00."
 }

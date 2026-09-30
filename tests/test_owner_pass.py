@@ -1246,3 +1246,49 @@ def test_plural_things_need_no_determiner() -> None:
     assert {"eagle", "cars"} <= child_nouns("make me a game where an eagle flies over cars")
     assert "dinosaurs" in child_nouns("a website about dinosaurs")
     assert "keys" not in child_nouns("move it with keys")      # not a thing a game has
+
+
+def test_where_a_scene_is_is_not_a_thing_and_described_plurals_are() -> None:
+    """The 13C worlds walk (SPIKES.md section 28M): "the deep sea" made "deep" a thing, so
+    Gary was corrected into "The deep is not in the game"; "full of little stars" made
+    nothing, so "the black sky with stars" -- there were none -- went unchecked."""
+    from opennest.agent.replies import child_nouns
+
+    sea = child_nouns("Make it look like the deep sea: dark blue water, sand on the bottom")
+    assert not sea & {"deep", "sea", "water"}
+    stars = child_nouns("Make the background a black sky full of little stars, with a big "
+                        "purple planet.")
+    assert {"stars", "planet"} <= stars
+    assert child_nouns("make a game where I fly over big red cars") == {"cars"}
+
+
+def test_what_a_tool_told_gary_is_not_said_to_the_child() -> None:
+    """The 13C worlds walk (SPIKES.md section 28M): Qwen3 8B copied game_object's result
+    into its reply, tool name and all."""
+    from opennest.agent.replies import presentable
+
+    reply = ("I added a fish. It is orange and stays still. It does not react to keys -- "
+             "anything the game should do when a key is pressed is edit_file. Open Nest "
+             "tests the game after this turn, and the test says what the scene really drew.")
+    assert presentable(reply) == "I added a fish. It is orange and stays still."
+    assert presentable("I used game_object to draw the sky.") == ""
+    kept = "Press Run Game to see the new sky.\n- a blue sky\n- green grass"
+    assert presentable(kept) == kept
+
+
+@pytest.mark.parametrize("written", [
+    '<tool_call>{"name": "edit_file", "arguments": {"path": "src/game.py"}}</tool_call>',
+    '{"name": "game_object", "arguments": {"name": "sky", "drawing": "sky"}}',
+    'edit_file(path="src/game.py", old_text="a", new_text="b")',
+    "<think>The child wants a sky, so I should call game_object first.</think>",
+    "Next I'll call game_object with name sky.",
+])
+def test_every_models_reply_meets_the_same_filters(project, written) -> None:
+    """Claude, OpenAI and the local model: one boundary for all of them. The protocol
+    filters used to live in the local provider alone, so a cloud model that wrote a call
+    out as text, or left its reasoning in, would have had it shown in the chat."""
+    provider = ScriptedProvider([Reply(text=f"The sky is ready.\n{written}\nPress Run Game.")])
+    turn = AgentController(project, provider, Toolbox(project)).send("what is in my game?")
+    assert "The sky is ready." in turn.text and "Press Run Game." in turn.text
+    for leak in ("tool_call", "edit_file", "game_object", "<think>", '"name"', "old_text"):
+        assert leak not in turn.text, turn.text

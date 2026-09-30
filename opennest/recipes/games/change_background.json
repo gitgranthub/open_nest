@@ -22,5 +22,10 @@
     "The background is $colour now -- $name is $new.",
     "$name is $new now, so the whole window fills with $colour each frame."
   ],
-  "teach": "screen.fill paints the whole window this colour at the start of every frame, before anything else is drawn."
+  "teach": "screen.fill paints the whole window this colour at the start of every frame, before anything else is drawn.",
+  "not_words": [
+    "\\b(?:stars?|planets?|moons?|clouds?|trees?|flowers?|mountains?|hills?|waves?|rocks?)\\b",
+    "\\b(?:sand|seaweed|bubbles?|fish|buildings?|houses?|town|city|road)\\b"
+  ],
+  "_note": "not_words: a background that is also things to see is Gary's, with game_object -- this recipe would set one colour and drop the rest. Measured on the 13C worlds walk (SPIKES.md section 28M): 'Make the background a black sky full of little stars, with a big purple planet' and 'Make it look like the deep sea: dark blue water, sand on the bottom, green seaweed and bubbles' were each made a colour change, the stars, planet, sand and seaweed silently dropped. None of the labelled change_background requests names one of these. Colour-like words (grass green, snow white) are left out on purpose."
 }

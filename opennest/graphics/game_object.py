@@ -74,6 +74,14 @@ MECHANICS = frozenset({
 
 CHECK = ("Open Nest tests the game after this turn, and the test says what the scene "
          "really drew.")
+#: The same result in a project with no headless test -- a Blank project that became a
+#: game (``agent.tools.offers_graphics``): nothing is promised that will not happen.
+UNTESTED = ("Open Nest does not test games in this kind of project, so nothing has seen "
+            "it drawn yet: pressing Run Game shows it.")
+
+
+def _check_of(project) -> str:
+    return CHECK if project.profile.playtest == "pygame" else UNTESTED
 
 
 class Refused(Exception):
@@ -183,7 +191,7 @@ def _run(project, args: dict, pictures, kit_text, message=("", ())) -> Outcome:
     result["files_changed"] = sorted(files)
     if notes:
         result["notes"] = notes
-    result["check"] = CHECK
+    result["check"] = _check_of(project)
     return Outcome(True, result, files)
 
 
@@ -214,7 +222,7 @@ def _resize_square(project, text, facts, scene, args, name, notes) -> Outcome | 
                           "size": f"{size_name} went from {const.value} to {new}",
                           "kept": "how it looks, the keys that move it and everything that "
                                   "bumps into it", "files_changed": [entry],
-                          "check": CHECK}, {entry: "\n".join(lines)})
+                          "check": _check_of(project)}, {entry: "\n".join(lines)})
 
 
 def _drop_unread_colours(text: str, names: tuple[str, ...], notes: list[str]) -> str:
@@ -325,8 +333,11 @@ def _imports(text: str, scene: source.GameScene) -> str:
                 f"{scene.variable}.add":
             wanted |= {n.id for arg in call.args[1:2] for n in ast.walk(arg)
                        if isinstance(n, ast.Name) and n.id in kit}
-    # Anything the game imported from the kit itself stays imported.
-    used = sorted(wanted | set(scene.imported))
+    # Anything else the game imported from the kit stays imported while the game still
+    # uses it -- a child's own Circle(...) keeps working; the ship's Polygon, once the
+    # player is a picture, does not linger.
+    read = {n.id for n in ast.walk(scene.tree) if isinstance(n, ast.Name)}
+    used = sorted(wanted | (set(scene.imported) & read))
     line = f"from scene import {', '.join(used)}"
     if len(line) > 92:
         wrapped = ["from scene import ("]
@@ -363,6 +374,12 @@ class _Work:
         self.var = scene.variable
         #: Colour constants this change may have left drawing nothing.
         self.redundant: tuple[str, ...] = ()
+        #: The game's own colour constants -- ``ASTEROID_COLOUR = (150, 150, 160)`` -- which
+        #: a look may be drawn in by name, so the number at the top keeps deciding it.
+        self.colour_constants = frozenset(
+            name for name, const in (facts.get("constants") or {}).items()
+            if isinstance(const.value, tuple) and len(const.value) == 3
+            and all(isinstance(v, int) for v in const.value))
 
     # -- which thing ---------------------------------------------------------------
 
@@ -419,18 +436,28 @@ class _Work:
         if args.get("picture"):
             return self._picture_look(args["picture"])
         drawing = args.get("drawing")
+        #: A drawing asked for by a name the kit has no drawing for -- "planet", "rocket".
+        unknown = None
         if isinstance(drawing, str) and drawing.strip().lower() in looks.DRAWINGS:
             drawing = drawing.strip().lower()
         elif drawing:
-            self.notes.append(f"there is no ready-made {drawing!r} drawing")
-            drawing = None
+            meant = looks.infer_drawing(str(drawing))
+            if meant:
+                # "cars", "town": a word for one of the twelve.
+                self.notes.append(f"{drawing!r} is drawn as the ready-made {meant} drawing")
+                drawing = meant
+            else:
+                self.notes.append(f"there is no ready-made {drawing!r} drawing")
+                unknown = str(drawing).strip()[:30]
+                drawing = None
         fill = args.get("color", args.get("colour"))
-        fill = looks.colour(fill, self.notes) if fill else None
+        fill = looks.colour(fill, self.notes, constants=self.colour_constants) if fill \
+            else None
         shapes = args.get("shapes")
         size = _pair(args.get("size"))
         at = _pair(args.get("at"))
         if shapes:
-            drawn = looks.shapes_look(shapes, size, at, self.notes)
+            drawn = looks.shapes_look(shapes, size, at, self.notes, self.colour_constants)
             if drawn is not None and not drawing:
                 return drawn
             if drawn is not None and drawing:
@@ -439,9 +466,22 @@ class _Work:
         if drawing:
             return Look("drawing", drawing=drawing, fill=fill,
                         text=str(args.get("text", "") or "")[:30])
+        inferred = looks.infer_drawing(self.name)
+        if unknown and not inferred:
+            # Measured on the 13C worlds walk (SPIKES.md section 28M): Qwen3 8B asked for a
+            # "planet", a "rocket", a "fish", was quietly given a plain box each time, and
+            # told the child it had added a purple planet. The kit's drawings are generic
+            # on purpose (section 28B) -- a new thing is composed, never added -- so the
+            # answer says how to compose it, and changes nothing until it is.
+            raise Refused(
+                f"There is no ready-made {unknown!r} drawing. The ready-made ones are "
+                f"{', '.join(looks.DRAWINGS)}. To draw a {unknown}, give "
+                f"{self.name.replace('_', ' ')} shapes in its own box -- circles, ellipses, "
+                f"rects, triangles, polygons -- like [{{\"circle\": [20, 20, 18], \"color\": "
+                f"\"purple\"}}, {{\"ellipse\": [0, 16, 40, 8], \"color\": \"gold\"}}], or a "
+                f"picture from the project. Nothing was changed.", "no_such_drawing")
         if not required:
             return None
-        inferred = looks.infer_drawing(self.name)
         if inferred:
             return Look("drawing", drawing=inferred, fill=fill,
                         text=str(args.get("text", "") or "")[:30])
@@ -538,6 +578,9 @@ class _Work:
         look = self.look(required=current is None)
         tree = self.scene.tree
         edit = source.Edit(self.text)
+        recoloured = None
+        if look is None and current is not None and self._colour_given():
+            recoloured = self._recolour(current.look, edit)
         constants = self.facts.get("constants") or {}
         size_name = self.facts.get("player_size")
         box = getattr(constants.get(size_name), "value", None) if size_name else None
@@ -568,13 +611,14 @@ class _Work:
         # The statements that drew the player before are taken out: the scene draws it.
         drawn = source.player_drawing(tree, player) if current is None else []
         colour = self.facts.get("player_colour")
-        if colour and (look is None or "PLAYER_COLOUR" not in look.code()):
+        if colour and (look is None or colour not in look.code()):
             self.redundant = (colour,)
         for first, last in drawn:
             edit.drop(first, last)
         if current is None:
             self._drop_unused_images(edit, player, drawn)
-        look_code = look.code(keep_shape=_shape_of(look, wanted)) if look else current.look
+        look_code = look.code(keep_shape=_shape_of(look, wanted)) if look else \
+            recoloured or current.look
         keywords = [("rect", player)]
         if scale != 1.0:
             keywords.append(("scale", _num(scale)))
@@ -649,16 +693,14 @@ class _Work:
         if entry.wraps:
             return self._restyle_wrapped(entry, edit)
         look = self.look(required=False)
-        if look is None and self.args.get("color") is not None and entry.look_class in \
-                looks.DRAWINGS.values():
-            kind = next(k for k, v in looks.DRAWINGS.items() if v == entry.look_class)
-            look = Look("drawing", drawing=kind,
-                        fill=looks.colour(self.args["color"], self.notes))
-        elif look is None and self.args.get("color") is not None:
-            self.notes.append("it is a picture or a drawing of its own shapes, which keep "
-                              "their own colours")
+        recoloured = None
+        if look is None and self._colour_given() and entry.look_class == "Sky":
+            # A sky's colour is BACKGROUND's (``_sky_from_background``), whoever else reads it.
+            look = Look("drawing", drawing="sky", fill=self._fill())
+        elif look is None and self._colour_given():
+            recoloured = self._recolour(entry.look, edit)
         keywords = self._keywords(entry, look)
-        look_code = look.code() if look else entry.look
+        look_code = look.code() if look else recoloured or entry.look
         if look is not None and (entry.look_class == "Sky" or look.drawing == "sky"):
             look_code = self._sky_from_background(look, edit) or look_code
         statement = source.call_text(self.var, entry.name, look_code, keywords, entry.target)
@@ -690,27 +732,48 @@ class _Work:
         return edit.text(), {"ok": True, "object": entry.name, "action": "removed"}
 
     def _restyle_wrapped(self, entry, edit) -> tuple[str, dict]:
+        """The game's own rects the scene draws: their look, colour, size, layer and what
+        touching them does. Where they are and how they move stay the game's code."""
+        items = entry.wraps
+        prefix = self._prefix_of(items)
         look = self.look(required=False)
         if self._wants_place():
-            motion, prefix = self._recipe_motion(entry.wraps)
+            motion, prefix = self._recipe_motion(items)
             if motion is not None:
-                return self._hand_over(entry.wraps, prefix, motion, look or _look_of(entry),
+                return self._hand_over(items, prefix, motion, look or _look_of(entry),
                                        None, edit, entry=entry,
                                        look_code=None if look else entry.look)
-            self.notes.append(f"where {entry.wraps} are and how they move is the game's own "
+            self.notes.append(f"where {items} are and how they move is the game's own "
                               f"code, so only their look changed -- edit_file changes the rest")
-        if look is None:
+        if look is None and prefix is not None and self._numbers_only():
+            # "Make the asteroids faster": their own constants, nothing else.
+            return self._constants_only(items, prefix, edit)
+        size = _pair(self.args.get("size"))
+        code = None
+        if look is not None:
+            code = look.code(keep_shape=_shape_of(look, size))
+        elif self._colour_given():
+            code = self._recolour(entry.look, edit)
+        touch = self.args.get("touch") in ("avoid", "collect", "nothing")
+        if code is None and not (size or touch or self._layer_given()):
             raise Refused(f"Say how {entry.name!r} should look: a picture, a drawing, shapes "
                           f"or a color. Nothing was changed.", "no_look")
-        keywords = [(k, v) for k, v in entry.keywords.items() if k != "scale"]
-        scale = self._list_scale(entry.name, look)
-        if scale != 1.0:
-            keywords.insert(1, ("scale", _num(scale)))
-        statement = source.call_text(self.var, entry.name,
-                                     look.code(keep_shape=_shape_of(look, _pair(
-                                         self.args.get("size")))), keywords, entry.target)
+        keywords = [(k, quoted(self._layer(entry, entry.layer)) if k == "layer" else v)
+                    for k, v in entry.keywords.items()]
+        if "layer" not in entry.keywords and self._layer_given():
+            keywords.append(("layer", quoted(self._layer(entry, entry.layer))))
+        if look is not None or size:
+            keywords = [(k, v) for k, v in keywords if k != "scale"]
+            scale = self._list_scale(entry.name, look or _look_of(entry), prefix=prefix)
+            if scale != 1.0:
+                keywords.insert(1, ("scale", _num(scale)))
+        statement = source.call_text(self.var, entry.name, code or entry.look, keywords,
+                                     entry.target)
         edit.replace(entry.first, entry.last, statement)
-        return edit.text(), self._report("changed", look, entry, keywords)
+        self._rule(edit, entry.name, items=items)
+        result = self._report("changed", look, entry, keywords)
+        self._said_of_game_code(items, result)
+        return edit.text(), result
 
     # -- a list the game already draws ---------------------------------------------
 
@@ -739,20 +802,18 @@ class _Work:
         tree = self.scene.tree
         edit = source.Edit(self.text)
         look = self.look(required=False)
-        if look is None and prefix is not None and not self._wants_place() and any(
-                isinstance(self.args.get(key), (int, float)) for key in ("count", "speed")):
+        if look is None and prefix is not None and not self._wants_place() and \
+                self._numbers_only():
             # "Make the asteroids faster": a recipe's things have their own constants, and
             # changing them needs no scene at all.
-            self._set_constants(edit, prefix)
-            if not self.notes:
-                raise Refused(f"{items} are already like that, so nothing was changed.",
-                              "no_change")
-            return edit.text(), {"ok": True, "object": self.name, "action": "changed",
-                                 "kept": f"how {items} look and what touching them does"}
+            return self._constants_only(items, prefix, edit)
         if look is None:
             look = self.look(required=True)
         drawing = source.drawing_loop(tree, items)
-        if drawing is None or source.other_drawing_of(tree, items, drawing):
+        # A list nothing draws yet -- the Fast Path's things before their look is given,
+        # or rects Gary made with edit_file -- is simply drawn by the scene from now on.
+        undrawn = drawing is None and not source.draws(tree, items)
+        if not undrawn and (drawing is None or source.other_drawing_of(tree, items, drawing)):
             raise Refused(f"{items} are drawn by code that does other things as well, so "
                           f"Open Nest can't safely hand their drawing to the scene. Nothing "
                           f"was changed; edit_file can change that code.", "drawn_elsewhere")
@@ -765,7 +826,8 @@ class _Work:
             self.notes.append(f"where {items} are and how they move is the game's own code, "
                               f"so only their look changed -- edit_file changes the rest")
         self._set_constants(edit, prefix)
-        edit.drop(*drawing)
+        if drawing is not None:
+            edit.drop(*drawing)
         if prefix:
             self.redundant = (f"{prefix}_COLOUR", f"{prefix}_DETAIL")
         scale = self._list_scale(items, look, prefix=prefix)
@@ -777,10 +839,157 @@ class _Work:
             look, _pair(self.args.get("size")))), keywords, None)
         edit.insert(self._position(after_names=(items,), layer="things"), statement)
         self._rule(edit, name, items=items)
-        result = self._report("changed", look, None, keywords)
+        result = self._report("added" if undrawn else "changed", look, None, keywords)
         result["kept"] = f"how {items} move and what happens when they are touched are unchanged"
-        result["replaced"] = f"the loop that drew {items} before"
+        if drawing is not None:
+            result["replaced"] = f"the loop that drew {items} before"
+        self._said_of_game_code(items, result)
         return edit.text(), result
+
+    def _constants_only(self, items: str, prefix: str, edit) -> tuple[str, dict]:
+        self._set_constants(edit, prefix)
+        if not self.notes:
+            raise Refused(f"{items} are already like that, so nothing was changed.",
+                          "no_change")
+        return edit.text(), {"ok": True, "object": self.name, "action": "changed",
+                             "kept": f"how {items} look and what touching them does"}
+
+    def _numbers_only(self) -> bool:
+        """Only ``count`` or ``speed`` given -- nothing about how it looks or where."""
+        return not any(self.args.get(key) for key in (
+            "picture", "drawing", "shapes", "color", "colour", "frames", "size", "layer",
+            "touch")) and any(isinstance(self.args.get(key), (int, float))
+                              for key in ("count", "speed"))
+
+    def _prefix_of(self, items: str | None) -> str | None:
+        """The recipe prefix (``ASTEROID``) whose list is ``items``, if a recipe made it."""
+        for prefix, thing in (self.facts.get("things") or {}).items():
+            if items and thing.get("list") == items:
+                return prefix
+        return None
+
+    def _said_of_game_code(self, items: str, result: dict) -> None:
+        """What the result says about the game's own rects is what the game's code does.
+
+        The scene only draws them, so "it stays where it is" and "nothing happens when it
+        is touched" -- the defaults for a thing the scene makes -- would be false about a
+        recipe's asteroids that drift and send the player back.
+        """
+        loop = source.main_loop(self.scene.tree)
+        moved = False
+        for stmt in loop.body if loop else ():
+            for node in ast.walk(stmt):
+                if not (isinstance(node, ast.For) and source._mentions(node.iter, {items})):
+                    continue
+                each = {n.id for n in ast.walk(node.target) if isinstance(n, ast.Name)}
+                moved = moved or any(
+                    isinstance(sub, (ast.Assign, ast.AugAssign)) and any(
+                        isinstance(t, ast.Attribute) and _dotted_name(t.value) in each
+                        for t in (sub.targets if isinstance(sub, ast.Assign) else [sub.target]))
+                    for sub in ast.walk(node))
+        if "moves" not in result or result["moves"] == "it stays where it is":
+            result["moves"] = "the game's own code moves them" if moved else \
+                "they stay where they are"
+        if self.args.get("touch") not in ("avoid", "collect", "nothing"):
+            touched = self._touched_by_code(items)
+            if touched == "collect":
+                result["touch"] = "touching one scores a point -- the game's own code"
+            elif touched == "avoid":
+                result["touch"] = "touching one sends the player back -- the game's own code"
+
+    def _touched_by_code(self, items: str) -> str:
+        """"avoid", "collect", or "" -- what the game's own code does when the player
+        touches one of ``items``."""
+        loop = source.main_loop(self.scene.tree)
+        player = self.facts.get("player")
+        for stmt in loop.body if loop else ():
+            if not source._mentions(stmt, {items}):
+                continue
+            if any(isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                   and n.func.attr in ("collidelist", "colliderect", "touching")
+                   and (_dotted_name(n.func.value) == player or n.func.attr == "touching")
+                   for n in ast.walk(stmt)):
+                return "collect" if "score" in ast.unparse(stmt) else "avoid"
+        return ""
+
+    # -- colour -----------------------------------------------------------------------
+
+    def _colour_given(self) -> bool:
+        return self.args.get("color", self.args.get("colour")) not in (None, "")
+
+    def _layer_given(self) -> bool:
+        return isinstance(self.args.get("layer"), str) and bool(self.args["layer"].strip())
+
+    def _fill(self):
+        return looks.colour(self.args.get("color", self.args.get("colour")), self.notes,
+                            constants=self.colour_constants)
+
+    def _recolour(self, code: str, edit) -> str | None:
+        """``code`` -- a look as the game writes it -- in the colour Gary gave; None when
+        it has no colour of its own to change (a picture keeps its own).
+
+        Everything else about the look is kept as written: a sign's words, a drawing's
+        size, the other colours of a drawing made of shapes. A ready-made drawing or a
+        plain box changes its colour; shapes change their main colour -- the first
+        shape's -- wherever it is used. A colour that is one of the game's constants and
+        colours nothing else is changed at the top, so that number keeps deciding it.
+        """
+        fill = self._fill()
+        try:
+            call = ast.parse(code, mode="eval").body
+        except SyntaxError:
+            return None
+        if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Name):
+            return None
+        if call.func.id in ("Picture", "Animation"):
+            if any(self.args.get(key) not in (None, "", [], 0) for key in (
+                    "size", "at", "on", "count", "moves", "touch", "layer", "speed")):
+                self.notes.append("it is a picture, which keeps its own colours")
+                return None
+            raise Refused(f"{self.name.replace('_', ' ')} is a picture, which keeps its own "
+                          f"colours -- a drawing or shapes can be any colour. Nothing was "
+                          f"changed.", "keeps_its_colours")
+        others = False
+        if call.func.id == "Drawing":
+            found = [_shape_colour(s) for s in (call.args[1].elts if len(call.args) > 1 and
+                                                isinstance(call.args[1], ast.List) else [])]
+            found = [n for n in found if n is not None]
+            if not found:
+                return None
+            main = ast.unparse(found[0])
+            targets = [n for n in found if ast.unparse(n) == main]
+            others = len(targets) < len(found)
+        else:
+            node = call.args[0] if call.args else next(
+                (k.value for k in call.keywords if k.arg == "fill"), None)
+            if node is None:       # Vehicle() -- its own default colour until now
+                at = _offset(code, call.func.end_lineno, call.func.end_col_offset) + 1
+                rest = ", " if call.args or call.keywords else ""
+                return code[:at] + looks.colour_code(fill) + rest + code[at:]
+            targets = [node]
+        if others:
+            self.notes.append("its main colour -- the first shape's -- changed; its other "
+                              "colours were kept")
+        names = [n.id for n in targets if isinstance(n, ast.Name)]
+        const = (self.facts.get("constants") or {}).get(names[0]) \
+            if len(names) == len(targets) and len(set(names)) == 1 else None
+        wanted = looks.rgb(fill)
+        if const is not None and wanted is not None and const.name in self.colour_constants \
+                and source.references(self.scene.tree, const.name) == sum(
+                    1 for n in ast.walk(call) if isinstance(n, ast.Name) and n.id == const.name):
+            if tuple(const.value) != tuple(wanted):
+                line = self.lines[const.line]
+                edit.replace(const.line, const.line, [
+                    line[:const.start] + f"({wanted[0]}, {wanted[1]}, {wanted[2]})"
+                    + line[const.end:]])
+                self.notes.append(f"{const.name} is its colour, so {const.name} changed")
+            return code
+        spans = sorted(((_offset(code, n.lineno, n.col_offset),
+                         _offset(code, n.end_lineno, n.end_col_offset)) for n in targets),
+                       reverse=True)
+        for start, end in spans:
+            code = code[:start] + looks.colour_code(fill) + code[end:]
+        return code
 
     def _hand_over(self, items, prefix, motion, look, drawing, edit, *,
                    entry: source.Entry | None = None,
@@ -911,6 +1120,19 @@ class _Work:
                                    first=backdrop), statement)
         self._rule(edit, self.name)
         result = self._report("added", look, None, keywords)
+        # Measured on the Luna walk (SPIKES.md section 28K): "background buildings" added to
+        # the scenery after the town and the trees were drawn over both -- the trees
+        # vanished -- and the reply said they were "behind the town". Within a layer,
+        # later is in front; the result says so, and which layer is behind.
+        over = [entry.name for entry in sorted(self.scene.entries.values(),
+                                               key=lambda e: e.first)
+                if entry.layer == layer and entry.look_class != "Sky" and not backdrop]
+        if over:
+            behind = LAYERS[LAYERS.index(layer) - 1] if LAYERS.index(layer) > 0 else ""
+            result["drawn_over"] = (
+                f"{', '.join(over[:6])}: things in the {layer} layer are drawn in the order "
+                f"they were added, so this one is in front of them wherever they overlap"
+                + (f" -- layer {behind} puts it behind them" if behind else ""))
         if look.kind in ("picture", "animation") and "player" not in self.scene.entries \
                 and self.facts.get("player"):
             result["player"] = ("the player -- the one the arrow keys move -- still looks the "
@@ -1312,7 +1534,38 @@ def _look_of(entry: source.Entry) -> Look:
     for kind, cls in looks.DRAWINGS.items():
         if cls == entry.look_class:
             return Look("drawing", drawing=kind)
-    return Look("shapes" if entry.look_class == "Drawing" else "picture")
+    if entry.look_class == "Drawing":
+        # Its own box, so a drawing handed to the scene keeps the size it was drawn at.
+        try:
+            box = ast.literal_eval(ast.parse(entry.look, mode="eval").body.args[0])
+        except (SyntaxError, ValueError, AttributeError, IndexError):
+            box = None
+        box = tuple(box) if isinstance(box, tuple) and len(box) == 2 else None
+        return Look("shapes", box=box)
+    return Look("picture")
+
+
+#: Where each shape's colour is among its arguments, in the kit's own signatures.
+_COLOUR_ARG = {"Rect": 4, "Circle": 3, "Ellipse": 4, "Triangle": 4, "Polygon": 1,
+               "Line": 2, "Text": 3}
+
+
+def _shape_colour(shape: ast.AST) -> ast.AST | None:
+    """The node that is a shape's colour in ``Circle(15, 15, 15, ROCK_COLOUR)``."""
+    if not isinstance(shape, ast.Call) or not isinstance(shape.func, ast.Name):
+        return None
+    for keyword in shape.keywords:
+        if keyword.arg == "colour":
+            return keyword.value
+    index = _COLOUR_ARG.get(shape.func.id)
+    return shape.args[index] if index is not None and len(shape.args) > index else None
+
+
+def _offset(code: str, lineno: int, col: int) -> int:
+    """The character index in ``code`` of an ast (line, UTF-8 column) position."""
+    lines = code.split("\n")
+    before = sum(len(line) + 1 for line in lines[:lineno - 1])
+    return before + len(lines[lineno - 1].encode("utf-8")[:col].decode("utf-8", "ignore"))
 
 
 def _forms(name: str) -> list[str]:

@@ -19,7 +19,7 @@
     "motion_set",
     "playtest_passes",
     "moves_by_itself",
-    "drawn_after_fill"
+    "thing_drawn"
   ],
   "report": [
     "The $things $how now.",

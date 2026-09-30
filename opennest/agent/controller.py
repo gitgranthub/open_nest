@@ -393,6 +393,14 @@ class Turn:
     routed: bool = False
 
 
+def scene_prompt() -> str:
+    """The Games prompt's PICTURES, DRAWINGS AND THE SCENE section, as it is written there."""
+    games = (paths.prompts_dir() / "games.txt").read_text(encoding="utf-8")
+    start = games.index("PICTURES, DRAWINGS AND THE SCENE")
+    end = games.find("\n\n", start)
+    return games[start:end if end != -1 else None].strip()
+
+
 def build_system_prompt(
     project: Project,
     *,
@@ -418,6 +426,11 @@ def build_system_prompt(
     """
     base = (paths.prompts_dir() / "base.txt").read_text(encoding="utf-8").strip()
     profile_prompt = project.profile.system_prompt()
+    if toolbox is not None and "game_object" in toolbox.allowed and \
+            "game_object" not in project.profile.tools:
+        # A Blank project that has become a game has the graphics layer too (tools.
+        # offers_graphics), and the words that go with it -- the ones measured with it.
+        profile_prompt += "\n\n" + scene_prompt()
     style_file = "style_teach.txt" if build_style == "teach" else "style_build.txt"
     style = (paths.prompts_dir() / style_file).read_text(encoding="utf-8").strip()
     screen = evidence.guide(project.profile, live=plays_in_panel(project))

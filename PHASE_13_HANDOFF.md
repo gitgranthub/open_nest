@@ -410,7 +410,9 @@ Gary (any model)                       Open Nest (opennest/graphics)            
 | `agent/tools.py` | `game_object` schema and `_game_object` (every file checked before any is written); `write_file`/`edit_file` refuse a picture's or sound's filename |
 | `execution/playtest_harness.py`, `playtest.py` | the test records what the kit's `Scene.report()` says it drew; `Playtest.scene`, bounded and checked like everything from the child's process |
 | `agent/evidence.py` | Gary is told the scene from the code, the window size, what the test drew and what was never on screen, a sky hiding the fill, drawing the scene paints over, a loop that flips twice |
-| `fastpath/kinds/games.py` | `facts_of` (the parser on a source string), `brief`/`where` know the scene, `use_sprite` calls `game_object`, a `picture_drawn` check, `thing_look` skips a constant nothing reads |
+| `fastpath/kinds/games.py` | `facts_of` (the parser on a source string), `brief`/`where` know the scene, `use_sprite` calls `game_object`, a `picture_drawn` check, `thing_look` skips a constant nothing reads; **since §9.11 `add_things` gives every thing's look through `game_object`** (`_look_call`, the ship through `_ship_call`) and `thing_drawn` checks the scene drew it on screen |
+| `fastpath/kinds/game_things.py` | each noun's look as `game_object` arguments -- a ready-made drawing or the kit's basic shapes, in the thing's own colour constants (`scene_look`); the old inline `pygame.draw` code is gone |
+| `fastpath/executor.py` | a recipe's edits first, then its tool calls, so each call reads what the edits left |
 | `recipes/games/*.json` | `guide_scene`: the pattern Gary is given, when his project has `game_object`, points at it instead of hand-written drawing code |
 | `config/profiles.json` | `game_object` is the Games profile's fifth tool (§9.6) |
 
@@ -546,16 +548,17 @@ changed; a changed kit is used as it is and never overwritten.
 - **Motion is left, right, up, down or bounce.** Chasing, zig-zagging and orbiting stay
   code (edit_file or the Fast Path's recipes); a recipe's things that move those ways keep
   their own code when restyled and are not handed to the scene.
-- **The Fast Path's add-a-thing recipes still write inline pygame** (drawn after
-  `scene.draw()`, so on top, and correct). Making them build with the scene is the next
-  step the work order anticipates ("Recipes/Fast Path may call these primitives later");
-  only the sprite recipe does today.
+- ~~**The Fast Path's add-a-thing recipes still write inline pygame.**~~ Done in §9.11:
+  every one gives its look through `game_object`. Their *motion* stays their own code --
+  chase, zigzag, wave and orbit are not motions the scene has, and their drift and fall
+  keep per-thing lanes the scene's rows do not.
 - **Nothing sees the picture.** The tool knows a picture's format, size and transparency
   and the child's words for it; it never says what it shows, and it cannot know which way
   an eagle faces.
-- **No stronger API model was run**: both cloud keys in the Keychain were rejected
-  (OpenAI's has expired, Anthropic's is invalid). Qwen3 8B, already downloaded and pinned,
-  stood in (SPIKES §28E). Blank projects do not have `game_object` yet.
+- ~~**No stronger API model was run.**~~ Luna was, on 2026-09-30, with a key the owner
+  handed over (SPIKES §28K); Claude still has no working key.
+  ~~Blank projects do not have `game_object` yet.~~ A Blank project that has become a
+  game does, since §9.11 -- measured first.
 
 ### 9.9 Where image generation plugs in later
 
@@ -566,10 +569,10 @@ the eagle -- checked as a real picture, drawn by the scene, reported. A future
 parent control) would write that file and hand its path to the same call; nothing in the
 scene or the kit changes.
 
-### 9.10 For the next thread -- where 13C was paused
+### 9.10 Where 13C was paused (historical -- §9.11 finished it)
 
 Paused at the owner's request with the tree green (1525 tests, ruff clean) and committed.
-State of the evidence:
+State of the evidence then:
 
 - **Final walks** (`benchmarks/graphics/results/`): `walk_4b_final` (local 4B, the
   documented run: 9 turns, 0 code or tool syntax in the chat, 9/9 playtests passed, 4/4
@@ -587,3 +590,74 @@ State of the evidence:
 - **Traps** are in HANDOFF §4 ("Phase 13C traps"): measure any change to `game_object`'s
   description with `benchmarks/graphics/tool_choice.py`; a new recipe that adds a thing to
   see needs a `guide_scene`; drawing by hand goes after `scene.draw()`.
+
+### 9.11 Finishing 13C -- the same building blocks for the Fast Path, Blank, and Gary
+
+The owner's closing order kept the architecture and named the boundary: **Gary makes the
+creative decisions; the scene layer gives reliable building blocks; Open Nest must not
+become a template game maker.** The twelve ready-made drawings are defaults, not
+canonical objects, and a new request is never answered by adding another named one.
+What was done, in the order it was asked (SPIKES §28H-N has every measurement):
+
+1. **The re-walk after the road snap** (`walk_4b_snap`): the final scene still coherent
+   -- a tree placed 10 px under a thin road stands on it; 9 turns, every playtest passed.
+2. **The real app, clicked** (`spikes/phase13/graphics_click_walk.py`, **45/45** under
+   cocoa, `results/click_walk.txt`): the town built from the child's words, Run Game, the
+   eagle picture on screen, the arrow keys moving it, Pop out with the same process still
+   drawing and the keys working there, Put back, a visual change seen on screen, Undo back
+   to the exact earlier code and the old sky on screen. It found no defect in the app; it
+   found a game-feel one (a dodging game can pin the player at its start while a car
+   crosses it -- §28I) and two things a driver must do (wait for Run Game's startup
+   check before typing; measure a key during the hold). Still Qt-activated, not a person.
+3. **The Fast Path's things through the scene** (§28J). All five add-a-thing recipes --
+   enemy, collectible, moving thing, dodging game, catching game -- write the thing's
+   logic and give its look with **one `game_object` call**, the ship included; ~110 lines
+   of per-noun inline `pygame.draw` code are gone. No `add_car`, no new drawings: a car is
+   the kit's vehicle, a coin its coin, everything else the basic shapes, in the thing's
+   own `..._COLOUR` constants. The things are now in the scene's layers, the playtest's
+   record and Gary's facts, and `thing_drawn` checks the test saw them on screen. The
+   Phase 12 app walk: 41/41.
+4. **The same primitives for both**, verified and held by tests: every look a recipe
+   gives is `game_object`'s own vocabulary; the kit's ready-made drawings are exactly the
+   twelve generic forms. Converting the recipes also found places where **Gary could not
+   change something the layer claims he can**, each fixed generally: a colour alone on
+   the player or the game's own rects (refused), a sign's words (dropped on recolour), a
+   drawing of shapes (could not be recoloured), a list of rects nothing drew yet
+   (refused), `layer` and `touch` on the game's own rects (ignored). What Gary can change
+   on anything in the scene, recipe-made or not, is now: look (a picture, a drawing,
+   shapes), colour, size, place, what it stands on, how many, how it moves, layer, what
+   touching it does, and whether it is there -- each tested.
+5. **Blank** (§28L): measured first -- a Blank project that is the Basic Game, 50 -> 68 of
+   94 first moves acceptable with `game_object`, the same gain Games had -- so a Blank
+   project whose files are clearly one pygame game is offered it (`tools.offers_graphics`,
+   `toolbox.allowed`), with the measured prompt; any other Blank project keeps four tools.
+   Its result says it is not tested there, because it is not.
+6. **The stronger API model**: Luna, with the owner's new OpenAI key (§28K). The eagle
+   sequence composed richly from the same primitives -- the whole town from the first
+   sentence, coins along the road, every playtest passing, no tool words in the chat --
+   and found one real defect: later in a layer is drawn in front, and nothing told the
+   model (now `drawn_over` in the result). Claude's key is still rejected.
+7. **Truthfulness kept, and tightened where the new path touched it**: a text file under
+   a picture's name is still refused by `write_file`/`edit_file`; a picture that does not
+   load still crashes the test; a picture asked to change colour is now refused
+   (`keeps_its_colours`) rather than counted as landed; a recipe's thing drawn off screen
+   fails its check and is rolled back; `game_object`'s result about the game's own rects
+   says what the game's code does, not "stays where it is"; count, avoid/collect,
+   on-the-road, town and refused-edit checks unchanged and green.
+8. **The playtest's two seconds** are a separate hardening item (§28N), with the options
+   and what each costs. It caused no acceptance failure here.
+
+**The finish line** -- several visibly different worlds from the same primitives, no
+object type added (SPIKES §28M, `benchmarks/graphics/scenes_walk.py`, any model): five
+worlds -- a sea, a space run, a farm, a snowy night town, a Blank project's garden -- each
+the model's own composition of the same twelve generic forms, shapes and colours. The
+local models' are crude; Luna's are rich, and it drew a fish, jellyfish, coral and a
+rocket from shapes that nothing in Open Nest names. Along the way the walks found and
+fixed: a background recipe that swallowed "a black sky full of stars with a planet"
+into one colour (a `not_words` veto), a made-up drawing name answered with a silent box
+(now: how to compose it), two claim-check misreadings ("the deep sea", "full of little
+stars"), a model copying a tool's result into the chat (`presentable` now drops tool
+talk -- and applies the same protocol filters to every provider's replies, local or
+cloud: `ai/protocol.py`), and later-in-a-layer drawn in front with nothing saying so
+(`drawn_over`). **The graphics layer gives Gary better building blocks; it does not decide
+the game for him.**

@@ -22,12 +22,12 @@
   "verify": [
     "playtest_passes",
     "moves_by_itself",
-    "drawn_after_fill"
+    "thing_drawn"
   ],
   "report": [
     "I added $what. $tune",
-    "There are $what now. $tune",
+    "Now the game has $what. $tune",
     "I put in $what. $tune"
   ],
-  "teach": "Each one is made once above the game loop, moved inside it, and drawn after screen.fill. All three are needed -- skip one and it never shows up."
+  "teach": "Each one is a rectangle made once above the game loop and moved inside it; scene.add gives them their look, and scene.draw() draws them every frame. All three are needed -- skip one and it never shows up."
 }

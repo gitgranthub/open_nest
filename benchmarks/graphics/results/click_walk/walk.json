@@ -1,0 +1,140 @@
+{
+ "turns": [
+  {
+   "label": "build",
+   "message": "Make a game where I fly an eagle over a town and avoid cars.",
+   "chat": "You: Make a game where I fly an eagle over a town and avoid cars.\n\n   \u2026 thinking\n   \u2026 drawing the player\n   \u2026 thinking\n   \u2026 drawing the car\n   \u2026 thinking\n   \u2026 testing the game without a window\nGary: The eagle is now in the scene and the car moves left. Look for the eagle flying and the car coming from the right. It avoids the car by going back to start when touched.",
+   "route": "normal",
+   "recipe": null,
+   "tools": [
+    "game_object(ok)",
+    "game_object(ok)"
+   ],
+   "playtests": [
+    {
+     "verdict": "passed",
+     "scene": [
+      "player(picture assets/eagle.png, on screen 1)",
+      "car(vehicle drawing, on screen 1)"
+     ]
+    }
+   ],
+   "scene": [
+    "player: the picture assets/eagle.png, the player's rectangle, layer things",
+    "car: a vehicle drawing, at (600, 300), moving (-3, 0) a frame, touching one sends the player back to the start, layer things"
+   ]
+  },
+  {
+   "label": "eagle",
+   "message": "Use my eagle picture as the player.",
+   "chat": "You: Use my eagle picture as the player.\n\n   \u2026 using a known way to do this\nGary: The player is already drawn with assets/eagle.png, so there was nothing to change.",
+   "route": "recipe",
+   "recipe": "game.replace_player_sprite",
+   "tools": [],
+   "playtests": [],
+   "scene": [
+    "player: the picture assets/eagle.png, the player's rectangle, layer things",
+    "car: a vehicle drawing, at (600, 300), moving (-3, 0) a frame, touching one sends the player back to the start, layer things"
+   ]
+  },
+  {
+   "label": "town",
+   "message": "Build out the background into a little town with a sky and road. Make it feel like a clean modern mobile game.",
+   "chat": "You: Build out the background into a little town with a sky and road. Make it feel like a clean modern mobile game.\n\n   \u2026 thinking\n   \u2026 drawing the sky\n   \u2026 thinking\n   \u2026 drawing the road\n   \u2026 thinking\n   \u2026 testing the game without a window\nGary: The sky, road, and eagle are now in place. The scene has a clean modern look. Look for the blue sky, gray road, and eagle flying above. The car still moves left and avoids the player.",
+   "route": "normal",
+   "recipe": null,
+   "tools": [
+    "game_object(ok)",
+    "game_object(ok)"
+   ],
+   "playtests": [
+    {
+     "verdict": "passed",
+     "scene": [
+      "sky(sky drawing, on screen 1)",
+      "road(road drawing, on screen 1)",
+      "player(picture assets/eagle.png, on screen 1)",
+      "car(vehicle drawing, on screen 1)"
+     ]
+    }
+   ],
+   "scene": [
+    "sky: a sky drawing, at (0, 0), layer background",
+    "road: a road drawing, at (0, 450), layer scenery",
+    "player: the picture assets/eagle.png, the player's rectangle, layer things",
+    "car: a vehicle drawing, at (600, 300), above the road, not on it, moving (-3, 0) a frame, touching one sends the player back to the start, layer things"
+   ]
+  },
+  {
+   "label": "coins",
+   "message": "Put coins along the road.",
+   "chat": "You: Put coins along the road.\n\n   \u2026 using a known way to do this\n   \u2026 changing src/game.py\n   \u2026 drawing the coins\n   \u2026 testing the game without a window\nGary: I added five coins that sit still until you touch them and a score to count them. Touch one to score a point. I tested it without a window, and it runs.",
+   "route": "recipe",
+   "recipe": "game.add_collectible",
+   "tools": [
+    "edit_file(ok)",
+    "edit_file(ok)",
+    "edit_file(ok)",
+    "edit_file(ok)",
+    "edit_file(ok)",
+    "game_object(ok)"
+   ],
+   "playtests": [
+    {
+     "verdict": "passed",
+     "scene": [
+      "sky(sky drawing, on screen 1)",
+      "road(road drawing, on screen 1)",
+      "player(picture assets/eagle.png, on screen 1)",
+      "car(vehicle drawing, on screen 1)",
+      "coins(coin drawing, on screen 5)"
+     ]
+    }
+   ],
+   "scene": [
+    "sky: a sky drawing, at (0, 0), layer background",
+    "road: a road drawing, at (0, 450), layer scenery",
+    "player: the picture assets/eagle.png, the player's rectangle, layer things",
+    "car: a vehicle drawing, at (600, 300), above the road, not on it, moving (-3, 0) a frame, touching one sends the player back to the start, layer things",
+    "coins: a coin drawing, drawn on the game's own coins, layer things"
+   ]
+  },
+  {
+   "label": "orange sky",
+   "message": "Make the sky orange.",
+   "chat": "You: Make the sky orange.\n\n   \u2026 using a known way to do this\n   \u2026 changing src/game.py\n   \u2026 testing the game without a window\nGary: The background is orange now -- BACKGROUND is (240, 140, 40). I tested it without a window, and it runs.",
+   "route": "recipe",
+   "recipe": "game.change_background",
+   "tools": [
+    "edit_file(ok)"
+   ],
+   "playtests": [
+    {
+     "verdict": "passed",
+     "scene": [
+      "sky(sky drawing, on screen 1)",
+      "road(road drawing, on screen 1)",
+      "player(picture assets/eagle.png, on screen 1)",
+      "car(vehicle drawing, on screen 1)",
+      "coins(coin drawing, on screen 5)"
+     ]
+    }
+   ],
+   "scene": [
+    "sky: a sky drawing, at (0, 0), layer background",
+    "road: a road drawing, at (0, 450), layer scenery",
+    "player: the picture assets/eagle.png, the player's rectangle, layer things",
+    "car: a vehicle drawing, at (600, 300), above the road, not on it, moving (-3, 0) a frame, touching one sends the player back to the start, layer things",
+    "coins: a coin drawing, drawn on the game's own coins, layer things"
+   ]
+  }
+ ],
+ "frames": {
+  "02_run": "benchmarks/graphics/results/click_walk/02_run_frame.png",
+  "03_moved": "benchmarks/graphics/results/click_walk/03_moved_frame.png",
+  "04_popped": "benchmarks/graphics/results/click_walk/04_popped_frame.png",
+  "06_before_change": "benchmarks/graphics/results/click_walk/06_before_change_frame.png",
+  "07_orange": "benchmarks/graphics/results/click_walk/07_orange_frame.png",
+  "08_after_undo": "benchmarks/graphics/results/click_walk/08_after_undo_frame.png"
+ }
+}

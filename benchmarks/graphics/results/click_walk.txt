@@ -1,0 +1,98 @@
+  [PASS] the local model finishes loading at launch
+  [note] macOS made the window active: False
+  [note] model: qwen3-4b-instruct
+  [PASS] adding the picture asks what it is
+  [note] asset-kind prompt: 'What is eagle.png?' default 'Use it in the project'
+  [PASS] eagle.png is in the project's assets
+  [PASS] build: the message box takes typing
+  [PASS] build: the message reached the box
+  [PASS] build: the turn finished
+  [note] build: tools -> game_object(ok), game_object(ok)
+  [note] build: Gary -> 'The eagle is now in the scene and the car moves left. Look for the eagle flying and the car coming from the right. It avoids the car by going back to start when touched.'
+  [PASS] eagle: the message box takes typing
+  [PASS] eagle: the message reached the box
+  [PASS] eagle: the turn finished
+  [note] eagle: tools -> none
+  [note] eagle: Gary -> 'The player is already drawn with assets/eagle.png, so there was nothing to change.'
+  [PASS] town: the message box takes typing
+  [PASS] town: the message reached the box
+  [PASS] town: the turn finished
+  [note] town: tools -> game_object(ok), game_object(ok)
+  [note] town: Gary -> 'The sky, road, and eagle are now in place. The scene has a clean modern look. Look for the blue sky, gray road, and eagle flying above. The car still moves left and avoids the player.'
+  [PASS] coins: the message box takes typing
+  [PASS] coins: the message reached the box
+  [PASS] coins: the turn finished
+  [note] coins: tools -> edit_file(ok), edit_file(ok), edit_file(ok), edit_file(ok), edit_file(ok), game_object(ok)
+  [note] coins: Gary -> 'I added five coins that sit still until you touch them and a score to count them. Touch one to score a point. I tested it without a window, and it runs.'
+  [note] screen: benchmarks/graphics/results/click_walk/01_built.png
+  [PASS] the eagle picture is the player's look
+  [PASS] first run: Run Game shows the game in the panel
+  [PASS] first run: the run reports it started
+  [note] screen: benchmarks/graphics/results/click_walk/02_run.png
+  [PASS] the eagle picture is on screen (hundreds of its black pixels)
+  [note] eagle x while Right was held: [355, 369, 395, 419, 445, 365, 389, 415, 369, 395, 375, 354]
+  [note] eagle y while Up was held: [290, 288, 285, 281, 280, 282, 283, 286, 288, 285, 266, 256]
+  [PASS] holding Right moves the eagle right (Qt-activated -- macOS would not activate a background process)
+  [PASS] holding Up moves the eagle up (Qt-activated -- macOS would not activate a background process)
+  [PASS] Pop out opens the game in a window of its own
+  [PASS] popped out, the game is still playing (new pictures arrive)
+  [PASS] popped out, it is the same game process
+  [note] popped out, eagle x while Left was held: [354, 334, 314, 284, 264, 239, 214, 189, 164, 139, 119, 109]
+  [PASS] popped out, holding Left moves the eagle left (Qt-activated -- macOS would not activate a background process)
+  [note] screen: benchmarks/graphics/results/click_walk/04_popped_window.png
+  [note] screen: benchmarks/graphics/results/click_walk/04_popped_panel.png
+  [PASS] Put back brings the game home to the panel
+  [PASS] put back, the game is still playing
+  [PASS] put back, it is still the same game process
+  [note] screen: benchmarks/graphics/results/click_walk/05_put_back.png
+  [PASS] after Stop, the chat box takes typing again
+  [PASS] before the change: Run Game shows the game in the panel
+  [PASS] before the change: the run reports it started
+  [PASS] after Stop, the chat box takes typing again
+  [PASS] orange sky: the message box takes typing
+  [PASS] orange sky: the message reached the box
+  [PASS] orange sky: the turn finished
+  [note] orange sky: tools -> edit_file(ok)
+  [note] orange sky: Gary -> 'The background is orange now -- BACKGROUND is (240, 140, 40). I tested it without a window, and it runs.'
+  [PASS] the change reached the game
+  [PASS] after the change: Run Game shows the game in the panel
+  [PASS] after the change: the run reports it started
+  [note] screen: benchmarks/graphics/results/click_walk/07_orange.png
+  [PASS] after Stop, the chat box takes typing again
+  [note] sky pixel before (75, 139, 230), after the change (239, 148, 57)
+  [PASS] Undo is offered
+  [PASS] Undo put the game's code back exactly
+  [PASS] after Undo: Run Game shows the game in the panel
+  [PASS] after Undo: the run reports it started
+  [note] screen: benchmarks/graphics/results/click_walk/08_after_undo.png
+  [note] sky pixel after Undo (75, 139, 230)
+  [PASS] after Undo, the sky on screen is the colour it was
+  [PASS] after Stop, the chat box takes typing again
+
+=== graphics-click-walk: 45/45 checks passed ===
+  notes:
+    - macOS made the window active: False
+    - model: qwen3-4b-instruct
+    - asset-kind prompt: 'What is eagle.png?' default 'Use it in the project'
+    - build: tools -> game_object(ok), game_object(ok)
+    - build: Gary -> 'The eagle is now in the scene and the car moves left. Look for the eagle flying and the car coming from the right. It avoids the car by going back to start when touched.'
+    - eagle: tools -> none
+    - eagle: Gary -> 'The player is already drawn with assets/eagle.png, so there was nothing to change.'
+    - town: tools -> game_object(ok), game_object(ok)
+    - town: Gary -> 'The sky, road, and eagle are now in place. The scene has a clean modern look. Look for the blue sky, gray road, and eagle flying above. The car still moves left and avoids the player.'
+    - coins: tools -> edit_file(ok), edit_file(ok), edit_file(ok), edit_file(ok), edit_file(ok), game_object(ok)
+    - coins: Gary -> 'I added five coins that sit still until you touch them and a score to count them. Touch one to score a point. I tested it without a window, and it runs.'
+    - screen: benchmarks/graphics/results/click_walk/01_built.png
+    - screen: benchmarks/graphics/results/click_walk/02_run.png
+    - eagle x while Right was held: [355, 369, 395, 419, 445, 365, 389, 415, 369, 395, 375, 354]
+    - eagle y while Up was held: [290, 288, 285, 281, 280, 282, 283, 286, 288, 285, 266, 256]
+    - popped out, eagle x while Left was held: [354, 334, 314, 284, 264, 239, 214, 189, 164, 139, 119, 109]
+    - screen: benchmarks/graphics/results/click_walk/04_popped_window.png
+    - screen: benchmarks/graphics/results/click_walk/04_popped_panel.png
+    - screen: benchmarks/graphics/results/click_walk/05_put_back.png
+    - orange sky: tools -> edit_file(ok)
+    - orange sky: Gary -> 'The background is orange now -- BACKGROUND is (240, 140, 40). I tested it without a window, and it runs.'
+    - screen: benchmarks/graphics/results/click_walk/07_orange.png
+    - sky pixel before (75, 139, 230), after the change (239, 148, 57)
+    - screen: benchmarks/graphics/results/click_walk/08_after_undo.png
+    - sky pixel after Undo (75, 139, 230)

@@ -7,17 +7,17 @@ this order:
 
 1. **What the child said.** "A big red ball", "lots of tiny stars", "fast asteroids":
    size, colour, count and speed words are read from the request and win outright.
-2. **What the thing is.** Each noun has its own small drawing -- craters on an asteroid,
-   a shine on a coin, eyes on a monster, a ring round a planet -- and a sensible size,
-   speed and number.
+2. **What the thing is.** Each noun has its own small look -- craters on an asteroid,
+   eyes on a monster, a ring round a planet -- built from the scene kit's generic shapes
+   or ready-made drawings (``scene_look``), and a sensible size, speed and number.
 3. **Which project it is.** Anything still undecided -- which of a few shades, a little
    bigger or smaller, a little faster or slower, which way the asteroids come from -- is
    chosen from a seed made of the project's name and what is being added. The same
    project asking the same thing gets the same result, so a test, an undo and a retry
    are all reproducible; two projects asking the same thing do not.
 
-Every drawing sizes itself from the thing's own rectangle, so a star field can have
-stars of different sizes and a child can change ``..._SIZE`` and have everything follow.
+Every look is drawn on the thing's own rectangle, so a star field can have stars of
+different sizes and a child can change ``..._SIZE`` and have everything follow.
 """
 
 from __future__ import annotations
@@ -288,137 +288,90 @@ def describe(s: Style) -> str:
     return f"{number} {name} that {several}"
 
 
-# -- drawings -----------------------------------------------------------------------
+# -- looks ---------------------------------------------------------------------------
 #
-# Each returns the lines inside ``for <one> in <many>:``, after the loop has set the
-# thing's centre and size into short local names -- ``x, y = asteroid.center`` and
-# ``size = asteroid.width`` -- so a drawing reads as a drawing rather than as a wall of
-# attribute lookups. Those names are only used when the child's own code does not use
-# them; otherwise they carry the thing's prefix (``games.facts`` checks).
+# What each thing looks like is said the way Gary says it: ``game_object``'s arguments,
+# drawn by the game's scene (Phase 13C, ``opennest/graphics``). A car is the kit's
+# ready-made vehicle, a coin its coin, a cloud its cloud; everything else is the kit's
+# basic shapes in the thing's own box -- the same ``shapes`` any model can send, and the
+# same call Gary can later change by name. Nothing here is a drawing only a recipe has.
+# The shapes are placed for the thing's size and drawn on each of its rects, so a star
+# field of different sizes stays different sizes and a child's change to ``..._SIZE``
+# is followed. Its colours are the thing's own constants, so ``ASTEROID_COLOUR`` at the
+# top keeps deciding them, for the child and for the recipe that changes colours.
 
-#: Things whose drawing is the rectangle itself, and needs no centre.
-_RECT_DRAWINGS = ("block", "rounded")
+#: The kit's ready-made drawings a recipe's thing is drawn as, and the shape it keeps.
+READY = {"car": ("vehicle", (1.6, 0.8)), "cloud": ("cloud", (1.6, 0.75)),
+         "coin": ("coin", (1.0, 1.0))}
 
-
-def drawing(name: str, one: str, p: str, s: str, *, x: str = "x", y: str = "y",
-            size: str = "size") -> list[str]:
-    """The drawing lines, starting with the local names they use."""
-    c, d = f"{p}_COLOUR", f"{p}_DETAIL"
-    head = [] if name in _RECT_DRAWINGS else [f"{x}, {y} = {one}.center"]
-    head.append(f"{size} = {one}.width")
-    circle = f"pygame.draw.circle({s}, "
-    if name == "rock":
-        body = [
-            f"{circle}{c}, ({x}, {y}), {size} // 2)",
-            f"{circle}{d}, ({x} - {size} // 6, {y} - {size} // 8), {size} // 7 + 1)",
-            f"{circle}{d}, ({x} + {size} // 5, {y} + {size} // 6), {size} // 9 + 1)",
-        ]
-    elif name == "shiny":
-        body = [
-            f"{circle}{c}, ({x}, {y}), {size} // 2)",
-            f"{circle}{d}, ({x} - {size} // 6, {y} - {size} // 6), {size} // 6 + 1)",
-        ]
-    elif name == "dot":
-        body = [f"{circle}{c}, ({x}, {y}), {size} // 2 + 1)"]
-    elif name == "drop":
-        body = [f"pygame.draw.ellipse({s}, {c}, ({x} - {size} // 3, {y} - {size} // 2, "
-                f"{size} * 2 // 3, {size}))"]
-    elif name == "bubble":
-        body = [
-            f"{circle}{c}, ({x}, {y}), {size} // 2, 2)",
-            f"{circle}{d}, ({x} - {size} // 5, {y} - {size} // 5), {size} // 8 + 1)",
-        ]
-    elif name == "planet":
-        body = [
-            f"{circle}{c}, ({x}, {y}), {size} // 2)",
-            f"pygame.draw.ellipse({s}, {d}, ({x} - {size} * 3 // 4, {y} - {size} // 4, "
-            f"{size} * 3 // 2, {size} // 2), 2)",
-        ]
-    elif name == "coin":
-        body = [
-            f"{circle}{c}, ({x}, {y}), {size} // 2)",
-            f"{circle}{d}, ({x}, {y}), {size} // 3, 2)",
-        ]
-    elif name == "gem":
-        body = [
-            f"pygame.draw.polygon({s}, {c}, [({x}, {y} - {size} // 2), ({x} + {size} // 2, {y}),",
-            f"                         ({x}, {y} + {size} // 2), ({x} - {size} // 2, {y})])",
-            f"pygame.draw.line({s}, {d}, ({x} - {size} // 4, {y}), ({x} + {size} // 4, {y}), 2)",
-        ]
-    elif name == "apple":
-        body = [
-            f"{circle}{c}, ({x}, {y}), {size} // 2)",
-            f"pygame.draw.rect({s}, {d}, ({x} - 1, {y} - {size} * 3 // 4, 3, {size} // 4))",
-        ]
-    elif name == "heart":
-        body = [
-            f"{circle}{c}, ({x} - {size} // 4, {y} - {size} // 8), {size} // 4 + 1)",
-            f"{circle}{c}, ({x} + {size} // 4, {y} - {size} // 8), {size} // 4 + 1)",
-            f"pygame.draw.polygon({s}, {c}, [({x} - {size} // 2, {y} - {size} // 8),",
-            f"                         ({x} + {size} // 2, {y} - {size} // 8),",
-            f"                         ({x}, {y} + {size} // 2)])",
-        ]
-    elif name == "block":
-        body = [f"pygame.draw.rect({s}, {c}, {one})",
-                f"pygame.draw.rect({s}, {d}, {one}, 3)"]
-    elif name == "rounded":
-        body = [f"pygame.draw.rect({s}, {c}, {one}, border_radius={size} // 4)"]
-    elif name in ("creature", "ghost"):
-        if name == "creature":
-            body = [f"pygame.draw.rect({s}, {c}, {one}, border_radius={size} // 5)"]
-            eye, pupil = "(255, 255, 255)", "(20, 20, 20)"
-        else:
-            body = [f"pygame.draw.rect({s}, {c}, {one}, border_top_left_radius={size} // 2,",
-                    f"                 border_top_right_radius={size} // 2)"]
-            eye, pupil = "(30, 30, 50)", None
-        body.append(f"for eye_x in ({x} - {size} // 6, {x} + {size} // 6):")
-        body.append(f"    {circle}{eye}, (eye_x, {y} - {size} // 6), {size} // 8 + 1)")
-        if pupil:
-            body.append(f"    {circle}{pupil}, (eye_x, {y} - {size} // 6), {size} // 16 + 1)")
-    elif name == "saucer":
-        body = [
-            f"{circle}{d}, ({x}, {y} - {size} // 6), {size} // 4)",
-            f"pygame.draw.ellipse({s}, {c}, ({x} - {size} * 3 // 4, {y} - {size} // 4, "
-            f"{size} * 3 // 2, {size} // 2))",
-        ]
-    elif name == "wings":
-        body = [
-            f"pygame.draw.polygon({s}, {c}, [({x} - {size} // 2, {y} - {size} // 2), ({x}, {y}),",
-            f"                         ({x} + {size} // 2, {y} - {size} // 2),",
-            f"                         ({x}, {y} + {size} // 2)])",
-            f"{circle}{d}, ({x}, {y}), {size} // 6 + 1)",
-        ]
-    elif name == "car":
-        body = [
-            f"pygame.draw.rect({s}, {c}, ({x} - {size} // 2, {y} - {size} // 3, {size}, "
-            f"{size} * 2 // 3), border_radius=6)",
-            f"for wheel_x in ({x} - {size} // 4, {x} + {size} // 4):",
-            f"    {circle}(30, 30, 30), (wheel_x, {y} + {size} // 3), {size} // 7)",
-        ]
-    elif name == "cloud":
-        body = [
-            f"{circle}{c}, ({x} - {size} // 4, {y}), {size} // 4)",
-            f"{circle}{c}, ({x}, {y} - {size} // 6), {size} // 3)",
-            f"{circle}{c}, ({x} + {size} // 4, {y}), {size} // 4)",
-        ]
-    elif name == "fish":
-        body = [
-            f"pygame.draw.ellipse({s}, {c}, ({x} - {size} // 2, {y} - {size} // 3, {size}, "
-            f"{size} * 2 // 3))",
-            f"pygame.draw.polygon({s}, {c}, [({x} + {size} // 2 - 2, {y}),",
-            f"                         ({x} + {size} * 5 // 6, {y} - {size} // 3),",
-            f"                         ({x} + {size} * 5 // 6, {y} + {size} // 3)])",
-            f"{circle}(20, 20, 20), ({x} - {size} // 4, {y} - 2), 2)",
-        ]
-    else:
-        body = [f"pygame.draw.rect({s}, {c}, {one})"]
-    return head + body
+_WHITE, _INK = [255, 255, 255], [30, 30, 36]
 
 
-#: Names the drawings use for a thing's centre and size, and for the loops inside them.
-DRAWING_NAMES = ("x", "y", "size", "eye_x", "wheel_x")
+def scene_look(name: str, s: int, prefix: str) -> dict:
+    """``game_object``'s arguments for a thing drawn as ``name``, ``s`` pixels across."""
+    c, d = f"{prefix}_COLOUR", f"{prefix}_DETAIL"
+    if name in READY:
+        drawing, (wide, tall) = READY[name]
+        return {"drawing": drawing, "color": c, "size": [round(s * wide), round(s * tall)]}
+    h = s / 2
+
+    def n(value: float) -> float:
+        return round(value, 1)
+
+    def circle(x, y, r, colour):
+        return {"circle": [n(x), n(y), n(r)], "color": colour}
+
+    def ellipse(x, y, w, t, colour):
+        return {"ellipse": [n(x), n(y), n(w), n(t)], "color": colour}
+
+    def rect(x, y, w, t, colour, rounded=0):
+        shape = {"rect": [n(x), n(y), n(w), n(t)], "color": colour}
+        return {**shape, "round": n(rounded)} if rounded else shape
+
+    def polygon(points, colour):
+        return {"polygon": [[n(x), n(y)] for x, y in points], "color": colour}
+
+    def eyes(y, white, pupil=None):
+        found = []
+        for x in (h - s / 6, h + s / 6):
+            found.append(circle(x, y, s / 8 + 1, white))
+            if pupil:
+                found.append(circle(x, y, s / 16 + 1, pupil))
+        return found
+
+    shapes = {
+        "rock": lambda: [circle(h, h, h, c), circle(h - s / 6, h - s / 8, s / 7 + 1, d),
+                         circle(h + s / 5, h + s / 6, s / 9 + 1, d)],
+        "shiny": lambda: [circle(h, h, h, c), circle(h - s / 6, h - s / 6, s / 6 + 1, d)],
+        "dot": lambda: [circle(h, h, h, c)],
+        "drop": lambda: [ellipse(s / 6, 0, s * 2 / 3, s, c)],
+        "bubble": lambda: [circle(h, h, h, c), circle(h, h, h - max(2, s / 10), d),
+                           circle(h - s / 5, h - s / 5, s / 8 + 1, _WHITE)],
+        "planet": lambda: [ellipse(0, s * 0.4, s, s * 0.22, d), circle(h, h, s * 0.34, c),
+                           ellipse(s * 0.1, s * 0.53, s * 0.8, s * 0.09, d)],
+        "gem": lambda: [polygon([(h, 0), (s, h), (h, s), (0, h)], c),
+                        {"line": [n(s / 4), n(h), n(s * 3 / 4), n(h)], "color": d, "width": 2}],
+        "apple": lambda: [circle(h, s * 0.58, s * 0.42, c),
+                          rect(s * 0.46, 0, s * 0.08, s * 0.24, d),
+                          ellipse(s * 0.54, s * 0.06, s * 0.26, s * 0.13, d)],
+        "heart": lambda: [circle(s / 4, s * 0.36, s / 4, c), circle(s * 3 / 4, s * 0.36, s / 4, c),
+                          polygon([(0, s * 0.42), (s, s * 0.42), (h, s)], c)],
+        "block": lambda: [rect(0, 0, s, s, d), rect(s * 0.1, s * 0.1, s * 0.8, s * 0.8, c)],
+        "rounded": lambda: [rect(0, 0, s, s, c, s / 4)],
+        "creature": lambda: [rect(0, 0, s, s, c, s / 5)] + eyes(h - s / 6, _WHITE, _INK),
+        "ghost": lambda: [circle(h, h, h, c), rect(0, h, s, h, c)]
+        + eyes(h - s / 8, [30, 30, 50]),
+        "saucer": lambda: [circle(h, s * 0.4, s * 0.24, d), ellipse(0, s * 0.4, s, s * 0.3, c)],
+        "wings": lambda: [polygon([(0, 0), (h, h), (s, 0), (h, s)], c),
+                          circle(h, h, s / 6 + 1, d)],
+        "fish": lambda: [ellipse(0, s / 6, s * 0.75, s * 2 / 3, c),
+                         polygon([(s * 0.68, h), (s, s / 6), (s, s * 5 / 6)], c),
+                         circle(s * 0.2, s * 0.44, max(1.5, s / 16), _INK)],
+    }.get(name, lambda: [rect(0, 0, s, s, c)])()
+    return {"shapes": shapes, "size": [s, s]}
 
 
 def uses_detail(name: str) -> bool:
-    return name in ("rock", "shiny", "bubble", "planet", "coin", "gem", "apple", "block",
-                    "saucer", "wings")
+    """Whether the look for ``name`` is drawn in a second colour, ``..._DETAIL``."""
+    return any(shape.get("color") == "X_DETAIL"
+               for shape in scene_look(name, 30, "X").get("shapes", []))

@@ -38,7 +38,7 @@ from opennest.fastpath.classifier import OTHER, Option
 RECIPE_KEYS = frozenset({
     "id", "intent", "describe", "requires", "op", "params", "guide", "guide_scene",
     "verify", "report", "teach", "whole", "attachment_confirms", "attachment_covers",
-    "needs_words", "_note",
+    "needs_words", "not_words", "_note",
 })
 INDEX_KEYS = frozenset({"profile", "building", "other", "order", "_note"})
 
@@ -93,6 +93,10 @@ class Recipe:
     #: A regular expression the message -- or the one before it -- must match before
     #: this recipe is taken at all. Empty for almost every recipe.
     needs_words: str = ""
+    #: A regular expression that, matched in *this* message, means the recipe is not
+    #: what was asked -- it would do one small part of it and drop the rest. Empty for
+    #: almost every recipe.
+    not_words: str = ""
 
     @property
     def deterministic(self) -> bool:
@@ -106,6 +110,8 @@ class Recipe:
         measured, "make this the player" straight after "i want a game where..." was read
         as a whole new game at 1.00, and would have been built over the child's work.
         """
+        if self.not_words and re.search(self.not_words, request, re.IGNORECASE):
+            return False
         if not self.needs_words:
             return True
         text = request if self.whole else f"{previous or ''}\n{request}"
@@ -152,6 +158,21 @@ def _text(value, name: str, path: Path) -> str:
     raise RecipeError(f"{path.name}: {name} must be text or a list of lines")
 
 
+def _pattern(raw: dict, key: str, path: Path) -> str:
+    """``needs_words`` or ``not_words``: one pattern, or a list of alternatives."""
+    words = raw.get(key, "")
+    if isinstance(words, list) and all(isinstance(w, str) and w for w in words):
+        # One alternative per line, so each can carry its own reason in review.
+        words = "|".join(f"(?:{word})" for word in words)
+    if not isinstance(words, str):
+        raise RecipeError(f"{path.name}: {key} must be a pattern or a list of them")
+    try:
+        re.compile(words)
+    except re.error as exc:
+        raise RecipeError(f"{path.name}: {key} is not a pattern: {exc}") from exc
+    return words
+
+
 def _phrasings(value, path: Path) -> tuple[str, ...]:
     """A report is one phrasing or a list of alternatives -- never lines to be joined."""
     if isinstance(value, str):
@@ -186,16 +207,8 @@ def _recipe(path: Path, profile: str) -> Recipe:
     params = raw.get("params", {})
     if not isinstance(params, dict):
         raise RecipeError(f"{path.name}: params must be an object")
-    needs_words = raw.get("needs_words", "")
-    if isinstance(needs_words, list) and all(isinstance(w, str) and w for w in needs_words):
-        # One alternative per line, so each can carry its own reason in review.
-        needs_words = "|".join(f"(?:{word})" for word in needs_words)
-    if not isinstance(needs_words, str):
-        raise RecipeError(f"{path.name}: needs_words must be a pattern or a list of them")
-    try:
-        re.compile(needs_words)
-    except re.error as exc:
-        raise RecipeError(f"{path.name}: needs_words is not a pattern: {exc}") from exc
+    needs_words = _pattern(raw, "needs_words", path)
+    not_words = _pattern(raw, "not_words", path)
     return Recipe(
         id=raw["id"],
         profile=profile,
@@ -213,6 +226,7 @@ def _recipe(path: Path, profile: str) -> Recipe:
         attachment_confirms=bool(raw.get("attachment_confirms", False)),
         attachment_covers=tuple(raw.get("attachment_covers", ())),
         needs_words=needs_words,
+        not_words=not_words,
     )
 
 

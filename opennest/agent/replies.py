@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import re
 
+from opennest.ai.protocol import strip_tool_calls
+
 #: Saying a result is there -- "the eagle is now flying", "the cars now move" -- which is a
 #: claim of a change whoever made it. Only a claim when no file changed this turn or the
 #: one before: the owner's first Phase 13 test had "The eagle is now flying back and forth
@@ -61,6 +63,10 @@ _NOT_THINGS = frozenset((
     # the town and the sky is the background -- checking them for a name of their own
     # would correct Gary for a scene he really made.
     "background", "scene", "world", "place", "style", "look", "feel",
+    # ... and where a scene is: "the deep sea", "in space". Measured on the 13C worlds
+    # walk (SPIKES.md section 28M): "the deep sea" made "deep" a thing, and Gary was
+    # corrected into telling the child "The deep is not in the game".
+    "sea", "ocean", "water", "space", "night", "day",
 ))
 
 
@@ -84,6 +90,7 @@ _DESCRIBING = frozenset((
     "clean", "modern", "mobile", "colorful", "colourful", "friendly", "pretty",
     "beautiful", "sunny", "cloudy", "busy", "quiet", "tall", "wide", "round", "soft",
     "flat", "cartoon", "realistic", "whole",
+    "deep", "snowy", "starry", "rainy", "stormy", "spooky", "magical", "sandy", "grassy",
 ))
 #: "add buildings", "put coins along the road": a plural straight after one of these is a
 #: thing asked for, with no "the" (Phase 13C's walk: "buildings" was never read).
@@ -109,7 +116,12 @@ def child_nouns(text: str) -> set[str]:
             and noun not in _DETERMINERS
 
     for index, word in enumerate(words[:-1]):
-        following = words[index + 1]
+        # Past the words that describe it: "full of little stars" (the 13C worlds walk --
+        # "with stars" was then said of a sky that had none, SPIKES.md section 28M).
+        at = index + 1
+        while at < len(words) - 1 and words[at] in _DESCRIBING and at - index <= 2:
+            at += 1
+        following = words[at]
         if (word in _BEFORE_PLURALS or word in _PLACING) and following.endswith("s") \
                 and len(following) > 3 and following not in _NOT_THINGS \
                 and following not in _DESCRIBING:
@@ -117,7 +129,6 @@ def child_nouns(text: str) -> set[str]:
             # Measured: "The car appears at the right edge" went unquestioned because
             # "over cars" was never read as a thing the child asked for.
             found.add(following)
-            at = index + 1
         elif word in _DETERMINERS:
             at = index + 1
             # Past the words that describe it: "a clean modern mobile game".
@@ -205,14 +216,18 @@ def is_question(text: str) -> bool:
 def presentable(text: str) -> str:
     """Gary's words as the child should read them: no tool protocol, no page of code.
 
-    The provider already drops calls it recognises; this is the boundary for everything
-    else, whichever model wrote it. The code a turn changed is shown in Build / Preview
-    with its new lines marked (``tools.Step``), so a long code block in the chat only
-    repeats it in a form a child cannot use. A short one stays -- "Build it and teach me"
-    points at a real line. Lines that are a tool call's arguments go whatever they are in.
+    The local provider already drops the calls it runs; this is the boundary for every
+    reply, whichever model wrote it -- a cloud model's text meets the same filters
+    (``ai.protocol.strip_tool_calls``: a ``<tool_call>`` block, a JSON call, a call
+    written as Python, a ``<think>`` block) as the local one's. The code a turn changed
+    is shown in Build / Preview with its new lines marked (``tools.Step``), so a long code
+    block in the chat only repeats it in a form a child cannot use. A short one stays --
+    "Build it and teach me" points at a real line. Lines that are a tool call's arguments
+    go whatever they are in.
     """
     if not text:
         return text
+    text = strip_tool_calls(text)
     # "I see." / "I see," as an opening acknowledgement: nothing was seen, and the owner's
     # rule is that Gary never says it without evidence. Dropping two words costs nothing.
     text = _ACKNOWLEDGED.sub("", text)
@@ -233,6 +248,7 @@ def presentable(text: str) -> str:
     if fenced and len(block) <= _SHORT_CODE:
         kept += block
     kept = _without_code_runs(kept)
+    kept = [_without_tool_talk(line) for line in kept]
     paragraphs, seen = [], set()
     for paragraph in re.split(r"\n\s*\n", "\n".join(kept)):
         key = " ".join(paragraph.split()).lower()
@@ -289,6 +305,24 @@ def _without_code_runs(lines: list[str]) -> list[str]:
         run = []
         kept.append(line)
     return kept[:-1]
+
+
+#: A sentence that names one of Gary's tools, or repeats what a tool's result told *him*
+#: -- never words for the child. Measured on the 13C worlds walk (SPIKES.md section 28M):
+#: Qwen3 8B copied game_object's result into its reply -- "It does not react to keys --
+#: anything the game should do when a key is pressed is edit_file. Open Nest tests the
+#: game after this turn, and the test says what the scene really drew."
+_TOOL_TALK = re.compile(
+    r"\b(?:read_file|edit_file|write_file|run_project|compile_project|inspect_error|"
+    r"game_object)\b|\bOpen Nest tests the game after this turn\b|"
+    r"\banything the game should do when a key is pressed\b", re.IGNORECASE)
+
+
+def _without_tool_talk(line: str) -> str:
+    if not _TOOL_TALK.search(line):
+        return line
+    sentences = re.split(r"(?<=[.!?])\s+", line)
+    return " ".join(s for s in sentences if not _TOOL_TALK.search(s))
 
 
 _ACKNOWLEDGED = re.compile(r"^\s*(?:ok(?:ay)?[,.]?\s+)?i see[.,!]\s*", re.IGNORECASE)

@@ -410,19 +410,35 @@ def test_games_facts_find_the_three_places_in_the_starter(project) -> None:
     assert facts.get("background") == "BACKGROUND"
 
 
-def test_a_new_thing_is_made_above_the_loop_moved_in_it_and_drawn_after_the_fill(project):
+def made(project, change) -> str:
+    """A recipe's change made the way the product makes it -- its edits, then its tool
+    calls, through the Toolbox -- and the game it leaves."""
+    from opennest.fastpath.executor import RecipeExecutor
+
+    applied = RecipeExecutor().apply(change, Toolbox(project))
+    assert all(result.ok for _, result in applied.calls)
+    return project.entrypoint_path.read_text()
+
+
+def test_a_new_thing_is_made_above_the_loop_moved_in_it_and_drawn_by_the_scene(project):
     facts = games.facts(project)
     ctx = Context(project, facts, "Add a ball that bounces around the screen.",
                   {"motion": "choose"}, choose=chosen("bounce"))
-    source = next(iter(games.add_things(ctx).files.values()))
+    change = games.add_things(ctx)
+    # How it looks is the same game_object call Gary makes, with the kit's shapes.
+    assert [tool for tool, _ in change.calls] == ["game_object"]
+    assert change.calls[0][1]["name"] == "balls" and change.calls[0][1]["shapes"]
+    source = made(project, change)
     compile(source, "game.py", "exec")
     lines = source.split("\n")
     loop = next(i for i, line in enumerate(lines) if line.startswith("while running"))
     fill = next(i for i, line in enumerate(lines) if "screen.fill" in line)
     setup = next(i for i, line in enumerate(lines) if line.startswith("balls = []"))
+    look = next(i for i, line in enumerate(lines) if line.startswith('scene.add("balls"'))
     move = next(i for i, line in enumerate(lines) if "ball.x += ball_move[0]" in line)
-    draw = next(i for i, line in enumerate(lines) if "BALL_COLOUR" in line and "draw" in line)
-    assert setup < loop < move < fill < draw
+    draw = next(i for i, line in enumerate(lines) if line.strip() == "scene.draw()")
+    assert setup < look < loop < move < fill < draw
+    assert "rects=balls" in source and "Circle(" in source and "BALL_COLOUR)" in source
 
 
 def test_the_same_project_gets_the_same_build_and_another_project_may_not(tmp_path):
@@ -472,23 +488,26 @@ def test_a_picture_replaces_the_ship_an_earlier_recipe_drew(project) -> None:
     ship = Context(project, games.facts(project), "a spaceship game dodging asteroids",
                    {"motion": "drift", "noun": "asteroid", "many": True,
                     "on_touch": "reset_player", "ship_player": True})
-    project.entrypoint_path.write_text(next(iter(games.add_things(ship).files.values())))
-    assert games.facts(project).get("player_shape") == "polygon"
-    assert "ship shape" in games.brief(games.facts(project))
+    made(project, games.add_things(ship))
+    # Phase 13C: the ship is a shape in the player's colour, drawn by the scene.
+    source = project.entrypoint_path.read_text()
+    assert 'scene.add("player", Drawing((40, 40), [' in source and "PLAYER_COLOUR)" in source
+    assert "pygame.draw.rect(screen, PLAYER_COLOUR, player)" not in source
+    assert "a drawing of 1 shape" in games.brief(games.facts(project))
+    # ... and still the player's colour, so "make my ship blue" is still a recipe.
+    assert games.facts(project).get("player_colour") == "PLAYER_COLOUR"
 
     (project.directory / "assets").mkdir(exist_ok=True)
     (project.directory / "assets" / "ship.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 40)
     change = games.use_sprite(Context(project, games.facts(project), "use my picture", {}))
     # Phase 13C: through the graphics layer, the same call Gary would make.
     assert change.calls == [("game_object", {"name": "player", "picture": "assets/ship.png"})]
-    from opennest.agent.tools import Toolbox
-
     result = Toolbox(project).dispatch(*change.calls[0])
     assert result.ok, result.content
     source = project.entrypoint_path.read_text()
     compile(source, "game.py", "exec")
-    assert "pygame.draw.polygon" not in source and 'Picture("assets/ship.png")' in source
-    assert "(player.left, player.bottom)" not in source   # the whole statement went
+    assert "Polygon" not in source and 'Picture("assets/ship.png")' in source
+    assert source.count('scene.add("player"') == 1        # the ship's line was replaced
 
 
 def test_a_game_that_is_no_longer_starter_shaped_is_not_touched(project) -> None:
@@ -504,11 +523,23 @@ def test_a_picture_the_project_does_not_have_is_asked_about(project) -> None:
         games.use_sprite(ctx)
 
 
-def test_every_noun_has_a_drawing_that_compiles(project) -> None:
-    facts = games.facts(project)
+def test_every_noun_is_drawn_by_the_scene_from_generic_looks(tmp_path) -> None:
+    """Every thing a recipe can add is given its look through game_object -- a ready-made
+    drawing or the kit's basic shapes -- and nothing is drawn with inline pygame."""
+    from opennest.graphics import looks
+
     for noun in game_things.NOUNS:
-        ctx = Context(project, facts, f"add a {noun}", {"motion": "drift", "noun": noun})
-        compile(next(iter(games.add_things(ctx).files.values())), noun, "exec")
+        project = create_project(noun, "games", root=tmp_path / noun)
+        ctx = Context(project, games.facts(project), f"add a {noun}",
+                      {"motion": "drift", "noun": noun})
+        change = games.add_things(ctx)
+        (tool, arguments), = change.calls
+        assert tool == "game_object"
+        assert arguments.get("drawing") in (None, *looks.DRAWINGS), noun
+        source = made(project, change)
+        compile(source, noun, "exec")
+        assert source.count("pygame.draw.") == 1, noun         # only the starter's square
+        assert f'scene.add("{arguments["name"]}"' in source, noun
 
 
 # ------------------------------------------------------ other project types
@@ -731,7 +762,7 @@ def test_a_real_playtest_verifies_a_recipe(project) -> None:
         pytest.skip("the process sandbox cannot be applied here")
     assert turn.fastpath["result"] == "success"
     assert checks == {"playtest_passes": "pass", "moves_by_itself": "pass",
-                      "drawn_after_fill": "pass"}
+                      "thing_drawn": "pass"}
     assert "something moves on its own" in turn.text
 
 
@@ -853,9 +884,7 @@ def _dodging_game(project, motion: str = "drift") -> str:
     ctx = Context(project, games.facts(project), "a spaceship game dodging asteroids",
                   {"motion": motion, "noun": "asteroid", "many": True,
                    "on_touch": "reset_player", "ship_player": True})
-    source = next(iter(games.add_things(ctx).files.values()))
-    project.entrypoint_path.write_text(source)
-    return source
+    return made(project, games.add_things(ctx))
 
 
 def test_an_existing_thing_can_be_made_to_zigzag(project) -> None:
@@ -898,7 +927,7 @@ def test_a_motion_change_is_made_and_checked_through_the_controller(project) -> 
     turn = controller.send("Make the asteroids zigzag instead of going straight.")
     checks = {c["check"]: c["status"] for c in turn.fastpath["verification"]}
     assert turn.fastpath["result"] == "success"
-    assert checks["motion_set"] == "pass" and checks["drawn_after_fill"] == "pass"
+    assert checks["motion_set"] == "pass" and checks["thing_drawn"] == "pass"
     assert "zigzag" in turn.text and provider.calls == []
 
 
@@ -984,6 +1013,30 @@ def test_a_superlative_is_not_a_change_so_the_recipe_is_not_taken() -> None:
                          FakeScorer(biggest, YES)).route == COMPOUND
     assert router.decide("research", "which plant grew the most?",
                          FakeScorer(biggest, YES)).route == RECIPE
+
+
+@pytest.mark.parametrize("message", [
+    "Make the background a black sky full of little stars, with a big purple planet.",
+    "Make it look like the deep sea: dark blue water, sand on the bottom, green seaweed "
+    "and bubbles floating up.",
+])
+def test_a_background_that_is_also_things_to_see_is_garys(message) -> None:
+    """The 13C worlds walk (SPIKES.md section 28M): each became one colour, the stars,
+    planet, sand and seaweed dropped. With things to see in it, the message is Gary's,
+    who has game_object -- and he is not handed the one-colour recipe as his pattern."""
+    background = describe("games", "change_background")
+    decision = FastPathRouter().decide("games", message, FakeScorer(background, YES))
+    assert decision.route == NORMAL and "does not say" in decision.reason
+
+
+@pytest.mark.parametrize("message", [
+    "change the backround to black", "Change the background colour to dark blue.",
+    "backround should be dark purple", "make the background grass green",
+])
+def test_a_plain_background_colour_is_still_the_recipes(message) -> None:
+    background = describe("games", "change_background")
+    decision = FastPathRouter().decide("games", message, FakeScorer(background, YES))
+    assert decision.route == RECIPE
 
 
 def test_graph_this_and_one_charting_change_is_taken_by_that_recipe() -> None:

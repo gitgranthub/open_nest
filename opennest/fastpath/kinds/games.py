@@ -8,6 +8,10 @@ belongs. That is the whole idea of this module, and it is also its limit: when t
 no longer has a single game loop with a fill and a flip in it, the facts are absent and
 every operation that needs them steps aside for Gary.
 
+Since Phase 13C the third piece is not written here. What a thing looks like is given
+through ``game_object`` -- the same tool, and the same generic drawings and shapes, Gary
+has -- so the game's scene draws the rects a recipe made, in its layers (``_look_call``).
+
 Everything is read from the file as it is now, never from what a recipe put there
 earlier -- except for one naming convention that makes a later recipe able to find an
 earlier one's work: a thing called ``ASTEROID`` has ``ASTEROID_SPEED``, ``ASTEROID_SIZE``
@@ -253,6 +257,22 @@ def _player_facts(loop: ast.While, tree: ast.Module, constants: dict, values: di
                 values["player_colour"] = colour.id
         elif name == f"{player}.clamp_ip":
             values["clamp"] = stmt.lineno - 1
+    if "player_colour" in values:
+        return
+    # A player the scene draws (Phase 13C) in one of the game's colour constants -- the
+    # dodging game's ship, Drawing(..., [Polygon(..., PLAYER_COLOUR)]) -- is that colour,
+    # and changing the constant changes it.
+    for node in tree.body:
+        call = node.value if isinstance(node, (ast.Expr, ast.Assign)) else None
+        if not (isinstance(call, ast.Call) and _dotted(call.func).endswith(".add")
+                and len(call.args) >= 2 and isinstance(call.args[0], ast.Constant)
+                and any(k.arg == "rect" and isinstance(k.value, ast.Name)
+                        and k.value.id == player for k in call.keywords)):
+            continue
+        named = {n.id for n in ast.walk(call.args[1]) if isinstance(n, ast.Name)
+                 and isinstance(getattr(constants.get(n.id), "value", None), tuple)}
+        if len(named) == 1:
+            values["player_colour"] = named.pop()
 
 
 def _thing_facts(tree: ast.Module, constants: dict, values: dict) -> None:
@@ -296,33 +316,8 @@ def _thing_facts(tree: ast.Module, constants: dict, values: dict) -> None:
             thing["list"] = candidate
     values["things"] = things or None
     values["thing_lists"] = sorted(lists) or None
-    values["names_used"] = _names_used(tree, lists)
     if things:
         values["thing_speed"] = True
-
-
-def _names_used(tree: ast.Module, lists: set[str]) -> tuple[str, ...]:
-    """Every name the module assigns, except inside loops over things a recipe added.
-
-    Those loops are where a recipe's own ``x, y = ... .center`` lines live, so skipping
-    them lets a second recipe reuse the short names the first one used, while a child's
-    own ``x`` or ``size`` anywhere else makes every recipe use prefixed names instead.
-    """
-    used: set[str] = set()
-
-    def visit(node: ast.AST) -> None:
-        if isinstance(node, ast.For) and isinstance(node.iter, ast.Name) \
-                and node.iter.id in lists:
-            return
-        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
-            used.add(node.id)
-        elif isinstance(node, (ast.FunctionDef, ast.ClassDef)):
-            used.add(node.name)
-        for child in ast.iter_child_nodes(node):
-            visit(child)
-
-    visit(tree)
-    return tuple(sorted(used))
 
 
 def where(facts: Facts) -> str:
@@ -632,6 +627,12 @@ class _Thing:
     def size(self) -> str:
         return f"{self.prefix}_SIZE"
 
+    @property
+    def name(self) -> str:
+        """What the scene calls them: "asteroids", "fish", "ufos", "asteroids_2"."""
+        suffix = self.prefix[len(self.noun):].lower()
+        return game_things.spoken_plural(self.noun).lower() + suffix
+
 
 def _spawn(thing: _Thing, width: str, height: str) -> tuple[str, str]:
     """Where each new thing starts. At least one is on screen from the first frame."""
@@ -671,7 +672,8 @@ def _rgb(colour) -> str:
 
 
 def _thing_pieces(thing: _Thing, facts: Facts) -> dict[str, list[str]]:
-    """The four pieces of one new thing: constants, setup, move, draw."""
+    """Three of the pieces of one new thing: constants, setup, move. The fourth -- how it
+    looks -- is the scene's (``_look_call``): the game's own rects, drawn in layers."""
     width, height = _screen_size(facts)
     surface = facts.get("surface", "screen")
     player = facts.get("player", "player")
@@ -788,14 +790,20 @@ def _thing_pieces(thing: _Thing, facts: Facts) -> dict[str, list[str]]:
         ]
     else:
         move = []
+    return {"constants": constants, "setup": setup, "move": move}
 
-    # Short local names for the drawing when the child's code leaves them free.
-    taken = set(facts.get("names_used") or ()) & set(game_things.DRAWING_NAMES)
-    names = ({"x": f"{one}_x", "y": f"{one}_y", "size": f"{one}_size"} if taken
-             else {"x": "x", "y": "y", "size": "size"})
-    draw = [f"for {one} in {many}:"] + [
-        f"    {line}" for line in game_things.drawing(look.drawing, one, p, surface, **names)]
-    return {"constants": constants, "setup": setup, "move": move, "draw": draw}
+
+def _look_call(thing: _Thing, on_touch: str | None) -> tuple[str, dict]:
+    """The ``game_object`` call that gives new things their look: the same tool, and the
+    same arguments, Gary uses. The scene draws the game's own rects; how they move and
+    what touching them does stay the recipe's code."""
+    arguments = {"name": thing.name,
+                 **game_things.scene_look(thing.style.look.drawing, thing.style.size,
+                                          thing.prefix)}
+    # Clouds drift behind everything -- unless they are what the player has to dodge.
+    arguments["layer"] = "background" if thing.style.look.drawing == "cloud" and \
+        not on_touch else "things"
+    return "game_object", arguments
 
 
 def _motion(ctx: Context, rng) -> str:
@@ -863,28 +871,19 @@ def _touch_pieces(thing: _Thing, facts: Facts, rule: str) -> list[str]:
     return []
 
 
-def _ship_player(ctx: Context, edit: _Edit) -> bool:
-    """Draw the player as a small ship, when the child called it one. Same rectangle, so
-    movement and collisions are unchanged -- only its picture."""
+def _ship_call(ctx: Context) -> tuple[str, dict] | None:
+    """The player drawn as a small ship, when the child called it one: a shape in the
+    player's own colour, given through ``game_object`` like any other look. Same
+    rectangle, so movement and collisions are unchanged -- only how it is drawn."""
     facts = ctx.facts
     if not (_SHIP_WORDS.search(ctx.request) and facts.has("player_draw")
             and facts.has("player_colour") and facts.get("player_shape") == "rect"):
-        return False
-    player = facts.get("player")
-    surface = facts.get("surface", "screen")
-    indent = facts.get("indent")
-    line, last = facts.get("player_draw")
-    edit.replace_statement(line, last,
-                           f"{indent}pygame.draw.polygon({surface}, "
-                           f"{facts.get('player_colour')}, [")
-    edit.after(line, [
-        f"    ({player}.centerx, {player}.top),",
-        f"    ({player}.right, {player}.bottom),",
-        f"    ({player}.centerx, {player}.bottom - {player}.height // 4),",
-        f"    ({player}.left, {player}.bottom),",
-        "])",
-    ], indent)
-    return True
+        return None
+    const = (facts.get("constants") or {}).get(facts.get("player_size", ""))
+    s = const.value if const is not None and isinstance(const.value, int) else 40
+    ship = [[s / 2, 0], [s, s], [s / 2, s * 3 / 4], [0, s]]
+    return "game_object", {"name": "player", "size": [s, s], "shapes": [
+        {"polygon": ship, "color": facts.get("player_colour")}]}
 
 
 def _assemble(ctx: Context, pieces: list[dict[str, list[str]]], *, needs_random: bool,
@@ -919,7 +918,7 @@ def _assemble(ctx: Context, pieces: list[dict[str, list[str]]], *, needs_random:
 
 
 def add_things(ctx: Context) -> Change:
-    """A new thing -- or several -- set up above the loop, moved in it, drawn after fill.
+    """A new thing -- or several -- set up above the loop, moved in it, drawn by the scene.
 
     ``params`` decides what else comes with it, which is how one operation serves
     "add a moving asteroid", "add an enemy that chases me", "add a coin to collect" and
@@ -927,6 +926,11 @@ def add_things(ctx: Context) -> Change:
     words or the project's seed choose from, or ``choose`` to ask the model),
     ``on_touch`` (``reset_player`` or ``collect``), ``score`` (``per_touch`` or
     ``per_second``) and ``ship_player``.
+
+    How they look is not written here. Since Phase 13C it is one ``game_object`` call
+    through the Toolbox -- the tool Gary has, with generic shapes or a ready-made drawing
+    -- so the things are in the game's scene, in its layers, in what the playtest reports
+    and in what Gary is told, and he can change any of it by name afterwards.
     """
     _require(ctx.facts, "loop", "fill", "flip")
     on_touch = ctx.params.get("on_touch")
@@ -940,10 +944,12 @@ def add_things(ctx: Context) -> Change:
     if on_touch:
         # Collisions come after every move, so they test where things are this frame.
         pieces[0]["move"] = pieces[0]["move"] + _touch_pieces(thing, ctx.facts, on_touch)
-    edit = _Edit(ctx.facts.get("source"))
-    ship = bool(ctx.params.get("ship_player")) and _ship_player(ctx, edit)
     source = _assemble(ctx, pieces, needs_random=True,
-                       needs_math=thing.motion in ("wave", "orbit"), edit=edit)
+                       needs_math=thing.motion in ("wave", "orbit"))
+    calls = [_look_call(thing, on_touch)]
+    ship = _ship_call(ctx) if ctx.params.get("ship_player") else None
+    if ship is not None:
+        calls.append(ship)
 
     touch = ""
     if on_touch == "reset_player":
@@ -957,6 +963,7 @@ def add_things(ctx: Context) -> Change:
             + (" and how fast." if len(knobs) == 3 else "."))
     return Change(
         files={ctx.facts.get("entry"): source},
+        calls=calls, touches=(ctx.facts.get("entry"), "src/scene.py"),
         values={"what": game_things.describe(thing.style), "touch": touch,
                 "noun": thing.noun, "tune": tune,
                 "ship": "The player is drawn as a little ship now." if ship else
@@ -1443,19 +1450,25 @@ def _check_caption(ctx):
     return Check("caption_set", FAIL, "the window title is not what was asked")
 
 
-def _check_drawn(ctx):
-    """A new thing is drawn after the fill -- the fault SPIKES.md section 23C found most.
+def _check_thing_drawn(ctx):
+    """The new things are drawn -- the fault SPIKES.md section 23C found most.
 
-    Read with the parser: a ``for`` over the thing's list, directly in the game loop,
-    after the fill and before the flip, with a ``pygame.draw`` call somewhere inside.
+    Since Phase 13C a recipe's things are drawn by the game's scene: its ``scene.add``
+    for the list must be there, with ``scene.draw()`` in the loop, and when the game was
+    tested, the test must have seen the scene draw them on the screen. A game from
+    before that draws its list by hand -- a ``for`` over it after the fill and before the
+    flip, with a ``pygame.draw`` inside -- is drawn too.
     """
+    from opennest.execution import playtest as playtests
     from opennest.fastpath.verifier import FAIL, PASS, Check
+    from opennest.graphics import source as scene_source
 
     facts_after = ctx.facts_after
     wanted = ctx.expect.get("list")
     if not (facts_after.has("fill") and facts_after.has("flip") and wanted):
-        return Check("drawn_after_fill", FAIL, "the loop, fill or flip is gone")
-    tree = ast.parse(facts_after.get("source"))
+        return Check("thing_drawn", FAIL, "the loop, fill or flip is gone")
+    source = facts_after.get("source")
+    tree = ast.parse(source)
     loop = next(node for node in tree.body if isinstance(node, ast.While)
                 and node.lineno - 1 == facts_after.get("loop"))
     fill, flip = facts_after.get("fill"), facts_after.get("flip")
@@ -1464,8 +1477,24 @@ def _check_drawn(ctx):
                 and isinstance(stmt.iter, ast.Name) and stmt.iter.id == wanted
                 and any(isinstance(n, ast.Call) and _dotted(n.func).startswith("pygame.draw.")
                         for n in ast.walk(stmt))):
-            return Check("drawn_after_fill", PASS)
-    return Check("drawn_after_fill", FAIL, f"{wanted} is not drawn after the fill")
+            return Check("thing_drawn", PASS, f"{wanted} drawn after the fill")
+    scene = scene_source.read(source)
+    entry = next((e for e in scene.entries.values() if e.wraps == wanted), None) \
+        if scene.adopted else None
+    if entry is None:
+        return Check("thing_drawn", FAIL, f"nothing draws {wanted}")
+    result = _playtest(ctx)
+    seen = result.scene if result is not None and result.verdict == playtests.PASSED else ()
+    if not seen:
+        return Check("thing_drawn", PASS, f"the scene draws {wanted} as {entry.name!r}; no "
+                                          f"test recorded what it drew")
+    for item in seen:
+        if item["name"] == entry.name:
+            if item["frames"] and item["on_screen"]:
+                return Check("thing_drawn", PASS, f"{entry.name}: drawn in {item['frames']} "
+                                                  f"frames, {item['on_screen']} on screen")
+            return Check("thing_drawn", FAIL, f"{entry.name} was never on screen")
+    return Check("thing_drawn", FAIL, f"the test did not see the scene draw {entry.name}")
 
 
 def _check_motion(ctx):
@@ -1508,7 +1537,7 @@ CHECKS = {
     "value_set": _check_value,
     "speed_used": _check_speed_used,
     "caption_set": _check_caption,
-    "drawn_after_fill": _check_drawn,
+    "thing_drawn": _check_thing_drawn,
 }
 
 
