@@ -661,3 +661,14 @@ talk -- and applies the same protocol filters to every provider's replies, local
 cloud: `ai/protocol.py`), and later-in-a-layer drawn in front with nothing saying so
 (`drawn_over`). **The graphics layer gives Gary better building blocks; it does not decide
 the game for him.**
+
+### 9.12 The picture how-to (after 13C)
+
+Gary cannot make picture files, and neither can a bigger model. When a turn meets a thing
+only a picture would draw well -- a drawing the kit has not got, a picture the project has
+not got, the child's picture of something else -- Open Nest ends the reply with how to
+make one: a PNG with a see-through background at a size worked out from the thing in the
+game, + Add to Project, and what to say. Tools are named by kind only, a drawing app or an
+AI picture maker with a grown-up (the owner's ruling, 2026-09-30). A picture used with a
+solid background is said to show as a rectangle. `AgentController._picture_how_to`;
+SPIKES §28O. The automatic cut-out is designed, not built (HANDOFF "What is next").

@@ -539,7 +539,16 @@ class _Work:
         look = Look("picture", picture=found)
         if header.width and header.height:
             look.box = (header.width, header.height)
+        if header.has_alpha is False:
+            # Nothing in it is see-through, so it is drawn as a rectangle, background and
+            # all. Said, so the reply can say it and Open Nest can say how to fix it.
+            self.solid = found
+            self.notes.append(f"{found} has no see-through parts, so it is drawn as a "
+                              f"rectangle, background and all")
         return look
+
+    #: A picture used this call that has no see-through parts, or "".
+    solid = ""
 
     def _picture_asked_for(self, picture: str) -> bool:
         """Whether a picture may be this thing's look: the player's, one attached to this
@@ -636,6 +645,8 @@ class _Work:
                   "layer": self._layer(current, "player")}
         if look and look.picture:
             result["picture"] = look.picture
+            if self.solid:
+                result["see_through"] = False
         if look and look.kind == "animation":
             result["frames"] = len(look.series) or look.frames
         if visual:
@@ -1451,6 +1462,8 @@ class _Work:
         result["look"] = described
         if look and look.picture:
             result["picture"] = look.picture
+            if self.solid:
+                result["see_through"] = False
         values = {key: _value(code) for key, code in keywords}
         if "layer" in values:
             result["layer"] = values["layer"]

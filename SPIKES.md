@@ -4419,3 +4419,29 @@ none is the graphics layer's to fix.
   because the next person to see it should not bisect the code for it first.
 - Unchanged from §28G: single runs; the 4B's layouts are its own; the recipes' motion is
   their own code; nothing sees a picture; not clicked by a person.
+
+### 28O. The picture how-to
+
+The owner's question after 13C: when Gary cannot make a thing's picture -- no chat model
+here makes image files, a bigger one included -- does he tell the child how to make one?
+He did not: the Games prompt said only "You cannot make picture files", the look recipe
+"ask them to add one". Nothing said PNG, see-through or a size, and a picture with a
+solid background was drawn as a rectangle without a word.
+
+Now Open Nest says it, from the turn's own `game_object` results, never left to the
+model (`AgentController._picture_how_to`): when a call was refused for a drawing the kit
+has not got (`no_such_drawing`), a picture the project has not got (`no_picture`), or the
+child's picture of something else (`picture_not_asked`), the reply ends with how to make
+one -- a PNG with a see-through background, about twice the size the thing is drawn at
+on a 64/128/256/512 side, then + Add to Project and "use my <word> picture for the
+<thing>". Tools by kind only -- a drawing app, or an AI picture maker with a grown-up --
+the owner's ruling (2026-09-30), never a site. Once per word a conversation; not when the
+reply already says how, or the project already has a picture for it. And a picture used
+with no see-through parts is said to show as a rectangle, with the same way out.
+
+Measured in context with Qwen3 8B (`scenes_8b_howto`, two worlds): the fish it could not
+draw came with "about 128 x 128", the rocket "128 x 256" (from the 50 x 100 it had wanted),
+the planet "256 x 256"; once each, no tool words. Not built, and why: cutting a plain
+background out automatically. It wants a `game_object` argument (a description change is a
+tool-choice re-run, HANDOFF trap), a kit version the projects' copied kits can be brought
+up to when unchanged, and a way the 4B would reach it; the design is in HANDOFF.

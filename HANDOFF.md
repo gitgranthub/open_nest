@@ -14,7 +14,7 @@ branch, nothing merged to `main`). Five pieces, in order:
 | **13C** | **the game graphics and scene layer**: a child's picture becomes the player; a scene -- sky, road, buildings, cars to dodge, coins to collect -- built from Gary's plain choices through one tool, `game_object`, drawn by `src/scene.py`, a small pygame kit in the project; look kept separate from movement and collisions; the playtest records what the scene drew | PHASE_13_HANDOFF §9, SPIKES §28 |
 | **13C finished** | the same building blocks for everyone: the Fast Path's add-a-thing recipes give every look through `game_object` (no inline pygame, no named drawings added); a Blank project that has become a game is offered `game_object` (measured first); Gary can change anything in the scene -- look, colour, size, place, motion, layer, touch; a made-up drawing name is answered with how to compose it; clicked through the real app under cocoa, 45/45 | PHASE_13_HANDOFF §9.11, SPIKES §28H-N |
 
-**1568 tests pass, ruff is clean** (1525 when 13C was paused, 1430 before 13C). The
+**1572 tests pass, ruff is clean** (1525 when 13C was paused, 1430 before 13C). The
 Phase 12 app walk 41/41 through MainWindow under cocoa, its dodging game now built with
 `game_object`. The 13C acceptance walks -- the work order's eagle sequence through the
 real Workbench with the real 4B and with Qwen3 8B, the real-app click-through, the
@@ -67,13 +67,15 @@ name and all, into the chat.
    under cocoa (45/45, SPIKES §28I), but Qt-activated: macOS will not activate a
    background process. Run Game, play, click the chat and back, Tab out; Pop out, play,
    Tab to Put back, close the window. And one owner demo across project types.
-2. **The picture how-to (decided by the owner, next).** When a thing cannot be drawn as
-   asked, Open Nest -- not the model -- adds how to get a picture: a PNG with a see-through
-   background, a size worked out from the thing in the game, + Add to Project, then "use my
-   <word> picture for the <thing>". Suggested tools: a drawing app, or an AI picture maker
-   *by type, never by site name, always with "ask a grown-up"* (the owner's ruling,
-   2026-09-30). And a picture with a solid background is said, and a flat background can be
-   cut out into a new file.
+2. **The picture how-to is built (SPIKES §28O); the background cut-out is next.** When a
+   thing cannot be drawn as asked, Open Nest adds how to make its picture (PNG, see-through,
+   a size from the game, + Add to Project; tools by kind only, "ask a grown-up" -- the
+   owner's ruling), and says when a picture has a solid background. Next: take a plain
+   background away for the child -- `Picture(path, see_through=True)` in the kit (the
+   corner colour's connected area made transparent with `pygame.mask`, so a white eye is
+   kept), `VERSION = 2` with unchanged v1 kits in projects brought up to date, and a
+   `see_through` argument on `game_object` -- a description change, so re-run
+   `benchmarks/graphics/tool_choice.py` before it ships.
 3. **Phase 14 -- Publish Version**, reshaped by the owner (PHASE_13_HANDOFF §6,
    PHASE_12_HANDOFF §7). Not started. The sunglasses wait for it.
 4. **Hardening items, each separate and none the graphics layer's** (SPIKES §28N): the

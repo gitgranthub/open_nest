@@ -21,6 +21,7 @@ import ast
 import importlib.util
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -996,6 +997,81 @@ def test_a_refused_game_object_is_not_announced_as_done(eagle) -> None:
     assert "haven't" in turn.text.lower() or "have not" in turn.text.lower()
     correction = [m.content for call in provider.calls for m in call if m.role == "user"]
     assert any("game_object, for how something looks" in text for text in correction)
+
+
+def _rocket_turn(project, reply_text="The rocket drawing is not one I can make."):
+    from opennest.ai.provider import Reply, ToolCall
+
+    controller, provider = _controller(project, [
+        Reply(tool_calls=(ToolCall("game_object", {"name": "player", "drawing": "rocket"}),)),
+        Reply(text=reply_text), Reply(text=reply_text), Reply(text=reply_text)])
+    controller.toolbox.playtest = lambda: None
+    return controller
+
+
+def test_a_thing_only_a_picture_could_draw_comes_with_how_to_make_one(eagle) -> None:
+    """The owner's ask (2026-09-30): when Gary cannot draw it, the child is told how to
+    make the picture -- a PNG with a see-through background, at a size worked out from
+    the game -- and tools only by kind: a drawing app, or an AI picture maker with a
+    grown-up, never a site."""
+    controller = _rocket_turn(eagle)
+    turn = controller.send("make the player a rocket")
+    how = turn.text.split("\n\n")[-1]
+    assert how.startswith("Want the player to look like a real rocket?")
+    assert "PNG with a see-through background, about 128 x 128 pixels" in how
+    assert "drawing app" in how and "AI picture maker" in how and "grown-up" in how
+    assert "+ Add to Project" in how and "use my rocket picture for the player" in how
+    assert not re.search(r"https?://|www\.|\.com\b", how)
+    # Said once a conversation, not every turn it comes up: the same refused call again.
+    from opennest.ai.provider import Reply, ToolCall
+
+    controller.provider.replies[:] = [
+        Reply(tool_calls=(ToolCall("game_object", {"name": "player", "drawing": "rocket"}),)),
+        Reply(text="That rocket drawing is still not one I can make.")]
+    again = controller.send("please make the player a rocket")
+    assert again.tool_results and again.tool_results[0][1].reason == "no_such_drawing"
+    assert "Want the player" not in again.text
+
+
+def test_the_how_to_is_not_said_when_it_would_not_help(eagle) -> None:
+    shutil.copy(EAGLE, eagle.directory / "assets" / "rocket.png")
+    assert "Want the player" not in _rocket_turn(eagle).send("make the player a rocket").text
+    (eagle.directory / "assets" / "rocket.png").unlink()
+    said = _rocket_turn(eagle, "Make a PNG with a see-through background and add it.")
+    assert "Want the player" not in said.send("make the player a rocket").text
+
+
+def test_a_picture_with_a_solid_background_is_said_to_show_as_a_rectangle(eagle) -> None:
+    import struct
+    import zlib
+
+    from opennest.ai.provider import Reply, ToolCall
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(
+            ">I", zlib.crc32(kind + data))
+
+    solid = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 64, 64, 8, 2, 0,
+                                                               0, 0)) + chunk(b"IEND", b""))
+    (eagle.directory / "assets" / "photo.png").write_bytes(solid)
+    controller, _ = _controller(eagle, [
+        Reply(tool_calls=(ToolCall("game_object", {"name": "player",
+                                                   "picture": "assets/photo.png"}),)),
+        Reply(text="The player is your photo now.")])
+    controller.toolbox.playtest = lambda: None
+    turn = controller.send("use my photo picture for the player")
+    result = json.loads(turn.tool_results[0][1].content)
+    assert result["see_through"] is False
+    assert "assets/photo.png has a solid background, so it shows as a rectangle" in turn.text
+
+
+def test_there_is_no_picture_how_to_outside_a_game(tmp_path) -> None:
+    from opennest.ai.provider import Reply
+    from opennest.projects.manager import create_project
+
+    project = create_project("Site", "website", root=tmp_path)
+    controller, _ = _controller(project, [Reply(text="Hello.")])
+    assert "PNG" not in controller.send("make a rocket picture").text
 
 
 def test_restyled_recipe_cars_asked_onto_the_road_later_are_handed_over(dodging) -> None:

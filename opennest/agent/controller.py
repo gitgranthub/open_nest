@@ -15,9 +15,11 @@ loop itself behaves identically either way, which is what keeps them separately 
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from opennest import paths
@@ -622,6 +624,9 @@ class AgentController:
         #: The things the child has asked for in this conversation ("eagle", "cars"), so
         #: a reply that says the game has one its code does not can be caught.
         self._asked_for: set[str] = set()
+        #: The words (and pictures) Open Nest has already told the child how to make a
+        #: picture for in this conversation -- said once, not every turn.
+        self._offered_pictures: set[str] = set()
         #: Saved versions. Named `versions`, not `history`, because `self.history` is
         #: already the message list -- conflating the two silently broke checkpointing.
         #: Optional so tests and headless use do not require Git.
@@ -911,12 +916,102 @@ class AgentController:
         """
         self._settle_plan(turn)
         broken = self._pictures_this_turn_broke(turn)
-        turn.text = "\n\n".join(part for part in (turn.opening, turn.text, broken,
+        how = self._picture_how_to(turn)
+        turn.text = "\n\n".join(part for part in (turn.opening, turn.text, broken, how,
                                                    turn.plan_note) if part)
         self._settle_history(start, turn.text)
         self._record_outcome(turn)
         if not turn.hit_call_limit:
             self._roll_over_if_needed(turn)
+
+    def _picture_how_to(self, turn: Turn) -> str:
+        """How to make a picture for a thing only a picture would draw well -- or "".
+
+        Gary cannot make picture files, and neither can any chat model here. When this
+        turn met a thing the scene kit has no drawing for ("a rocket"), a picture the
+        model reached for that the project has not got ("assets/car.png"), or the
+        child's picture of something else, the child is told how to make one: a PNG with
+        a see-through background, at a size worked out from the thing in the game, and
+        how to hand it over. And a picture used with a solid background is said to show
+        as a rectangle. Built from the tool's own results, never left to the model, once
+        per word a conversation. Tools are named by kind only: a drawing app, or an AI
+        picture maker with a grown-up -- the owner's ruling (2026-09-30), never a site.
+        """
+        if not plays_in_panel(self.project) or "game_object" not in self.toolbox.allowed:
+            return ""
+        if re.search(r"\b(?:png|see-through|transparent)\b", turn.text or "", re.I):
+            return ""                     # the reply says how already
+        pictured = {str(arguments.get("name") or "") for tool, arguments, result in
+                    turn.calls if tool == "game_object" and result.ok and
+                    arguments.get("picture")}
+        for tool, arguments, result in turn.calls:
+            if tool != "game_object":
+                continue
+            try:
+                said = json.loads(result.content or "{}")
+            except ValueError:
+                said = {}
+            name = str(arguments.get("name") or "").strip()
+            if result.ok and said.get("see_through") is False:
+                picture = str(said.get("picture") or "")
+                if picture and picture not in self._offered_pictures:
+                    self._offered_pictures.add(picture)
+                    return (f"{picture} has a solid background, so it shows as a "
+                            f"rectangle, background and all. A PNG with a see-through "
+                            f"background looks better: most drawing apps can save one, and "
+                            f"an AI picture maker can take a background away -- ask a "
+                            f"grown-up first. Then add it with + Add to Project.")
+                continue
+            if result.ok or name in pictured:
+                continue
+            word = _picture_word(result.reason, arguments, name)
+            if not word or word in self._offered_pictures or self._has_picture_of(word):
+                continue
+            self._offered_pictures.add(word)
+            width, height = self._picture_size(name, arguments)
+            thing = "the player" if name == "player" else f"the {name.replace('_', ' ')}"
+            real = "look real" if _singular(word) == _singular(name.replace("_", " ")) \
+                else f"look like a real {word}"
+            return (f"Want {thing} to {real}? You can make a picture of "
+                    f"one: draw it in a drawing app, or make it with an AI picture maker "
+                    f"-- ask a grown-up first. Save it as a PNG with a see-through "
+                    f"background, about {width} x {height} pixels, then press + Add to "
+                    f"Project and say \u201cuse my {word} picture for {thing}\u201d.")
+        return ""
+
+    def _has_picture_of(self, word: str) -> bool:
+        stem = _singular(word)
+        return any(stem in _singular(Path(a.path).stem.lower().replace("_", " "))
+                   for a in assets.list_assets(self.project) if a.kind == "image")
+
+    def _picture_size(self, name: str, arguments: dict) -> tuple[int, int]:
+        """A picture's size for a thing: about twice what it is drawn at, so it stays
+        sharp, on a picture-friendly side -- 64, 128, 256 or 512 -- keeping its shape."""
+        from opennest.fastpath.kinds import games
+        from opennest.graphics import source as scene_source
+
+        size = arguments.get("size")
+        drawn = tuple(size) if isinstance(size, (list, tuple)) and len(size) == 2 and all(
+            isinstance(v, (int, float)) and v > 0 for v in size) else None
+        try:
+            code = self.project.entrypoint_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            code = ""
+        if drawn is None:
+            entry = scene_source.read(code).entries.get(name)
+            literal = entry.literals.get("size") if entry is not None else None
+            if isinstance(literal, tuple) and len(literal) == 2:
+                drawn = literal
+        if drawn is None and name == "player":
+            facts = games.facts_of(code)
+            const = (facts.get("constants") or {}).get(facts.get("player_size", ""))
+            if const is not None and isinstance(const.value, int):
+                drawn = (const.value * 1.5, const.value * 1.5)
+        width, height = drawn or (64, 64)
+        longest = max(width, height)
+        side = next((s for s in (64, 128, 256, 512) if s >= 2 * longest), 512)
+        return (max(16, round(width * side / longest / 8) * 8),
+                max(16, round(height * side / longest / 8) * 8))
 
     def _pictures_this_turn_broke(self, turn: Turn) -> str:
         """A page this turn changed now points at a picture the project has not got.
@@ -2618,6 +2713,22 @@ _NUMBERS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "sev
 #: words, and the thing.
 _COUNTED = re.compile(r"\b(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|twelve|"
                       r"twenty)\s+(?:[a-z]+\s+){0,2}?([a-z]{3,}s)\b")
+
+
+def _picture_word(reason: str, arguments: dict, name: str) -> str:
+    """What a picture would be of, from a game_object refusal -- or "" when it is not one a
+    picture would answer."""
+    if reason == "no_such_drawing":
+        word = str(arguments.get("drawing") or "")
+    elif reason == "no_picture":
+        word = Path(str(arguments.get("picture") or "")).stem
+    elif reason == "picture_not_asked":
+        word = _singular(name)
+    else:
+        return ""
+    word = re.sub(r"[^a-z ]+", " ", word.lower().replace("_", " ")).strip()
+    return word if 2 < len(word) <= 24 and word not in ("player", "image", "picture",
+                                                        "sprite") else ""
 
 
 def _singular(noun: str) -> str:
