@@ -1,7 +1,43 @@
 # Handoff — start here
 
-You are picking up Open Nest during **Phase 12 (the owner's test drive)**, which is
-**still open**. This document is what you need before touching anything.
+## Where it stands (2026-09-30)
+
+**Phase 13 is finished and pushed on `phase-13-live-preview`** (tip `bbf9d36`; stacked on
+the Phase 12 branch, nothing merged to `main`). Four pieces, in order:
+
+| | what | where |
+|---|---|---|
+| 13A | Run Game draws the game inside the Build / Preview panel from its own sandboxed process | PHASE_13_HANDOFF §1-4, SPIKES §26 |
+| owner-test pass | the owner's first real test, traced from the project archive and corrected: empty projects set up on the first request, tool calls written as text run or dropped, questions answered with no tools, checked facts every turn, history as the child saw it, claim checks, plans that re-check the files, file marks and click-to-code | PHASE_13_HANDOFF §7, SPIKES §27A-E |
+| parity pass | the same behaviour checked and corrected in Website, Research, Arduino, Raspberry Pi and Blank | PHASE_13_HANDOFF §7A, SPIKES §27F |
+| 13B | Pop out / Put back: the same game widget moved into a window of its own and back, never restarted | PHASE_13_HANDOFF §8, SPIKES §26J |
+
+**1430 tests pass, ruff is clean.** Phase 12 app walk 41/41 with the same recipe routes;
+the Phase 13 walk offscreen 40/45 (the five misses are focus checks the offscreen platform
+cannot activate -- identical on the pre-13B commit; 45/45 under cocoa before). The
+owner-test and parity walks, with every step's result and source, are in
+`benchmarks/owner_pass/`.
+
+**What is next:**
+
+1. **A person clicks it on a real screen** -- the one check no driver here can make:
+   Run Game, play with the keys, click the chat and back, Tab out; Pop out, play, Tab to
+   Put back, close the window. And one owner demo across project types.
+2. **Phase 14 -- Publish Version**, reshaped by the owner (PHASE_13_HANDOFF §6,
+   PHASE_12_HANDOFF §7). Not started. The sunglasses wait for it.
+3. **Known limits, recorded rather than hidden**: the 4B model still mostly cannot build
+   the eagle game itself (its edits are refused, or land in the 12.3 shape) -- Open Nest
+   now says so truthfully; motion and what a picture *shows* are not checked; a Blank
+   project cannot become a Website or Arduino project in place (architecture work). See
+   SPIKES §27E-F.
+
+Phase 12's own definition of done -- a child asks for a game and gets one -- is still the
+owner's call to close; everything below is the history that led here, and the traps.
+
+---
+
+Phase 12 (the owner's test drive) is **still formally open**. The rest of this document is
+what you need before touching anything.
 
 **Read the top of [PHASE_12_HANDOFF.md](PHASE_12_HANDOFF.md) before you trust any claim
 that something is done.** Four rounds are closed — the runtime and threading faults,
@@ -281,12 +317,13 @@ it belongs in section 4.
 | 12.3 — does the child get a game? | **measured, and the answer is no.** 1 of 24 conversations produced the game that was asked for. 4B vs 8B did not solve it, prompt tuning did not solve it, starter markers made it worse, and tool execution is no longer the dominant problem. `RunResult.ok` is True for any game that merely launched, so the repair loop cannot react to "runs but does not work". SPIKES §23 |
 | 12.4 — Playability Feedback Loop | **closed.** A headless playtest after every change feeds crashed / no picture / closed itself / frozen to the repair loop, sharing its three attempts and the call budget. The 12.3 spike graded 7 of 10 working games frozen and was rebuilt, not wired in. 14 real conversations: 0 false failures, 0 crashes reaching the child as "done". 1104 tests, ruff clean. PHASE_12_HANDOFF §12, SPIKES §24 |
 | **12.5 — The Fast Path** | **implemented, closed out and frozen; committed (552627f).** A classifier on whichever local model Gary is -- closed questions, no generation, no second model -- routes a recognised single change to a recipe that edits through the Toolbox, is checked, and reports truthfully; everything else goes to Gary as before. Games (Phase 12 requests) 4/18 → 17/18; all 44 conversations 14/44 → 33/44; median 20.1 s → 3.2 s; tokens −73%. Closure pass: Blank eligibility from files, the three known misses, one website gap; UI walk 41/41. Pre-13 pass: natural wording, several requests per message, a planning fallback, the test's still frame. 63 recipes (41 deterministic, 22 guidance-only). ~210 MB cache. 1256 tests, ruff clean. PHASE_12_HANDOFF §13, SPIKES §25-25N |
-| **13 — The game preview in the workbench** | **13A built and verified on `phase-13-live-preview`**: the game drawn in the Build / Preview panel from its own sandboxed process, input sent back, same profile. 56 pictures/s, first picture ~0.3 s; the printing-game freeze fixed; the sunglasses reserved for Publish. 1303 tests, ruff clean; Phase 13 walk 45/45, Phase 12 app walk 41/41. **13B (pop out / put back) built** -- the same widget moved, never restarted. [PHASE_13_HANDOFF.md](PHASE_13_HANDOFF.md), SPIKES §26 |
-| 13 owner-test pass | **done, before 13B.** The owner's first test of 13A, traced from the project archive and corrected across every project type: set-up on first request, calls written as text, questions answered without tools, checked facts every turn, history as shown, evidence-based claim checks, plans that re-check the files, file marks and click-to-code. PHASE_13_HANDOFF §7, SPIKES §27 |
+| **13 — The game preview in the workbench** | **complete on `phase-13-live-preview`** (pushed, `bbf9d36`). 13A: the game drawn in the Build / Preview panel from its own sandboxed process, input sent back, same profile; 56 pictures/s, first picture ~0.3 s; the printing-game freeze fixed; the sunglasses reserved for Publish (1303 tests; Phase 13 walk 45/45 under cocoa). Then the owner-test pass and the parity pass (rows below), then **13B (pop out / put back)** -- the same widget moved, never restarted. 1430 tests, ruff clean; Phase 12 app walk 41/41. **Not yet clicked by a person on a real screen.** [PHASE_13_HANDOFF.md](PHASE_13_HANDOFF.md), SPIKES §26 |
+| 13 owner-test pass + parity pass | **done, before 13B.** Parity: the same fixes checked and corrected in Website, Research, Arduino, Pi and Blank (PHASE_13_HANDOFF §7A, SPIKES §27F). Owner test: The owner's first test of 13A, traced from the project archive and corrected across every project type: set-up on first request, calls written as text, questions answered without tools, checked facts every turn, history as shown, evidence-based claim checks, plans that re-check the files, file marks and click-to-code. PHASE_13_HANDOFF §7, SPIKES §27 |
 | 14 — Getting work out of Open Nest (export / PDF / share) | **not started.** Specified in PHASE_12_HANDOFF §7. Nothing can currently leave the app |
 
 Branches are **stacked**: each is based on the previous one, so each PR shows only its
-own phase. Nothing is merged to `main` yet. Branch Phase 10 from `phase-9-github`.
+own phase. Nothing is merged to `main` yet. The current tip is `phase-13-live-preview`;
+branch Phase 14 from it.
 
 The review chain is 1 → 2 → 3 → 4 → 6 → 7 → 5 → 8 → 9. The PR numbers do not match the
 review order, because #5 was opened before #6, #7 and #8.

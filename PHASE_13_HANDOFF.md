@@ -9,11 +9,14 @@ panel, and "Pop out" gives it a window of its own and "Put back" brings it home 
 same widget moved, the game never restarted (§8).** Before 13B, the owner-test pass (§7)
 and a cross-preset parity pass (§7A) corrected the flow around it.
 
-**13A is built and verified: Run Game plays the child's game inside the Build / Preview
-panel.** The game still runs in its own sandboxed process — the profile is byte-for-byte
-unchanged — and opens no window; Open Nest paints what it draws and sends it the child's
-keys and clicks. **13B, pop out and put back, is next** and has not started. One thing is
-owed that no driver can do from here: **a person clicking the real window once** (§5).
+**Phase 13 is complete and pushed** (`phase-13-live-preview`, `bbf9d36`): 1430 tests, ruff
+clean, Phase 12 app walk 41/41. **Next: a person clicking it on a real screen (§5), then
+Phase 14 -- Publish (§6).**
+
+**13A: Run Game plays the child's game inside the Build / Preview panel.** The game still
+runs in its own sandboxed process — the profile is byte-for-byte unchanged — and opens no
+window; Open Nest paints what it draws and sends it the child's keys and clicks. One thing
+is owed that no driver can do from here: **a person clicking the real window once** (§5).
 
 The owner's direction for the phase, kept as its rules: the live view is the child's
 *experience*, never proof that a feature is right — the invisible playtest stays the
@@ -92,6 +95,7 @@ child's process (confined, unchanged profile)          Open Nest
 | new tests | `test_live_view.py` (25: the channel and what it refuses, the output reader, real games under the real sandbox — the starter steered, a crash mid-play, an `event.wait` game, Escape, a game writing junk to its channel, a printing project), `test_game_view.py` (22: the widget, the Workbench, and Run Game through the real worker thread and sandbox) |
 | the Phase 13 walk | `spikes/phase13/live_walk.py`, MainWindow under cocoa, real model: **45/45**. First picture 0.26 s after Run Game; an animated game draws 56.6 fps and 56.3 pictures a second reach the panel; generation 43.1 tok/s without a game and 44.4 with one streaming |
 | the Phase 12 app walk, unchanged | `spikes/fastpath/app_walk_fastpath.py`: **41/41** on this branch |
+| after §7, §7A and §8 | **1430 passed**, ruff clean; the Phase 12 app walk 41/41 with the same recipe routes; the Phase 13 walk offscreen 40/45, the same 40 as the pre-13B commit (the five misses are focus checks offscreen cannot activate); the owner-test and parity walks in `benchmarks/owner_pass/` |
 
 ---
 
@@ -162,7 +166,8 @@ What changed, because Publish does not exist yet and so **nothing shows them tod
 - ~~**13B — pop out and put back.**~~ **Built** (§8).
 - **Nobody has clicked it.** The walk's focus checks are Qt-activated (§3). A person
   should press Run Game in the real window, play with the arrow keys, click the chat and
-  back, and press Tab out of the game.
+  back, and press Tab out of the game -- and, since 13B, press Pop out, play in the
+  window, Tab to Put back, and close the window (it must put the game back, not stop it).
 - **Gary running the game mid-turn has not been seen from the model.** Asked twice, he
   edited instead. The `playing` step is tested; a real turn that runs the game is not.
 - **Showing a game costs Open Nest 11-22 % of one core** at 54-60 pictures a second
@@ -319,7 +324,7 @@ website or an Arduino project.
 Final: 49 turns across nine projects, no tool syntax or code in the chat, 36 questions
 and none changed a file, every click showed the real file, every change marked.
 Remaining loose wording and the two things that would need architecture work are in
-SPIKES §27F. **Frozen; 13B next.**
+SPIKES §27F. **Frozen; 13B followed (§8).**
 
 
 ---
