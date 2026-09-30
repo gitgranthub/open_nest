@@ -36,11 +36,17 @@ from opennest import paths
 from opennest.fastpath.classifier import OTHER, Option
 
 RECIPE_KEYS = frozenset({
-    "id", "intent", "describe", "requires", "op", "params", "guide", "verify",
-    "report", "teach", "whole", "attachment_confirms", "attachment_covers", "needs_words",
-    "_note",
+    "id", "intent", "describe", "requires", "op", "params", "guide", "guide_scene",
+    "verify", "report", "teach", "whole", "attachment_confirms", "attachment_covers",
+    "needs_words", "_note",
 })
 INDEX_KEYS = frozenset({"profile", "building", "other", "order", "_note"})
+
+
+def guide_for(recipe: Recipe, tools) -> str:
+    """The recipe's strategy for a project with these tools."""
+    return recipe.guide_scene if recipe.guide_scene and "game_object" in tools else \
+        recipe.guide
 
 
 class RecipeError(Exception):
@@ -61,6 +67,10 @@ class Recipe:
     params: dict = field(default_factory=dict)
     #: The strategy, for Gary, when Gary writes the change.
     guide: str = ""
+    #: The same strategy for a project that has the graphics layer's game_object tool
+    #: (Phase 13C): things to see are made with it, not with drawing code. Empty when the
+    #: guide does not depend on it.
+    guide_scene: str = ""
     #: Checks in ``fastpath.verifier`` that must pass before success is reported.
     verify: tuple[str, ...] = ()
     #: What the child is told, from values the operation measured. ``$name`` fields.
@@ -195,6 +205,7 @@ def _recipe(path: Path, profile: str) -> Recipe:
         op=op,
         params=params,
         guide=_text(raw["guide"], "guide", path),
+        guide_scene=_text(raw.get("guide_scene", ""), "guide_scene", path),
         verify=verify,
         report=_phrasings(raw.get("report", ""), path),
         teach=_text(raw.get("teach", ""), "teach", path),

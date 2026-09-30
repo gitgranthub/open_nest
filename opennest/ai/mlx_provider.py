@@ -61,6 +61,7 @@ _TEXT_CALL_TOOLS = {
     "write_file": ("path", "content"),
     "run_project": (),
     "compile_project": (),
+    "game_object": ("name",),
 }
 _TEXT_CALL_START = re.compile(r"\b(" + "|".join(_TEXT_CALL_TOOLS) + r")\s*\(")
 #: A fence left empty once the call inside it has gone.

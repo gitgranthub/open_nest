@@ -28,6 +28,8 @@ KNOWN_TOOLS = {
     "list_assets",
     "read_text_asset",
     "get_project_info",
+    # Phase 13C: the game graphics layer's one tool (opennest/graphics).
+    "game_object",
 }
 
 

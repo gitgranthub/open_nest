@@ -75,7 +75,9 @@ def test_only_profile_tools_are_offered(project) -> None:
     controller, provider = make(project, [Reply(text="ok")])
     controller.send("hi")
     offered = {t["function"]["name"] for t in provider.tools_offered[0]}
-    assert offered == {"read_file", "edit_file", "write_file", "run_project"}
+    # A Games project: the four, and game_object since Phase 13C.
+    assert offered == {"read_file", "edit_file", "write_file", "run_project", "game_object"}
+    assert offered == set(project.profile.tools)
     assert "list_project_files" not in offered
 
 

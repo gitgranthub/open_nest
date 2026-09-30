@@ -119,12 +119,31 @@ def undrawn(source: str, nouns) -> list[str]:
         if isinstance(node, ast.For) and isinstance(node.target, ast.Name) and \
                 node.target.id.lower() in drawn:
             drawn.add(ast.unparse(node.iter).lower())
+    # Whatever the scene kit draws (Phase 13C): scene.add("cars", ..., rects=cars) draws
+    # the cars, though no pygame.draw call in the game names them.
+    drawn |= _scene_drawn(source)
     missing = []
     for noun in sorted(nouns):
         stem = _stem(noun)
         if stem in lowered and not any(stem in name for name in drawn):
             missing.append(noun)
     return missing
+
+
+def _scene_drawn(source: str) -> set[str]:
+    """The names the game's scene draws, when ``scene.draw()`` is in its loop."""
+    from opennest.graphics import source as scene_source
+
+    scene = scene_source.read(source)
+    if not scene.adopted:
+        return set()
+    names = set()
+    for entry in scene.entries.values():
+        names |= {entry.name.lower(), *(n.lower() for n in (entry.target, entry.wraps) if n)}
+        # What it is drawn as counts too: the player wearing assets/eagle.png draws the
+        # eagle, though nothing in the game is called that.
+        names.add(entry.look.lower())
+    return names
 
 
 def made_every_frame(source: str, nouns) -> list[str]:
@@ -148,6 +167,16 @@ def made_every_frame(source: str, nouns) -> list[str]:
         if not calls & {"pygame.display.flip", "pygame.display.update"}:
             continue
         for node in ast.walk(loop):
+            call = node.value if isinstance(node, (ast.Assign, ast.Expr)) else None
+            if isinstance(call, ast.Call) and ast.unparse(call.func).endswith(".add") and \
+                    call.args and isinstance(call.args[0], ast.Constant) and \
+                    isinstance(call.args[0].value, str):
+                # scene.add(...) inside the loop puts the thing back where it started on
+                # every frame, the same as a Rect made there.
+                name = call.args[0].value.lower()
+                found += [noun for noun in sorted(nouns)
+                          if _stem(noun) in name and noun not in found]
+                continue
             if not (isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)
                     and ast.unparse(node.value.func) in ("pygame.Rect", "Rect")):
                 continue
@@ -156,6 +185,58 @@ def made_every_frame(source: str, nouns) -> list[str]:
                 found += [noun for noun in sorted(nouns)
                           if name and _stem(noun) in name and noun not in found]
     return found
+
+
+def _drawn_under_the_scene(scene) -> list[str]:
+    """What the loop draws by hand between the fill and ``scene.draw()`` -- painted over.
+
+    Measured on the second 4B walk (SPIKES.md section 28E): asked for something more
+    colourful, the model drew a "glow" round the eagle straight after screen.fill, where
+    the prompt had always said to draw, and the sky covered it on every frame. Gary told
+    the child the eagle had a glow.
+    """
+    import ast
+
+    from opennest.graphics import source as scene_source
+
+    loop = scene_source.main_loop(scene.tree) if scene.tree is not None else None
+    if loop is None or scene.draw_line is None:
+        return []
+    fill = next((stmt.lineno - 1 for stmt in loop.body if isinstance(stmt, ast.Expr)
+                 and isinstance(stmt.value, ast.Call)
+                 and ast.unparse(stmt.value.func).endswith(".fill")), None)
+    if fill is None or fill > scene.draw_line:
+        return []
+    found = []
+    for stmt in loop.body:
+        line = stmt.lineno - 1
+        if not fill < line < scene.draw_line:
+            continue
+        for node in ast.walk(stmt):
+            if isinstance(node, ast.Call) and (ast.unparse(node.func).startswith(
+                    "pygame.draw.") or ast.unparse(node.func).endswith(".blit")):
+                args = node.args[2:] if ast.unparse(node.func).startswith("pygame.draw.") \
+                    else node.args[:1]
+                names = [ast.unparse(arg) for arg in args][:1] or ["something"]
+                found += [name for name in names if name not in found]
+    return found[:4]
+
+
+def _flips_per_frame(source: str) -> int:
+    """How many times the game loop shows a picture each time round: its own flips."""
+    import ast
+
+    from opennest.graphics import source as scene_source
+
+    try:
+        loop = scene_source.main_loop(ast.parse(source))
+    except (SyntaxError, ValueError):
+        return 0
+    if loop is None:
+        return 0
+    return sum(1 for stmt in loop.body if isinstance(stmt, ast.Expr) and isinstance(
+        stmt.value, ast.Call) and ast.unparse(stmt.value.func) in (
+            "pygame.display.flip", "pygame.display.update"))
 
 
 def _draw_calls(source: str) -> int:
@@ -203,6 +284,7 @@ def _game_lines(project: Project, source: str, asked=()) -> list[str]:
     brief = describe_game(project)
     if brief:
         lines.append(f"- In the game right now, read from the code: {brief}")
+    lines += _scene_lines(project, source)
     controls = games.controls_read(source)
     if controls is None:
         lines.append("- Its controls cannot be read: the code does not parse. Do not guess "
@@ -211,12 +293,73 @@ def _game_lines(project: Project, source: str, asked=()) -> list[str]:
         lines.append("- The controls the code actually reads: " + "; ".join(controls) + ".")
     else:
         lines.append("- The code reads no keys and no mouse, so there is nothing to press.")
+    flips = _flips_per_frame(source)
+    if flips > 1:
+        # Measured on the 13C walk (SPIKES.md section 28E): an edit copied the loop's body
+        # into itself, so every time round the screen was drawn twice -- the scene, then a
+        # dark fill with only the coins -- and the game flickered between the two. The
+        # playtest passes a game like that; the child sees it at once.
+        lines.append(f"- The game loop shows {flips} different pictures each time round "
+                     f"(pygame.display.flip is called {flips} times), so what is on screen "
+                     f"flickers between them. One flip at the end of the loop is right.")
     for noun in undrawn(source, asked):
         lines.append(f"- The code has {noun} in it, but nothing draws it, so it is not on "
                      f"screen.")
     for noun in made_every_frame(source, asked):
         lines.append(f"- The {noun} is made again inside the game loop every frame, so it "
                      f"is put back where it started each time and cannot move anywhere.")
+    return lines
+
+
+def _scene_lines(project: Project, source: str) -> list[str]:
+    """The game's scene, from its code, and the window it is drawn in (Phase 13C)."""
+    from opennest.fastpath.kinds import games
+    from opennest.graphics import source as scene_source
+
+    lines = []
+    facts = games.facts_of(source, _entry(project))
+    constants = facts.get("constants") or {}
+    width = constants.get(facts.get("width", "WIDTH"))
+    height = constants.get(facts.get("height", "HEIGHT"))
+    if width is not None and height is not None:
+        lines.append(f"- The game window is {width.value} wide and {height.value} tall; "
+                     f"x grows to the right and y downwards.")
+    scene = scene_source.read(source)
+    if not scene.adopted:
+        return lines
+    things = scene_source.describe(scene, facts.get("player"))
+    if things:
+        lines.append("- The game's scene, read from its code and drawn back to front -- "
+                     "game_object changes any of these by name:\n"
+                     + "\n".join(f"    {thing}" for thing in things))
+    skies = [entry for entry in scene.entries.values() if entry.look_class == "Sky"]
+    background = facts.get("background")
+    if skies and background and skies[0].look == f"Sky({background})":
+        lines.append(f"- The sky covers the whole screen and is drawn in {background}'s "
+                     f"colour, so changing {background} changes the sky.")
+    elif skies:
+        lines.append(f"- A sky covers the whole screen, so the screen.fill colour"
+                     f"{' ' + background if background else ''} is never seen: the sky's "
+                     f"colour is the background now.")
+    hidden = _drawn_under_the_scene(scene)
+    if hidden:
+        sky = any(entry.look_class == "Sky" for entry in scene.entries.values())
+        covered = " -- and the sky covers the whole screen, so the child never sees it" \
+            if sky else ""
+        lines.append(f"- The code draws {', '.join(hidden)} after screen.fill but before "
+                     f"scene.draw(), so the scene is drawn over "
+                     f"{'it' if len(hidden) == 1 else 'them'}{covered}. Drawing done by "
+                     f"hand goes after scene.draw().")
+    kit = project.directory / "src" / "scene.py"
+    if kit.is_file():
+        # Measured (SPIKES.md section 28E): a crash whose traceback ended in the kit sent
+        # the 4B to edit and re-read all of src/scene.py, twelve calls and nine minutes.
+        lines.append("- src/scene.py is Open Nest's scene kit: game_object uses it for you. "
+                     "Do not read or change it -- change the game in "
+                     f"{_entry(project)}.")
+    if not kit.is_file():
+        lines.append("- The game imports scene, but src/scene.py is missing: it cannot run "
+                     "until game_object puts the kit back.")
     return lines
 
 
@@ -254,6 +397,28 @@ def _screen_lines(project: Project, toolbox) -> list[str]:
             lines.append(f"- Open Nest's last test of this exact code, with no window: it "
                          f"ran and drew pictures; {moved}. That shows it runs, not that it "
                          f"does what they asked.")
+            lines += _drew_lines(test)
+    return lines
+
+
+def _drew_lines(test) -> list[str]:
+    """What the scene drew in the last test, and anything it never showed on screen."""
+    scene = getattr(test, "scene", ())
+    if not scene:
+        return []
+    drew = "; ".join(f"{item['name']} ({item['look']}"
+                     f"{', ' + str(item['count']) if item['count'] > 1 else ''})"
+                     for item in scene if item["frames"])
+    lines = [f"- In that test the scene drew, back to front: {drew}."] if drew else []
+    hidden = [item["name"] for item in scene if item["frames"] and not item["on_screen"]]
+    never = [item["name"] for item in scene if not item["frames"]]
+    if hidden:
+        lines.append(f"- {', '.join(hidden)} {'was' if len(hidden) == 1 else 'were'} drawn "
+                     f"but never on screen, so the child cannot see "
+                     f"{'it' if len(hidden) == 1 else 'them'}.")
+    if never:
+        lines.append(f"- {', '.join(never)} {'is' if len(never) == 1 else 'are'} in the "
+                     f"scene but {'was' if len(never) == 1 else 'were'} never drawn.")
     return lines
 
 

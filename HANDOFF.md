@@ -2,8 +2,8 @@
 
 ## Where it stands (2026-09-30)
 
-**Phase 13 is finished and pushed on `phase-13-live-preview`** (tip `bbf9d36`; stacked on
-the Phase 12 branch, nothing merged to `main`). Four pieces, in order:
+**Phase 13 is finished and pushed on `phase-13-live-preview`** (stacked on the Phase 12
+branch, nothing merged to `main`). Five pieces, in order:
 
 | | what | where |
 |---|---|---|
@@ -11,12 +11,29 @@ the Phase 12 branch, nothing merged to `main`). Four pieces, in order:
 | owner-test pass | the owner's first real test, traced from the project archive and corrected: empty projects set up on the first request, tool calls written as text run or dropped, questions answered with no tools, checked facts every turn, history as the child saw it, claim checks, plans that re-check the files, file marks and click-to-code | PHASE_13_HANDOFF §7, SPIKES §27A-E |
 | parity pass | the same behaviour checked and corrected in Website, Research, Arduino, Raspberry Pi and Blank | PHASE_13_HANDOFF §7A, SPIKES §27F |
 | 13B | Pop out / Put back: the same game widget moved into a window of its own and back, never restarted | PHASE_13_HANDOFF §8, SPIKES §26J |
+| **13C** | **the game graphics and scene layer**: a child's picture becomes the player; a scene -- sky, road, buildings, cars to dodge, coins to collect -- built from Gary's plain choices through one tool, `game_object`, drawn by `src/scene.py`, a small pygame kit in the project; look kept separate from movement and collisions; the playtest records what the scene drew | PHASE_13_HANDOFF §9, SPIKES §28 |
 
-**1430 tests pass, ruff is clean.** Phase 12 app walk 41/41 with the same recipe routes;
-the Phase 13 walk offscreen 40/45 (the five misses are focus checks the offscreen platform
-cannot activate -- identical on the pre-13B commit; 45/45 under cocoa before). The
-owner-test and parity walks, with every step's result and source, are in
-`benchmarks/owner_pass/`.
+**1525 tests pass, ruff is clean** (1430 before 13C). Phase 12 app walk 41/41 with the
+same four recipe routes. The 13C acceptance walks -- the work order's eagle sequence
+through the real Workbench with the real 4B, and with Qwen3 8B as the stronger model --
+with every call, result, still and panel frame, are in `benchmarks/graphics/results/`;
+the tool-choice benchmark (four tools against five) beside them. The owner-test and
+parity walks are in `benchmarks/owner_pass/`.
+
+**13C in one paragraph.** The owner's `test03` eagle was not a picture: the 4B had written
+a sentence into `assets/eagle.png`, and the game loaded it every frame inside a `try` that
+drew the square instead. Now `write_file` refuses a picture's name (and the 4B's second
+attempt, in the walk, was refused); a picture that fails to load crashes the test instead
+of hiding; and Gary has `game_object` -- he says what a thing is, what it looks like (a
+picture, one of twelve generic ready-made drawings built from basic shapes, or shapes),
+where, how many, which way it moves and what touching it does, and Open Nest writes one
+readable `scene.add(...)` line in the right place and returns what it did as JSON. The 4B
+cannot draw a car from shapes (four prototype rounds); it can choose "a red vehicle on the
+road that you avoid". Measured on 94 requests, the fifth tool raised acceptable first
+moves from 43 to 62. On the final walks the local 4B built the eagle game from those calls
+-- the eagle picture as the player, cars on the road, buildings standing on it, clouds,
+coins -- and the checks turned wrong claims into finished work. The API models could not
+be run: both Keychain keys were rejected (OpenAI's expired, Anthropic's invalid).
 
 **What is next:**
 
@@ -25,11 +42,14 @@ owner-test and parity walks, with every step's result and source, are in
    Put back, close the window. And one owner demo across project types.
 2. **Phase 14 -- Publish Version**, reshaped by the owner (PHASE_13_HANDOFF §6,
    PHASE_12_HANDOFF §7). Not started. The sunglasses wait for it.
-3. **Known limits, recorded rather than hidden**: the 4B model still mostly cannot build
-   the eagle game itself (its edits are refused, or land in the 12.3 shape) -- Open Nest
-   now says so truthfully; motion and what a picture *shows* are not checked; a Blank
-   project cannot become a Website or Arduino project in place (architecture work). See
-   SPIKES §27E-F.
+3. **Known limits, recorded rather than hidden**: the 4B's layouts are its own and
+   uneven, and it makes one or two calls a turn (PHASE_13_HANDOFF §9.8, SPIKES §28G); the
+   Fast Path's add-a-thing recipes still write inline pygame rather than using the scene;
+   Blank projects do not have `game_object`; motion and what a picture *shows* are not
+   checked; a Blank project cannot become a Website or Arduino project in place
+   (architecture work). See SPIKES §27E-F and §28G.
+4. **A working cloud key**, to run the same acceptance walk with Claude or OpenAI:
+   `benchmarks/graphics/eagle_walk.py <label> claude-sonnet` (SPIKES §28F).
 
 Phase 12's own definition of done -- a child asks for a game and gets one -- is still the
 owner's call to close; everything below is the history that led here, and the traps.
@@ -317,7 +337,7 @@ it belongs in section 4.
 | 12.3 — does the child get a game? | **measured, and the answer is no.** 1 of 24 conversations produced the game that was asked for. 4B vs 8B did not solve it, prompt tuning did not solve it, starter markers made it worse, and tool execution is no longer the dominant problem. `RunResult.ok` is True for any game that merely launched, so the repair loop cannot react to "runs but does not work". SPIKES §23 |
 | 12.4 — Playability Feedback Loop | **closed.** A headless playtest after every change feeds crashed / no picture / closed itself / frozen to the repair loop, sharing its three attempts and the call budget. The 12.3 spike graded 7 of 10 working games frozen and was rebuilt, not wired in. 14 real conversations: 0 false failures, 0 crashes reaching the child as "done". 1104 tests, ruff clean. PHASE_12_HANDOFF §12, SPIKES §24 |
 | **12.5 — The Fast Path** | **implemented, closed out and frozen; committed (552627f).** A classifier on whichever local model Gary is -- closed questions, no generation, no second model -- routes a recognised single change to a recipe that edits through the Toolbox, is checked, and reports truthfully; everything else goes to Gary as before. Games (Phase 12 requests) 4/18 → 17/18; all 44 conversations 14/44 → 33/44; median 20.1 s → 3.2 s; tokens −73%. Closure pass: Blank eligibility from files, the three known misses, one website gap; UI walk 41/41. Pre-13 pass: natural wording, several requests per message, a planning fallback, the test's still frame. 63 recipes (41 deterministic, 22 guidance-only). ~210 MB cache. 1256 tests, ruff clean. PHASE_12_HANDOFF §13, SPIKES §25-25N |
-| **13 — The game preview in the workbench** | **complete on `phase-13-live-preview`** (pushed, `bbf9d36`). 13A: the game drawn in the Build / Preview panel from its own sandboxed process, input sent back, same profile; 56 pictures/s, first picture ~0.3 s; the printing-game freeze fixed; the sunglasses reserved for Publish (1303 tests; Phase 13 walk 45/45 under cocoa). Then the owner-test pass and the parity pass (rows below), then **13B (pop out / put back)** -- the same widget moved, never restarted. 1430 tests, ruff clean; Phase 12 app walk 41/41. **Not yet clicked by a person on a real screen.** [PHASE_13_HANDOFF.md](PHASE_13_HANDOFF.md), SPIKES §26 |
+| **13 — The game preview in the workbench** | **complete on `phase-13-live-preview`**, with **13C (the graphics and scene layer, PHASE_13_HANDOFF §9)** on top. 13A: the game drawn in the Build / Preview panel from its own sandboxed process, input sent back, same profile; 56 pictures/s, first picture ~0.3 s; the printing-game freeze fixed; the sunglasses reserved for Publish (1303 tests; Phase 13 walk 45/45 under cocoa). Then the owner-test pass and the parity pass (rows below), then **13B (pop out / put back)** -- the same widget moved, never restarted. 1430 tests, ruff clean; Phase 12 app walk 41/41. **Not yet clicked by a person on a real screen.** [PHASE_13_HANDOFF.md](PHASE_13_HANDOFF.md), SPIKES §26 |
 | 13 owner-test pass + parity pass | **done, before 13B.** Parity: the same fixes checked and corrected in Website, Research, Arduino, Pi and Blank (PHASE_13_HANDOFF §7A, SPIKES §27F). Owner test: The owner's first test of 13A, traced from the project archive and corrected across every project type: set-up on first request, calls written as text, questions answered without tools, checked facts every turn, history as shown, evidence-based claim checks, plans that re-check the files, file marks and click-to-code. PHASE_13_HANDOFF §7, SPIKES §27 |
 | 14 — Getting work out of Open Nest (export / PDF / share) | **not started.** Specified in PHASE_12_HANDOFF §7. Nothing can currently leave the app |
 
@@ -340,7 +360,7 @@ turn cloud on, and the child can switch to Claude or OpenAI after a warning, or 
 pictures with an image model. Everything except Image Creation still works with cloud off,
 which is the default.
 
-1430 tests pass, ruff is clean.
+1525 tests pass, ruff is clean.
 
 **The application icon is deliberately unresolved, and that is a ruling rather than a
 gap.** Phase 10D was told not to design or simplify one: it needs a separately approved
@@ -373,7 +393,7 @@ privileged-action pattern in §5, not a new mechanism.
 ## 2. Get running in five minutes
 
 ```bash
-.venv/bin/python -m pytest -q      # 1430 passing, about 3 minutes
+.venv/bin/python -m pytest -q      # 1525 passing, about 3.5 minutes
 ```
 
 It is slower than it was (7 s at Phase 6, 55 s at Phase 12.2). Phase 12.4 made every Games
@@ -449,6 +469,13 @@ opennest/
 │   ├── evidence.py         what Open Nest has checked, and the guide to the screen
 │   ├── replies.py          what a reply may say: questions, the chat boundary, claims
 │   └── tools.py            read_file / edit_file / write_file / run_project
+├── graphics/               Phase 13C: how things in a game look, and the scene they are in
+│   ├── kit/scene.py        the pygame helper copied into a project as src/scene.py -- the
+│   │                       child's code, not the app's: the only module here using pygame
+│   ├── looks.py            a look Gary asked for, checked (a real picture? a colour?) and
+│   │                       written as code
+│   ├── source.py           finds and changes the scene in a game's source, with ast
+│   └── game_object.py      the game_object tool's work, and its JSON result
 ├── fastpath/               Phase 12.5 spike: recognise a common request, make it with a
 │   │                       recipe, check it, or step aside for Gary. SPIKES.md section 25
 │   ├── classifier.py       closed questions to the loaded model -- no generation
@@ -964,6 +991,32 @@ does.** Do not "clean up" these without re-measuring:
 - **The owner's `test02` project still has the poisoned memory** written before this
   pass (its bible's Decisions describe an eagle that was never made). Nothing rewrites a
   child's memory files automatically; deleting that project, or those lines, is the fix.
+
+**Phase 13C traps -- the graphics layer (PHASE_13_HANDOFF §9, SPIKES §28):**
+
+- **The 4B cannot decompose "car" into shapes, and prompt words did not change that**
+  (four prototype rounds, SPIKES §28B). The ready-made drawings are the measured answer;
+  do not delete them as a "catalogue" without re-running that prototype. They are generic
+  forms built from the basic shapes, not per-game recipes.
+- **`game_object` is a fifth tool, and it was measured** (43 -> 62 of 94 first moves
+  acceptable, SPIKES §28C). Its cost is mechanics sent to it; the name refusal
+  (`game_object.MECHANICS`) and the "Not for how the game PLAYS" description hold it. A
+  change to its description is a re-run of `benchmarks/graphics/tool_choice.py`.
+- **A Fast Path pattern handed to Gary can contradict the scene.** The avoid-game
+  recipe's old guide ("create it once ABOVE the game loop... draw it AFTER screen.fill")
+  sent the 4B to hand-written pygame for the owner's own first sentence, every time
+  (SPIKES §28E). Recipes carry `guide_scene` for projects that have `game_object`; a new
+  recipe that adds a thing to see needs one.
+- **"Draw it after screen.fill" is wrong once there is a sky.** Anything drawn between the
+  fill and `scene.draw()` is painted over. The prompt, `where()` and the evidence all say
+  so now; a recipe that inserts drawing code must insert it after `scene.draw()` (the Fast
+  Path's `_assemble` puts drawing before the flip, which is after it).
+- **A Thing is a `pygame.Rect`.** That is what lets a recipe's `player.collidelist(cars)`
+  keep working when the scene makes the cars. Do not make it a wrapper.
+- **The scene record comes from the child's process** (`Playtest.scene`): read like the
+  live stream -- bounded, typed, never a verdict.
+- **The fake picture was the model's.** `write_file` and `edit_file` refuse a picture's
+  or sound's filename; do not relax it for "a placeholder image" -- that is test03.
 
 **Phase 11 traps:**
 

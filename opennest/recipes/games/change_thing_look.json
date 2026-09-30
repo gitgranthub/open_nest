@@ -10,6 +10,9 @@
   "guide": [
     "Find that thing's own colour and size constants near the top (like ASTEROID_COLOUR and ASTEROID_SIZE) and change those numbers. If it has none, give it named constants and use them where it is drawn."
   ],
+  "guide_scene": [
+    "If it is in the scene, call game_object with its name and the new colour, drawing or size. If not, find its own colour and size constants near the top (like ASTEROID_COLOUR and ASTEROID_SIZE) and change those numbers."
+  ],
   "verify": [
     "playtest_passes",
     "moves_by_itself"

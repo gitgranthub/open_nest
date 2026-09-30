@@ -478,10 +478,16 @@ def test_a_picture_replaces_the_ship_an_earlier_recipe_drew(project) -> None:
 
     (project.directory / "assets").mkdir(exist_ok=True)
     (project.directory / "assets" / "ship.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 40)
-    source = next(iter(games.use_sprite(Context(project, games.facts(project),
-                                                "use my picture", {})).files.values()))
+    change = games.use_sprite(Context(project, games.facts(project), "use my picture", {}))
+    # Phase 13C: through the graphics layer, the same call Gary would make.
+    assert change.calls == [("game_object", {"name": "player", "picture": "assets/ship.png"})]
+    from opennest.agent.tools import Toolbox
+
+    result = Toolbox(project).dispatch(*change.calls[0])
+    assert result.ok, result.content
+    source = project.entrypoint_path.read_text()
     compile(source, "game.py", "exec")
-    assert "pygame.draw.polygon" not in source and "player_image.get_rect" in source
+    assert "pygame.draw.polygon" not in source and 'Picture("assets/ship.png")' in source
     assert "(player.left, player.bottom)" not in source   # the whole statement went
 
 
@@ -1262,7 +1268,21 @@ def test_a_likely_recipe_the_gate_stopped_is_given_as_a_pattern(project) -> None
     turn = controller.send("make the eagle swoop down and grab things")
     assert turn.fastpath["context"] == "facts+game.add_moving_thing"
     assert "only if it fits what they asked" in provider.system_prompt
-    assert "three pieces in three places" in provider.system_prompt
+    # Phase 13C: in a project that has game_object, a thing to see is made with it.
+    assert "Call game_object for it" in provider.system_prompt
+    assert "three pieces in three places" not in provider.system_prompt.split(
+        "A PATTERN THIS PROJECT CAN USE")[1]
+
+
+def test_a_project_without_game_object_keeps_the_drawing_pattern() -> None:
+    """Blank has no game_object: its games are still guided to write the code."""
+    from opennest.fastpath.registry import RecipeRegistry, guide_for
+    from opennest.projects.profiles import load_profiles
+
+    recipe = RecipeRegistry().for_profile("games").for_intent("add_moving_thing")
+    blank = next(p for p in load_profiles() if p.id == "blank")
+    assert "three pieces in three places" in guide_for(recipe, blank.tools)
+    assert "Call game_object" in guide_for(recipe, ("game_object",))
 
 
 def test_a_veto_gives_no_pattern(tmp_path) -> None:

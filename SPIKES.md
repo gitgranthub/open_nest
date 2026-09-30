@@ -3951,3 +3951,176 @@ What the owner asked to have reported:
   or Arduino project in place (the Workbench's controls are built per project type); and
   checking what a picture or a chart *shows* rather than that it exists -- which is image
   input, and no provider sends image bytes yet.
+
+## 28. Phase 13C -- the game graphics and scene layer
+
+The owner's work order after 13B: Open Nest can make a game run and still not make it look
+like anything. The example that exposed it: `eagle.png` in Assets, Gary saying the eagle
+was the player, and the orange starter square on screen. The ask was a general layer --
+pictures, drawings, a scene in layers, game objects whose look is separate from their
+logic -- that a 4B model can drive, that a stronger model can drive better, and that is
+not a catalogue of recipes (no `add_eagle`, `add_car`, `add_town`).
+
+### 28A. What test03 actually was
+
+The owner's `test03` project archive, read before designing anything:
+
+| | what the files show |
+|---|---|
+| `assets/eagle.png` | **not a picture**: 102 bytes of text the 4B wrote with `write_file` when asked to make the eagle look like an eagle -- "i can't generate images, so i can't add the eagle image. please add one and update the code to use it." The Assets panel listed it; the owner took it for the eagle. Gary's asset block described it as "a file (102 bytes)". |
+| the eagle's drawing | `pygame.image.load('assets/eagle.png')` **inside the game loop**, in a `try` whose `except pygame.error:` drew the rectangle -- so the failed load was invisible, every frame. |
+| the eagle and cars | created **inside** the loop (the 12.3 shape): reset every frame; the cars drawn at y 480+ on a 480-tall window; `random` never imported (never reached). |
+| the player | two of them: the starter's orange square (still moved by the arrow keys) and a yellow "eagle" rect. |
+| the playtest | passed -- nothing crashed and the picture changed when keys were pressed. |
+
+So "the game shows a square" had three causes, and only one was the model's drawing
+ability: a fake asset nothing refused, a load failure something hid, and hand-written code
+in the wrong places.
+
+### 28B. The interface, prototyped on the real 4B before anything was built
+
+`scratchpad/proto_interface.py` (not kept: a probe): the real Games system prompt, the four
+tools plus a draft `game_object` schema, ten requests, the first reply only, temperature 0.
+
+| round | the schema offered | what the 4B did |
+|---|---|---|
+| 1 | raw shapes in the object's box | picked `game_object` for all 7 look requests, `edit_file` for "move faster", no tool for a question; one mechanic ("drop an egg on space") to `game_object`. **Drawings were one rectangle each**: a "car" was a red rect and a black rect; buildings plain brown rects; shapes often in *screen* coordinates inside a local box |
+| 2 | + a worked composition example (a house) | no better: a car still one rect. The egg went to `edit_file` |
+| 3 | + generic parts (`wheels`, `windows`, `puff`) | ignored; one rect per object |
+| 4 | + a small set of ready-made drawings, `color`, `on` | used `"drawing": "vehicle"` for the cars and `"building"`, and `"on": "road"` for the coins **unprompted**; laid scenes out incoherently (a 100 px sky with the road just under it) |
+
+The conclusion the design rests on: **decomposing "car" into positioned shapes is not
+something this model does**, and prompt words did not change it. Its *scene-level*
+decisions -- what belongs in it, which layer, how many, which way they move, what touching
+one does -- were sound. So the layer takes the split the work order's own section 6 lists:
+a dozen **generic ready-made drawings, each built from the basic shapes** (vehicle,
+building, house, tree, cloud, road, ground, sky, coin, star, platform, sign), raw shapes
+for anything else and for stronger models, and pictures. Gary chooses which, what colour,
+where, how many and how it behaves. Two repairs were measured as needed on most calls and
+are made rather than refused: shapes given in screen coordinates are moved into their own
+box, and a missing size is taken from the shapes.
+
+### 28C. Four tools against five
+
+SPIKES section 4 is why every profile is four tools wide -- and the tool that did the
+damage there was `list_project_files`, a lookup the model reached for instead of acting.
+`game_object` acts. `benchmarks/graphics/tool_choice.py`: every Games request in both Fast
+Path label sets plus 16 graphics requests (94), each labelled with the first moves that can
+do it (a code tool for how the game plays, no tool for a question, either for how it
+looks), the real Gary system prompt for a Games project with the eagle in it, the real 4B,
+the first reply. `results/tool_choice_1.json`, `tool_choice_2.json`.
+
+| first move | four tools (the prompt before 13C) | five, first description | five, revised description |
+|---|---|---|---|
+| acceptable | 43 / 94 | 56 / 94 | **62 / 94** |
+| no tool at all on a request | 48 | 23 | 23 |
+| a how-it-plays request sent to `game_object` | 0 | 15 | **6** |
+| a question given a tool | 0 | 1 | 2 |
+| a look request to `game_object` | -- | 14 / 16 | 12 / 16 |
+
+- The fifth tool **did not cost selection**: the four-tool condition's commonest failure
+  is no tool call at all (48 of 94 -- a reply that describes a change instead of making
+  it), and with a tool for things to see the model acts more often.
+- Its cost is concentrated in one place, measured: mechanics sent to it. Round one's 15
+  were named for a mechanic (score, timer, game over) or were a **filler sky** -- asked
+  for lives, a snake game, a platformer, a title or "I don't know yet", the 4B added a
+  blue sky. The revised description leads with "How things LOOK" and ends "Not for how
+  the game PLAYS -- keys, jumping, timers, lives, score, game over, levels: those are
+  edit_file" (and the prompt says the same): 6 left, 3 of them named `score` or
+  `game_over`, which `game_object` now refuses with "that is edit_file" rather than
+  drawing a "timer" that counts nothing. The two "questions given a tool" cannot happen
+  in the product, where a question is answered with no tools at all.
+- One thing measured as a misroute was a missing capability: "make the asteroids move
+  faster" went to `game_object(name="asteroids", speed=...)`. A recipe's things have
+  their own `_SPEED` and `_COUNT` constants, so that is now exactly what it changes --
+  with no scene added for it.
+
+### 28D. What was built
+
+PHASE_13_HANDOFF §9 is the architecture. In one line each: a portable pygame kit copied
+into the project (`src/scene.py`: pictures, animations, drawings from basic shapes and a
+dozen ready-made ones built the same way, a scene in six layers whose things are
+`pygame.Rect`s); one tool, `game_object`, that turns Gary's creative decisions into one
+readable `scene.add(...)` statement placed where the game needs it and returns what was
+done as JSON; the playtest recording what the scene drew; Gary told the scene, the
+window, what the test saw and what the scene paints over; and `write_file` refusing to
+write text under a picture's name.
+
+A hand-made check of the kit, before any model touched it -- the whole acceptance scene
+written with the kit by hand, run by the real playtest under the real sandbox:
+**passed**, 103 frames, things moving by themselves, every input answered; sky, clouds,
+buildings on the road, cars driving on it, coins and the real eagle picture on the player.
+
+### 28E. The acceptance walks, and what each one found
+
+`benchmarks/graphics/eagle_walk.py`: the work order's sequence (section 18) and the other
+scenarios (section 19) through the real Workbench's `_send`, with the Fast Path,
+VersionHistory, memory and the Toolbox wired as MainWindow wires them; a Game project with
+the real brand eagle (128x128, transparent) added to Assets the way a drop is; Run Game in
+the panel after the background and after everything, its frame saved; an Undo and Run
+Game again; a second project attaching the eagle to "Use this image for the player."
+Everything each run did is in `results/<label>.json`, and the frames and stills beside it.
+
+| run | model | what it found | what changed |
+|---|---|---|---|
+| `walk_4b` (log only) | 4B | step 1 hand-written: a loop body copied into itself (two fills, two flips: every other frame was a dark screen) and `pygame.random.randint`, which crashes ~4 s in -- past the 2 s playtest. **Step 3 repeated test03 exactly: `write_file("assets/car.png", "i can't create a picture...")` -- refused**, and its next call used a vehicle drawing. "More colourful" changed `PLAYER_COLOUR` and `BACKGROUND`; neither was visible | colour constants nothing reads are removed; a sky hiding the fill and a loop that flips twice are said |
+| `walk_8b` | Qwen3 8B | the eagle made the player through `game_object` in step 1; the sprite recipe then "changed" a player already wearing the picture; three separate `car1..3` placed above the road; "the player is bright yellow now" about a picture | a change that changes nothing is refused; the recipe says "it already is"; a new road says what is not on it |
+| `walk_4b_2` | 4B | step 1: six refused edits, then a plan -- honest, no game. Then one call a turn and **"I'll add the road now" three times; no road was ever made**. "A glow effect" drawn after the fill, under the sky, and claimed | the carry-on push; the prompt and `where()` say to draw after `scene.draw()`; drawing the scene paints over is said |
+| `walk_4b_3` | 4B | "add three cars" as three calls all named `car`, each replacing the last -- **one car, and "Three red cars are now at..."**; "it's behind the road" with no road, uncaught because "a sky and road" never yielded "road" | the count check; nouns joined by "and" are read; on a request turn, a missing thing is to be made or said missing |
+| (probe) | 4B | step 1 in isolation went to `game_object`; with the Fast Path's pattern for its 0.87-scored intent -- "create it once ABOVE the game loop... draw it AFTER screen.fill" -- **it went to `edit_file`, every time** | the add-a-thing recipes carry `guide_scene`, used where `game_object` is offered |
+| `walk_4b_4` | 4B | **step 1 built from `game_object`**: the eagle picture as the player, a road, a car to avoid; "use my eagle picture" answered "it already is"; the final frame coherent -- three cars on the road, buildings on it, clouds, coins, a score. The car of step 1 sat 80 px above the road it was meant for; "the eagle flies over the town" with no building in the scene | a standing thing put just above a road stands on it; "town" is checked as its buildings |
+| `walk_4b_5_crash` (log) | 4B | buildings snapped onto a road that was written *after* them: the game crashed at start ("nothing called 'road'"), and the 4B spent twelve calls and nine minutes reading and editing the 920-line kit | statements are ordered by the `on` actually written; the kit settles `on` at the first draw, so order never matters; Gary is told the kit is not his to edit |
+| `walk_4b_6` | 4B | the car in step 1 given `eagle.png` -- allowed, because "eagle" was in the child's message; the same rule then refused the car's re-style and the 4B planned instead of drawing. "More colourful" broke the game; Gary said so, and **Undo brought back a version that ran** | a picture is tied to a thing by the child's words only when they talk about a picture; a name with a ready-made drawing (car -> vehicle) is drawn that way, with a note, instead of refused |
+| `walk_8b_2` | 8B | cars at the top of the screen, "10 cars moving left across the road"; "avoid the cars" and "collect coins" with no touch rule on either -- the tool's own result had said "nothing happens when it is touched" | a claim that a thing is avoided or collected is checked against what touching it does; "on/along/across the road" against where the scene has it |
+| `walk_4b_7` | 4B | clean through the sequence -- but "the eagle flies over the town" with no building was not caught: **the named-thing check read every file under src/, the kit included, and the kit names every drawing it can make** | the check skips Open Nest's kit |
+| `walk_4b_8` | 4B | with the kit skipped, step 1's "town" claim was corrected, and the 4B then **added three buildings and a tree**. "More colourful" changed `BACKGROUND` and said the sky changed, under a sky that covered it -- the 8B did the same | a sky is drawn in `BACKGROUND`'s colour: changing it, by anyone, changes the sky |
+| `walk_8b_3` | 8B | cars in `scenery`, buildings added to the same layer after them, the cars hidden | something the player can touch, or a moving vehicle, is drawn in front of the scenery |
+| `walk_4b_9` | 4B | "roads to dark gray, buildings to tan, clouds to light gray": all three edits were to lines the model imagined and were refused, in a turn where the coins did change | a claim about a thing whose every edit this turn was refused is corrected |
+| `walk_4b_10` | 4B | corrected, the reply dropped the buildings and clouds and kept "The road is dark gray" -- no change verb, and "dark" the refused edit's own value | a sentence naming the thing with its refused value is flagged; said again after the correction, Open Nest adds what happened |
+| `walk_4b_11` | 4B | the new check's own false alarm: a road call that answered "already looks like that" counted as refused, and "the road remains gray" got "(that change did not go in)" | "already like that" counts with what landed |
+
+**The stronger model, on the final code** (`walk_8b_final`): step 1 built the sky, the
+road and the eagle as the player from `game_object`; "use my eagle picture" answered
+"it already is"; cars drawn as vehicles and put on the road; buildings standing on it;
+clouds; coins on the road to collect; "more colourful" changed `BACKGROUND` and the sky
+really changed with it. One turn ("add three cars") the 8B hand-wrote `scene.add(...)`
+with `edit_file`, was refused, and said "I haven't changed anything yet". The Run Game
+frame after everything: sky, clouds, a skyline standing on the road, red cars driving in
+front of it, coins along the road, the eagle -- coherent and recognisable. It composes
+the same calls with better numbers than the 4B: sizes that fit, rows spread, `on` given
+by itself. **Across both models the checks turned claims into work**: corrected on
+placement, the 8B re-sent its cars with `on: "road"`; corrected on behaviour, it re-sent
+them with `touch: "avoid"`; corrected on "the town", the 4B added the buildings.
+
+### 28F. The stronger API model
+
+Not run. Both cloud keys in the Keychain were refused by the real services when probed
+with one small call each: OpenAI's "has expired", Anthropic's "is invalid". The work order
+does not block on it (section 20). Qwen3 8B -- already downloaded and pinned in the
+catalogue, no new artifact -- stood in as the stronger model; the schema, the prompt and
+the tool are provider-independent (nothing in `graphics/` knows which model called it),
+so a cloud model is the same walk: `benchmarks/graphics/eagle_walk.py <label>
+claude-sonnet` once a parent saves a working key.
+
+### 28G. What this does not establish
+
+- **Layouts are the model's, and the 4B's are uneven** -- a 20 px road, a 60x100 car, a
+  128 px eagle. The defaults, the snap and the facts make what it asks for coherent; they
+  do not choose better numbers for it.
+- **The 4B still makes one or two calls a turn in a long conversation.** The carry-on
+  push and the claim checks recover much of it (measured above); a big request can still
+  be half done, and said to be.
+- **Single runs.** Temperature 0 on MLX is not bit-for-bit repeatable (Phase 12.4); each
+  walk is one run of a 13-step sequence, reported per run.
+- **The claim checks are narrow on purpose**: counts, avoid/collect, on/along the road, a
+  town's buildings, things whose edits were refused. A colour said about something whose
+  colour did not change, or a motion ("it zooms"), is not checked.
+- **The Fast Path's add-a-thing recipes still write inline pygame** -- the coins in the
+  4B walks came from one, scattered rather than "along the road", and truthfully reported
+  as sitting still. Only the sprite recipe calls `game_object`.
+- **The playtest's two seconds** do not reach a crash that comes later (the first 4B
+  walk's `pygame.random`, ~4 s in); unchanged by this phase and recorded, not fixed.
+- **Nobody has clicked it on a real screen**, the same caveat as 13A and 13B: every frame
+  here is the embedded panel under the offscreen platform.
+- The Phase 12 app walk: **41/41**, the same four recipe routes, the picture step now
+  through the re-pointed recipe (`results/app_walk_13c.txt`). The suite: see HANDOFF.

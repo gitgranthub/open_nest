@@ -32,7 +32,8 @@
         "read_file",
         "edit_file",
         "write_file",
-        "run_project"
+        "run_project",
+        "game_object"
       ],
       "asset_types": [
         "image",
@@ -52,7 +53,8 @@
       "_playtest_note": "After a turn changes the game, Open Nest runs it once more without a window and watches the frames (opennest/execution/playtest.py). An interactive run only proves the game did not crash in four seconds; this is what tells a frozen picture from a game, and feeds a crash, a blank window or a frozen picture back to the repair loop. Phase 12.4, SPIKES.md section 24.",
       "playtest": "pygame",
       "_live_view_note": "Run Game shows the game inside the Workbench's Build / Preview panel rather than in a window of its own. It still runs in its own process under the same sandbox; it opens no window, sends each picture it draws to Open Nest over one channel it is handed at launch, and gets the child's keys and clicks back the same way (opennest/execution/live_view.py). Phase 13, PHASE_12_HANDOFF.md section 6.",
-      "live_view": "pygame"
+      "live_view": "pygame",
+      "_graphics_note": "Phase 13C: game_object is the fifth Games tool -- how things look and what is in the scene (opennest/graphics). The four-tool rule came from a lookup the model reached for instead of acting (SPIKES.md section 4); this one acts, and its cost was measured before it stayed (SPIKES.md section 28C): 94 Games requests, the real 4B, first move -- acceptable 43 with the four tools and 62 with five; 6 requests about how the game plays went to game_object, 3 of them names it refuses with 'use edit_file'."
     },
     {
       "id": "website",

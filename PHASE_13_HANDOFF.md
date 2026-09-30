@@ -9,9 +9,16 @@ panel, and "Pop out" gives it a window of its own and "Put back" brings it home 
 same widget moved, the game never restarted (§8).** Before 13B, the owner-test pass (§7)
 and a cross-preset parity pass (§7A) corrected the flow around it.
 
-**Phase 13 is complete and pushed** (`phase-13-live-preview`, `bbf9d36`): 1430 tests, ruff
-clean, Phase 12 app walk 41/41. **Next: a person clicking it on a real screen (§5), then
-Phase 14 -- Publish (§6).**
+**13C -- the game graphics and scene layer -- is built (§9).** A child's picture becomes
+the player, and a scene is described in plain words -- a sky, a road, buildings, cars to
+dodge, coins to collect -- through one tool, `game_object`, that writes one readable line
+per thing into the game and draws it with `src/scene.py`, a small pygame kit that lives in
+the project. The look of a thing is separate from its movement and collisions. SPIKES §28
+has the prototypes, the four-against-five tool benchmark and the acceptance walks.
+
+**Phase 13 is complete and pushed** (`phase-13-live-preview`): 1525 tests with 13C (1430
+before it), ruff clean, Phase 12 app walk 41/41. **Next: a person clicking it on a real
+screen (§5), then Phase 14 -- Publish (§6).**
 
 **13A: Run Game plays the child's game inside the Build / Preview panel.** The game still
 runs in its own sandboxed process — the profile is byte-for-byte unchanged — and opens no
@@ -365,3 +372,218 @@ the panel while it is out, and the window.
 **Not done**: nobody has clicked it on a real screen -- the same caveat as 13A (§5): macOS
 will not activate a background process, so focus in the popped window is Qt-activated in
 the tests. A person should pop it out, play, press Tab to Put back, and close the window.
+
+
+---
+
+## 9. 13C -- the game graphics and scene layer
+
+The owner's work order after 13B, from the owner test: `eagle.png` in Assets, Gary saying
+the eagle was the player, and the orange starter square on screen. **Gary makes the
+creative decisions; Open Nest executes the boring implementation.** Not a template system:
+no `add_eagle`, `add_car`, `add_town`. SPIKES §28 has every measurement; this is the
+architecture.
+
+### 9.1 What it is
+
+```
+Gary (any model)                       Open Nest (opennest/graphics)            the child's game
+  game_object(name="cars",      ->  looks.py   checks the look          ->  src/game.py:
+    drawing="vehicle",                         (a real picture? a colour     cars = scene.add("cars",
+    color="red", count=3,                      the kit knows? shapes in          Vehicle("red"), size=(80, 40),
+    moves="left", on="road",                   their own box?)                   on="road", count=3,
+    touch="avoid")                source.py   finds the game's loop, fill,       moves=(-3, 0), layer="things")
+                                              flip, player, scene -- with ast   ...
+  <- {"ok": true, "object":       game_object.py  decides WHERE and WHAT    scene.update()
+      "cars", "placed":                          statement; returns the       screen.fill(BACKGROUND)
+      "standing on road", ...}                   files and a JSON result      scene.draw()
+                                  Toolbox._game_object writes them through
+                                  the same path + parse checks as edit_file  src/scene.py: the kit
+```
+
+| file | |
+|---|---|
+| `graphics/kit/scene.py` | **the kit**: the pygame helper copied into a project as `src/scene.py`. pygame and the standard library only; ~920 commented lines a child can read. Looks, shapes, ready-made drawings, `Thing`, `Scene` |
+| `graphics/looks.py` | what Gary asked a thing to look like, checked and written as code: pictures found from the child's words, colours the kit knows, shapes moved into their own box, the kit's palette read from the kit file itself |
+| `graphics/source.py` | reads and edits the scene in a game's own source with the parser: the `scene.add(...)` statement for a name, the loop's `scene.update()`/`scene.draw()`, the statements that draw the player, the loop that draws a list, the rules it added. Whole-line edits only; `describe()` says the scene in words for Gary |
+| `graphics/game_object.py` | the tool's work: which thing a name means, what changes, where the statement goes, what is refused, and the JSON result |
+| `agent/tools.py` | `game_object` schema and `_game_object` (every file checked before any is written); `write_file`/`edit_file` refuse a picture's or sound's filename |
+| `execution/playtest_harness.py`, `playtest.py` | the test records what the kit's `Scene.report()` says it drew; `Playtest.scene`, bounded and checked like everything from the child's process |
+| `agent/evidence.py` | Gary is told the scene from the code, the window size, what the test drew and what was never on screen, a sky hiding the fill, drawing the scene paints over, a loop that flips twice |
+| `fastpath/kinds/games.py` | `facts_of` (the parser on a source string), `brief`/`where` know the scene, `use_sprite` calls `game_object`, a `picture_drawn` check, `thing_look` skips a constant nothing reads |
+| `recipes/games/*.json` | `guide_scene`: the pattern Gary is given, when his project has `game_object`, points at it instead of hand-written drawing code |
+| `config/profiles.json` | `game_object` is the Games profile's fifth tool (§9.6) |
+
+### 9.2 The primitives
+
+**Looks** -- what something is drawn as. Every look makes a picture of itself at a size,
+once, and blits it centred on a rectangle.
+
+| | |
+|---|---|
+| `Picture(path)` | a picture file: loaded once, see-through parts kept, fitted without stretching. A missing file or one that is not a picture raises `SceneError` -- it is never quietly a rectangle |
+| `Animation(sheet, frames=N, fps=8)` / `Animation([paths])` | frames from a sprite sheet (the grid nearest to square cells: the brand's 12-frame 2172x724 wing cycle is 6x2) or a list of files |
+| `Drawing((w, h), [shapes])` | shapes in the drawing's own box: `Rect` (rounded, outlined, or a two-colour fade), `Circle`, `Ellipse`, `Triangle`, `Polygon`, `Line` (dashed), `Text`. Drawn at 3x and smoothed |
+| ready-made drawings | `Vehicle`, `Building`, `House`, `Tree`, `Cloud`, `Road`, `Ground`, `Sky`, `Coin`, `Star`, `Platform`, `Sign` -- each is only the shapes above, worked out for the size it is drawn at (a `Vehicle` 120 wide is a long car, not a stretched one). Twelve generic forms, not objects: a vehicle is a car, a bus, a taxi |
+| `Colour(fill)` | a plain box -- the square a new game starts with |
+
+**Things and the scene.**
+
+- `scene.add(name, look, ...)` puts something in the scene or replaces what is there under
+  that name. `size`, `at` (a corner, or a list of corners), `on` (the name of what it
+  stands on), `count` (a row spread across the screen; moving rows spread over the loop
+  they travel), `vary` (copies of different sizes on one ground line), `moves` = (x, y) a
+  frame, `edges` = "wrap" (comes back round -- only off the side it is heading for) or
+  "bounce", `hitbox`.
+- A scene-made **`Thing` is a `pygame.Rect`** -- its collision box -- so `x`, `center`,
+  `colliderect` and `collidelist` all work on it: a recipe's `player.collidelist(cars)`
+  keeps working when the scene makes the cars.
+- `scene.add(name, look, rect=player, scale=1.5)` / `rects=cars` draws **the game's own
+  rectangle** with a look, `scale` times its size keeping the look's shape. The game
+  keeps moving and colliding it; the scene only draws it. This is how the player's look is
+  separate from its logic: the picture follows the rect when `PLAYER_SIZE` changes.
+- `scene.touching(rect, name)`, `scene.reset(name)`, `scene.get(name)`, `thing.respawn()`.
+- `scene.update()` moves what moves by itself; `scene.draw()` draws everything **back to
+  front by layer**: `background`, `scenery`, `things`, `player`, `effects`, `ui`; within
+  a layer in the order added. `scene.report()` says what each thing is and how many
+  frames it was drawn in and on screen.
+
+**The palette.** "red", "skyblue", "gray" and ~30 other names draw softer shades that sit
+together (flat, "clean modern mobile game"); anything pygame knows works too.
+
+### 9.3 How Gary uses it
+
+One tool, `game_object`, with the creative decisions as its arguments: `name`, `picture`
+(and `frames`), `drawing`, `color`, `text`, `shapes`, `size`, `at`, `on`, `layer`, `count`,
+`moves` (left, right, up, down, bounce) and `speed`, `touch` (avoid, collect), `remove`.
+The child never sees any of it; Gary's reply is ordinary words.
+
+What a name means, in order: **the player** ("player", the player's variable, or the name
+of the picture it wears) -- its look is swapped and its rectangle, keys and collisions are
+untouched; **a thing already in the scene** -- only what is given changes; **a list the
+game already draws** (a recipe's cars, or Gary's own) -- drawn by the scene instead, the
+loop that drew it taken out; asked to move somewhere, a recipe's list whose code is still
+exactly what the recipe wrote is handed to the scene with its speed and count constants,
+its rules kept; **anything else** is new.
+
+What Open Nest decides, so the model does not have to:
+
+- **Placement**: a sky fills the screen and is drawn first; a road or ground is a band
+  across the bottom; buildings, trees and vehicles given nowhere stand on the road or
+  ground; one placed just above a road (both models put cars 40-80 px above it) stands on
+  it; statements go where what they depend on already exists.
+- **Adoption**: the first call adds `from scene import ...`, `scene = Scene(screen)` and
+  the two calls in the loop, and changes nothing else in the game.
+- **Rules**: `touch: avoid` writes "touching it sends the player back to where this game
+  starts it"; `touch: collect` scores a point and adds a score if there is none.
+- **What goes**: the player's old drawing (the starter's rect, the old sprite recipe's
+  blit, test03's `try` that drew a square), unused `player_image` lines, and colour
+  constants nothing draws with any more -- so an edit to `PLAYER_COLOUR` cannot "succeed"
+  invisibly.
+- **What it refuses**, each with the reason and where to go: a picture that is not one; a
+  picture the child never tied to this thing (with one picture in a project, the 4B used
+  `eagle.png` for an apple); a name that is how the game plays (timer, lives, score, jump,
+  game over, title -- "that is edit_file"); a change that changes nothing; a game with no
+  one loop to draw in; a `src/scene.py` that is not the kit, or a changed kit missing what
+  the change needs.
+
+Gary is also told, every turn, from the code: the scene back to front, where things stand
+against the road, the window size, what the last test saw drawn and what was never on
+screen, a sky hiding the `BACKGROUND` fill, anything drawn between the fill and
+`scene.draw()` that the scene paints over, and a loop that flips twice.
+
+### 9.4 Grounded results, and the checks on what Gary says
+
+Every call returns JSON: `ok`, `object`, `action` (added / changed / removed), `look`,
+`picture`, `drawn_size`, `collision_box`, `layer`, `count`, `placed`, `moves`, `touch`,
+`kept` (what was left alone), `does_not` (it reacts to no key), `notes` (every adjustment
+made), `files_changed`, and `check`; or `ok: false` with a `reason` and a message. When
+Gary says nothing, Open Nest describes the turn from these results.
+
+The honesty guards already there apply unchanged -- a refused call leaves no change for a
+claim to rest on. Added for scenes: a number said about a thing in the scene is checked
+against its count ("three cars" about one car -- measured); "the town" is checked as its
+buildings; a request turn's "the road" with no road is told to make it or say it is not
+there; a reply that changed something and ends promising more is pushed once to do it.
+
+### 9.5 Verification, the preview, Undo
+
+Unchanged: the headless playtest after every change still decides repair, and passes or
+fails on the same four verdicts. What it adds is evidence -- the scene's own record of
+what it drew and how much was on screen -- and the re-pointed sprite recipe now also
+checks `picture_drawn`: the test saw the player drawn with that picture, on screen. A
+picture that stops loading later crashes the test (with "cannot load 'assets/eagle.png'")
+instead of hiding. The embedded preview plays scene games like any other (they are
+ordinary pygame); `src/scene.py` is under `src/`, so it is fingerprinted and a changed
+scene retires a running game as stale. Undo restores `src/game.py` and removes a
+`src/scene.py` the turn created (`read-tree`).
+
+### 9.6 The fifth tool
+
+`game_object` is the only tool a profile has added since Phase 1's four-tool rule, and
+it was measured before it stayed (SPIKES §28C): 94 Games requests, the real 4B, first move
+acceptable **43 with four tools, 62 with five**; 6 how-it-plays requests sent to it, 3 of
+them names it refuses. `test_no_profile_offers_an_explore_tool` allows five for Games
+only; any other fifth tool needs its own measurement. Blank does not have it -- its games
+keep the drawing patterns (`guide_scene` is used only where `game_object` is offered).
+
+### 9.7 Portable
+
+The game stays ordinary Python and pygame. `src/scene.py` is plain, commented source in
+the project -- no Open Nest import, no network, no build step -- and pictures are found
+from the project folder (`src/..`), so `python src/game.py` works from anywhere, with or
+without Open Nest. `VERSION = 1` lets Open Nest tell its own copy from one the child
+changed; a changed kit is used as it is and never overwritten.
+
+### 9.8 Limits, recorded rather than hidden
+
+- **The 4B still decides the layout, and its layouts are uneven** -- a 20 px road, cars
+  at 60x80, a 128 px eagle. Defaults, the snap and the facts help; what it asks for is
+  drawn. A stronger model composes better with the same calls (SPIKES §28E).
+- **It makes one call a reply in a long conversation**, and a big request can be half
+  done: the carry-on push catches the promise, the named-thing check the claim; neither
+  makes the model do more than it will.
+- **Motion is left, right, up, down or bounce.** Chasing, zig-zagging and orbiting stay
+  code (edit_file or the Fast Path's recipes); a recipe's things that move those ways keep
+  their own code when restyled and are not handed to the scene.
+- **The Fast Path's add-a-thing recipes still write inline pygame** (drawn after
+  `scene.draw()`, so on top, and correct). Making them build with the scene is the next
+  step the work order anticipates ("Recipes/Fast Path may call these primitives later");
+  only the sprite recipe does today.
+- **Nothing sees the picture.** The tool knows a picture's format, size and transparency
+  and the child's words for it; it never says what it shows, and it cannot know which way
+  an eagle faces.
+- **No stronger API model was run**: both cloud keys in the Keychain were rejected
+  (OpenAI's has expired, Anthropic's is invalid). Qwen3 8B, already downloaded and pinned,
+  stood in (SPIKES §28E). Blank projects do not have `game_object` yet.
+
+### 9.9 Where image generation plugs in later
+
+Not built. The seam is the look: a generated picture is a file in `assets/`, and
+`game_object(name="car", picture="assets/red_sports_car.png")` then works exactly as for
+the eagle -- checked as a real picture, drawn by the scene, reported. A future
+`image_request` path (the Image Creation profile already talks to an image service under
+parent control) would write that file and hand its path to the same call; nothing in the
+scene or the kit changes.
+
+### 9.10 For the next thread -- where 13C was paused
+
+Paused at the owner's request with the tree green (1525 tests, ruff clean) and committed.
+State of the evidence:
+
+- **Final walks** (`benchmarks/graphics/results/`): `walk_4b_final` (local 4B, the
+  documented run: 9 turns, 0 code or tool syntax in the chat, 9/9 playtests passed, 4/4
+  Run Game frames, every reply matching the game) and `walk_8b_final` (Qwen3 8B, the
+  stronger model). Earlier runs are kept under their numbers; SPIKES §28E says what each
+  found. Phase 12 app walk 41/41 (`results/app_walk_13c.txt`).
+- **Not re-walked after the last change**: the snap range was widened to catch a thing
+  standing up to 30 px below a thin road's lower edge (unit-tested only). Re-run
+  `benchmarks/graphics/eagle_walk.py <label>` once to confirm.
+- **Open, in priority order**: (1) a person clicks it on a real screen; (2) a working
+  cloud key, then the same walk with `claude-sonnet` (SPIKES §28F); (3) the Fast Path's
+  add-a-thing recipes still write inline pygame -- making them call `game_object` is the
+  natural next step (§9.8); (4) Blank projects have no `game_object`; (5) the playtest's
+  two seconds miss a crash that comes later (`pygame.random`, SPIKES §28G).
+- **Traps** are in HANDOFF §4 ("Phase 13C traps"): measure any change to `game_object`'s
+  description with `benchmarks/graphics/tool_choice.py`; a new recipe that adds a thing to
+  see needs a `guide_scene`; drawing by hand goes after `scene.draw()`.

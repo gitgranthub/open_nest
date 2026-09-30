@@ -6,6 +6,10 @@
     "The player is drawn by one line inside the loop, after screen.fill -- usually pygame.draw.rect(screen, PLAYER_COLOUR, player). Replace only that drawing line: pygame.draw.circle(screen, PLAYER_COLOUR, player.center, PLAYER_SIZE // 2) for a circle, or pygame.draw.polygon for a pointed shape. Keep the player rect as it is, so movement and collisions still work.",
     "For a character like a cat, they need a picture: ask them to add one, and it can be drawn with screen.blit where the rectangle was."
   ],
+  "guide_scene": [
+    "Call game_object with name player: a ready-made drawing, shapes, or a picture they added. Only the look changes: the player's rectangle, the keys that move it and everything it bumps into stay as they are.",
+    "For a character like a cat, they need a picture: ask them to add one."
+  ],
   "requires": [],
   "op": null,
   "params": {}

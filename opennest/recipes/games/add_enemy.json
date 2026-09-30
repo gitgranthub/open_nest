@@ -17,6 +17,10 @@
     "A new thing needs three pieces in three places, and with only two it does nothing: create it once ABOVE the game loop, move it INSIDE the loop, and draw it inside the loop AFTER screen.fill(...). Give its speed, size and colour named constants at the top.",
     "To chase, move the enemy a little toward the player's x and y every frame. Keep it slower than the player so it can be escaped."
   ],
+  "guide_scene": [
+    "Its look is game_object's: a drawing, or a picture they added, with touch: avoid if touching it should send the player back. game_object can move it left, right, up, down or bounce.",
+    "Chasing the player is edit_file: move each one a little toward the player's x and y every frame, after scene.update(). Keep it slower than the player so it can be escaped."
+  ],
   "verify": [
     "playtest_passes",
     "moves_by_itself",

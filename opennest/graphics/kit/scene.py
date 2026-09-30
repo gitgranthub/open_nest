@@ -1,0 +1,946 @@
+"""scene.py -- pictures, drawings and layers for a pygame game.
+
+Open Nest put this file in your project so your game can say WHAT it shows -- "the
+player is my eagle picture", "three cars drive along the road" -- in one line each,
+instead of pages of drawing code. It is ordinary Python and pygame: read it, change it,
+or copy it into another game. Your game still runs with `python src/game.py`, with or
+without Open Nest.
+
+How a game uses it:
+
+    scene = Scene(screen)                      # once, after pygame.display.set_mode
+    scene.add("sky", Sky("skyblue"), layer="background")
+    scene.add("road", Road(), size=(640, 80), at=(0, 400), layer="scenery")
+    cars = scene.add("cars", Vehicle("red"), size=(80, 40), on="road", count=3,
+                     moves=(-3, 0))
+    scene.add("player", Picture("assets/eagle.png", size=(72, 72)), rect=player,
+              layer="player")
+
+    while running:
+        ...                                    # your own movement and rules
+        scene.update()                         # moves the things that move by themselves
+        screen.fill(BACKGROUND)
+        scene.draw()                           # everything, back to front, layer by layer
+        pygame.display.flip()
+
+What something LOOKS like and what it DOES are kept apart. A thing's rectangle is its
+position, its size for bumping into things, and what your code moves; its look is only
+how it is drawn. Change a look -- a square to a picture -- and movement and collisions
+carry on exactly as before.
+"""
+
+import random
+from pathlib import Path
+
+import pygame
+
+#: Scene files are versioned so Open Nest can tell its own copy from one you changed.
+VERSION = 1
+
+#: Layers, drawn back to front. Things in the same layer are drawn in the order added.
+LAYERS = ("background", "scenery", "things", "player", "effects", "ui")
+
+#: Pictures are found from the project folder -- the one above src/ -- so the game finds
+#: assets/eagle.png however it is started.
+PROJECT = Path(__file__).resolve().parent.parent
+
+#: Drawings are drawn this many times bigger and then shrunk, which smooths their edges.
+SMOOTH = 3
+
+#: Softer shades for the colour names games use most. Any other name pygame knows
+#: ("coral", "slateblue", ...) works too, and so do (red, green, blue) and "#rrggbb".
+COLOURS = {
+    "red": (235, 87, 87),
+    "darkred": (170, 50, 55),
+    "orange": (242, 153, 74),
+    "yellow": (242, 201, 76),
+    "gold": (246, 190, 60),
+    "green": (98, 190, 120),
+    "darkgreen": (46, 125, 80),
+    "lightgreen": (160, 220, 150),
+    "grass": (120, 190, 95),
+    "blue": (60, 130, 230),
+    "darkblue": (40, 70, 150),
+    "lightblue": (150, 205, 245),
+    "skyblue": (125, 195, 245),
+    "navy": (35, 50, 100),
+    "teal": (40, 170, 160),
+    "cyan": (90, 215, 230),
+    "purple": (155, 95, 220),
+    "pink": (240, 130, 175),
+    "magenta": (215, 80, 180),
+    "brown": (150, 100, 65),
+    "tan": (210, 175, 125),
+    "beige": (235, 220, 190),
+    "cream": (250, 240, 215),
+    "white": (250, 250, 252),
+    "black": (35, 38, 45),
+    "gray": (130, 138, 150),
+    "grey": (130, 138, 150),
+    "darkgray": (80, 86, 96),
+    "darkgrey": (80, 86, 96),
+    "lightgray": (205, 210, 218),
+    "lightgrey": (205, 210, 218),
+    "silver": (192, 196, 204),
+    "asphalt": (70, 74, 82),
+}
+
+
+class SceneError(Exception):
+    """Something in the scene cannot be drawn. The message says what and why."""
+
+
+def colour(value):
+    """A pygame.Color from a name, "#rrggbb", or (red, green, blue)."""
+    if isinstance(value, pygame.Color):
+        return pygame.Color(value)
+    if isinstance(value, str):
+        key = value.strip().lower().replace(" ", "").replace("_", "")
+        if key in COLOURS:
+            return pygame.Color(*COLOURS[key])
+        try:
+            return pygame.Color(value.strip())
+        except ValueError:
+            raise SceneError(f"scene.py does not know the colour {value!r}") from None
+    try:
+        return pygame.Color(*value)
+    except (TypeError, ValueError):
+        raise SceneError(f"{value!r} is not a colour") from None
+
+
+def shade(value, amount):
+    """A colour made lighter (amount above 0, up to 1) or darker (below 0)."""
+    c = colour(value)
+    target = 255 if amount > 0 else 0
+    mix = abs(amount)
+    return pygame.Color(*(round(part + (target - part) * mix) for part in (c.r, c.g, c.b)),
+                        c.a)
+
+
+# ----------------------------------------------------------------------------- looks
+#
+# A look is what something is drawn as. Every look can make a picture of itself at a
+# size, and draws that picture centred on a rectangle. Pictures are made once for each
+# size and kept, so drawing sixty times a second costs one blit.
+
+
+class Look:
+    """What something looks like. ``size`` is how big it is drawn, or None for the size
+    of the rectangle it is drawn on."""
+
+    size = None
+
+    def __init__(self):
+        self._made = {}
+
+    def image(self, size):
+        """This look as a picture, ``size`` pixels wide and high."""
+        size = (max(1, round(size[0])), max(1, round(size[1])))
+        if size not in self._made:
+            self._made[size] = self.make(size)
+        return self._made[size]
+
+    def make(self, size):
+        raise NotImplementedError
+
+    def natural_size(self):
+        """The size it is drawn at when nothing else says."""
+        return self.size
+
+    def draw(self, screen, rect, size=None):
+        size = size or self.size or rect.size
+        picture = self.image(size)
+        screen.blit(picture, picture.get_rect(center=rect.center))
+
+    def solid_box(self, size):
+        """The part of the picture that is not see-through, as a rectangle."""
+        return self.image(size).get_bounding_rect(min_alpha=40)
+
+    def describe(self):
+        return type(self).__name__.lower()
+
+
+class Picture(Look):
+    """A picture file, like "assets/eagle.png". Loaded once, see-through parts kept, and
+    fitted inside its size without being stretched out of shape."""
+
+    def __init__(self, path, size=None, flip=False):
+        super().__init__()
+        self.path = str(path)
+        self.size = tuple(size) if size else None
+        self.flip = flip
+        self._loaded = None
+
+    def loaded(self):
+        if self._loaded is None:
+            self._loaded = _load(self.path)
+        return self._loaded
+
+    def natural_size(self):
+        return self.size or self.loaded().get_size()
+
+    def make(self, size):
+        return _fit(self.loaded(), size, self.flip)
+
+    def describe(self):
+        return f"picture {self.path}"
+
+
+class Animation(Look):
+    """Frames shown one after another, ``fps`` a second.
+
+    ``source`` is one picture holding every frame in a grid (a "sprite sheet") --
+    say how many ``frames`` it has, and ``columns`` if the guess is wrong -- or a list of
+    picture files, one per frame.
+    """
+
+    def __init__(self, source, frames=None, fps=8, size=None, columns=None, loop=True,
+                 flip=False):
+        super().__init__()
+        self.source = source
+        self.frames = frames
+        self.fps = fps
+        self.size = tuple(size) if size else None
+        self.columns = columns
+        self.loop = loop
+        self.flip = flip
+        self._frames = None
+        self._started = None
+
+    def pictures(self):
+        if self._frames is None:
+            if isinstance(self.source, (list, tuple)):
+                self._frames = [_load(path) for path in self.source]
+            else:
+                self._frames = _cut(_load(self.source), self.frames, self.columns)
+        return self._frames
+
+    def natural_size(self):
+        return self.size or self.pictures()[0].get_size()
+
+    def frame_now(self):
+        now = pygame.time.get_ticks()
+        if self._started is None:
+            self._started = now
+        count = len(self.pictures())
+        step = (now - self._started) * self.fps // 1000
+        return step % count if self.loop else min(step, count - 1)
+
+    def image(self, size):
+        size = (max(1, round(size[0])), max(1, round(size[1])))
+        key = (size, self.frame_now())
+        if key not in self._made:
+            self._made[key] = _fit(self.pictures()[key[1]], size, self.flip)
+        return self._made[key]
+
+    def describe(self):
+        if isinstance(self.source, (list, tuple)):
+            return f"animation of {len(self.source)} pictures"
+        return f"animation {self.source}, {len(self.pictures())} frames"
+
+
+class Drawing(Look):
+    """A drawing made of shapes, inside its own box of ``size`` = (width, height).
+
+    Shapes are placed from the box's top-left corner, and later ones are drawn on top.
+    Drawn at another size, the whole drawing is scaled to fit.
+    """
+
+    def __init__(self, size, shapes):
+        super().__init__()
+        self.box = (max(1, round(size[0])), max(1, round(size[1])))
+        self.size = self.box
+        self.shapes = list(shapes)
+
+    def shapes_for(self, size):
+        return self.shapes
+
+    def make(self, size):
+        return _render(self.shapes_for(size), self.box if type(self) is Drawing else size,
+                       size)
+
+    def describe(self):
+        return f"drawing of {len(self.shapes)} shape{'' if len(self.shapes) == 1 else 's'}"
+
+
+class Colour(Look):
+    """A plain filled rectangle -- what a new game's square is."""
+
+    def __init__(self, fill, round=0):
+        super().__init__()
+        self.fill = fill
+        self.round = round
+
+    def make(self, size):
+        return _render([Rect(0, 0, size[0], size[1], self.fill, round=self.round)], size, size)
+
+    def describe(self):
+        return "a plain colour"
+
+
+# -- shapes, for drawings -----------------------------------------------------------
+#
+# Each shape is placed in its drawing's box. ``colour`` is anything colour() takes; a
+# Rect's colour can also be two colours, (top, bottom), for a fade from one to the other.
+
+
+class Shape:
+    def render(self, canvas, sx, sy):
+        raise NotImplementedError
+
+
+class Rect(Shape):
+    def __init__(self, x, y, w, h, colour="white", round=0, outline=None, width=0):
+        self.box = (x, y, w, h)
+        self.colour, self.round, self.outline, self.width = colour, round, outline, width
+
+    def render(self, canvas, sx, sy):
+        area = _scaled(self.box, sx, sy)
+        radius = round(self.round * min(sx, sy))
+        if isinstance(self.colour, (list, tuple)) and len(self.colour) == 2 and not \
+                isinstance(self.colour[0], (int, float)):
+            _fade(canvas, area, colour(self.colour[0]), colour(self.colour[1]), radius)
+        else:
+            pygame.draw.rect(canvas, colour(self.colour), area, border_radius=radius)
+        if self.outline:
+            pygame.draw.rect(canvas, colour(self.outline), area,
+                             max(1, round(self.width * min(sx, sy)) or SMOOTH),
+                             border_radius=radius)
+
+
+class Circle(Shape):
+    def __init__(self, x, y, radius, colour="white"):
+        self.x, self.y, self.radius, self.colour = x, y, radius, colour
+
+    def render(self, canvas, sx, sy):
+        r = self.radius
+        pygame.draw.ellipse(canvas, colour(_first(self.colour)),
+                            _scaled((self.x - r, self.y - r, 2 * r, 2 * r), sx, sy))
+
+
+class Ellipse(Shape):
+    def __init__(self, x, y, w, h, colour="white"):
+        self.box, self.colour = (x, y, w, h), colour
+
+    def render(self, canvas, sx, sy):
+        pygame.draw.ellipse(canvas, colour(_first(self.colour)), _scaled(self.box, sx, sy))
+
+
+class Polygon(Shape):
+    def __init__(self, points, colour="white"):
+        self.points, self.colour = [tuple(p) for p in points], colour
+
+    def render(self, canvas, sx, sy):
+        if len(self.points) >= 3:
+            pygame.draw.polygon(canvas, colour(_first(self.colour)),
+                                [(x * sx, y * sy) for x, y in self.points])
+
+
+class Triangle(Polygon):
+    """A triangle pointing up, filling the box (x, y, w, h) -- a roof, a mountain."""
+
+    def __init__(self, x, y, w, h, colour="white"):
+        super().__init__([(x, y + h), (x + w / 2, y), (x + w, y + h)], colour)
+
+
+class Line(Shape):
+    """A line from ``start`` to ``end``. ``dash`` above 0 makes it dashed, like a road."""
+
+    def __init__(self, start, end, colour="white", width=2, dash=0):
+        self.start, self.end = tuple(start), tuple(end)
+        self.colour, self.width, self.dash = colour, width, dash
+
+    def render(self, canvas, sx, sy):
+        (x1, y1), (x2, y2) = self.start, self.end
+        a, b = pygame.Vector2(x1 * sx, y1 * sy), pygame.Vector2(x2 * sx, y2 * sy)
+        width = max(1, round(self.width * min(sx, sy)))
+        c = colour(_first(self.colour))
+        if not self.dash or a == b:
+            pygame.draw.line(canvas, c, a, b, width)
+            return
+        length, step = (b - a).length(), self.dash * min(sx, sy)
+        direction = (b - a) / length
+        at = 0.0
+        while at < length:
+            pygame.draw.line(canvas, c, a + direction * at,
+                             a + direction * min(at + step, length), width)
+            at += step * 2
+
+
+class Text(Shape):
+    def __init__(self, words, x, y, colour="white", size=24):
+        self.words, self.x, self.y, self.colour, self.size = str(words), x, y, colour, size
+
+    def render(self, canvas, sx, sy):
+        font = pygame.font.Font(None, max(4, round(self.size * sy)))
+        canvas.blit(font.render(self.words, True, colour(_first(self.colour))),
+                    (self.x * sx, self.y * sy))
+
+
+# -- ready-made drawings --------------------------------------------------------------
+#
+# Each one is only the shapes above, placed for whatever size it is drawn at -- so a
+# Vehicle 120 wide is a long car, not a stretched one. Read one to see how it is made,
+# or copy it and make your own.
+
+
+class Ready(Drawing):
+    """A drawing that works out its own shapes for the size it is drawn at."""
+
+    default = (60, 60)
+
+    def __init__(self, fill=None, size=None):
+        Look.__init__(self)
+        self.fill = fill if fill is not None else self.fill_default
+        self.size = tuple(size) if size else None
+        self.shapes = []
+
+    fill_default = "white"
+
+    def natural_size(self):
+        return self.size or self.default
+
+    def shapes_for(self, size):
+        return self.parts(*size)
+
+    def parts(self, w, h):
+        raise NotImplementedError
+
+    def describe(self):
+        return f"{type(self).__name__.lower()} drawing"
+
+
+class Vehicle(Ready):
+    """A car seen from the side, facing right: body, roof, windows, wheels, lights."""
+
+    default, fill_default = (80, 40), "red"
+
+    def parts(self, w, h):
+        r = h * 0.2
+        glass = (200, 228, 248)
+        return [
+            Rect(w * 0.18, h * 0.06, w * 0.56, h * 0.44, self.fill, round=h * 0.18),
+            Rect(0, h * 0.36, w, h * 0.44, self.fill, round=h * 0.16),
+            Rect(0, h * 0.6, w, h * 0.2, shade(self.fill, -0.18), round=h * 0.1),
+            Rect(w * 0.24, h * 0.13, w * 0.22, h * 0.26, glass, round=h * 0.06),
+            Rect(w * 0.5, h * 0.13, w * 0.19, h * 0.26, glass, round=h * 0.06),
+            Rect(w * 0.93, h * 0.42, w * 0.06, h * 0.1, (255, 236, 150), round=2),
+            Rect(w * 0.01, h * 0.42, w * 0.04, h * 0.1, (230, 70, 70), round=2),
+            Circle(w * 0.24, h - r, r, (45, 45, 52)),
+            Circle(w * 0.76, h - r, r, (45, 45, 52)),
+            Circle(w * 0.24, h - r, r * 0.45, (185, 188, 196)),
+            Circle(w * 0.76, h - r, r * 0.45, (185, 188, 196)),
+        ]
+
+
+class Building(Ready):
+    """A tall building with rows of windows and a door."""
+
+    default, fill_default = (80, 140), "tan"
+
+    def __init__(self, fill=None, size=None, windows="lightyellow"):
+        super().__init__(fill, size)
+        self.windows = windows
+
+    def parts(self, w, h):
+        shapes = [Rect(0, 0, w, h, self.fill),
+                  Rect(0, 0, w, max(2, h * 0.03), shade(self.fill, -0.2))]
+        cols = max(2, round(w / 24))
+        rows = max(2, round((h * 0.8) / 26))
+        pane_w, pane_h = w / cols * 0.5, min(h * 0.8 / rows * 0.55, w / cols * 0.7)
+        lit, dark = colour(self.windows), shade(self.fill, -0.35)
+        pick = random.Random(f"{w}x{h}{self.fill}")
+        for row in range(rows):
+            for col in range(cols):
+                x = w / cols * (col + 0.25)
+                y = h * 0.08 + row * (h * 0.78 / rows)
+                shapes.append(Rect(x, y, pane_w, pane_h, lit if pick.random() > 0.3 else dark,
+                                   round=1))
+        if h > 50:
+            shapes.append(Rect(w * 0.4, h * 0.88, w * 0.2, h * 0.12, shade(self.fill, -0.4)))
+        return shapes
+
+
+class House(Ready):
+    """A house: walls, a pointed roof, a door and two windows."""
+
+    default, fill_default = (90, 80), "cream"
+
+    def __init__(self, fill=None, size=None, roof="darkred"):
+        super().__init__(fill, size)
+        self.roof = roof
+
+    def parts(self, w, h):
+        glass = (200, 228, 248)
+        return [
+            Rect(w * 0.1, h * 0.42, w * 0.8, h * 0.58, self.fill),
+            Triangle(0, 0, w, h * 0.46, self.roof),
+            Rect(w * 0.43, h * 0.66, w * 0.16, h * 0.34, shade(self.fill, -0.45), round=2),
+            Rect(w * 0.18, h * 0.55, w * 0.17, h * 0.17, glass, round=2),
+            Rect(w * 0.66, h * 0.55, w * 0.17, h * 0.17, glass, round=2),
+        ]
+
+
+class Tree(Ready):
+    """A tree: a trunk and a round, leafy top."""
+
+    default, fill_default = (50, 80), "green"
+
+    def parts(self, w, h):
+        leaf = self.fill
+        return [
+            Rect(w * 0.42, h * 0.5, w * 0.16, h * 0.5, (120, 80, 50), round=2),
+            Circle(w * 0.3, h * 0.42, w * 0.26, shade(leaf, -0.12)),
+            Circle(w * 0.7, h * 0.42, w * 0.26, shade(leaf, -0.12)),
+            Circle(w * 0.5, h * 0.3, w * 0.32, leaf),
+            Circle(w * 0.42, h * 0.22, w * 0.1, shade(leaf, 0.25)),
+        ]
+
+
+class Cloud(Ready):
+    """A soft cloud: a few round puffs on a flat bottom."""
+
+    default, fill_default = (110, 50), "white"
+
+    def parts(self, w, h):
+        return [
+            Ellipse(0, h * 0.45, w, h * 0.55, self.fill),
+            Circle(w * 0.3, h * 0.55, h * 0.32, self.fill),
+            Circle(w * 0.55, h * 0.42, h * 0.42, self.fill),
+            Circle(w * 0.76, h * 0.6, h * 0.3, self.fill),
+        ]
+
+
+class Road(Ready):
+    """A road seen from the side: kerbs at the edges and a dashed line down the middle."""
+
+    default, fill_default = (640, 80), "asphalt"
+
+    def parts(self, w, h):
+        kerb = shade(self.fill, 0.45)
+        return [
+            Rect(0, 0, w, h, self.fill),
+            Rect(0, 0, w, max(2, h * 0.08), kerb),
+            Rect(0, h - max(2, h * 0.06), w, max(2, h * 0.06), shade(self.fill, -0.3)),
+            Line((0, h / 2), (w, h / 2), (240, 240, 235), width=max(2, h * 0.06),
+                 dash=max(8, w / 24)),
+        ]
+
+
+class Ground(Ready):
+    """Ground along the bottom: grass, earth or sand, with a lighter top edge."""
+
+    default, fill_default = (640, 60), "grass"
+
+    def parts(self, w, h):
+        return [Rect(0, 0, w, h, self.fill),
+                Rect(0, 0, w, max(2, h * 0.14), shade(self.fill, 0.25))]
+
+
+class Sky(Ready):
+    """A sky that fades from its colour at the top to a lighter one at the bottom."""
+
+    default, fill_default = (640, 480), "skyblue"
+
+    def parts(self, w, h):
+        return [Rect(0, 0, w, h, (self.fill, shade(self.fill, 0.6)))]
+
+
+class Coin(Ready):
+    """A shiny coin."""
+
+    default, fill_default = (28, 28), "gold"
+
+    def parts(self, w, h):
+        return [
+            Ellipse(0, 0, w, h, shade(self.fill, -0.25)),
+            Ellipse(w * 0.1, h * 0.1, w * 0.8, h * 0.8, self.fill),
+            Ellipse(w * 0.25, h * 0.25, w * 0.5, h * 0.5, shade(self.fill, -0.12)),
+            Ellipse(w * 0.3, h * 0.2, w * 0.18, h * 0.18, shade(self.fill, 0.6)),
+        ]
+
+
+class Star(Ready):
+    """A five-pointed star."""
+
+    default, fill_default = (30, 30), "gold"
+
+    def parts(self, w, h):
+        points = []
+        for index in range(10):
+            reach = 0.5 if index % 2 == 0 else 0.21
+            angle = pygame.Vector2(0, -1).rotate(index * 36)
+            points.append((w / 2 + angle.x * w * reach, h * 0.54 + angle.y * h * reach))
+        return [Polygon(points, self.fill)]
+
+
+class Platform(Ready):
+    """Something to stand on: a slab with a lighter top."""
+
+    default, fill_default = (120, 20), "brown"
+
+    def parts(self, w, h):
+        return [Rect(0, 0, w, h, self.fill, round=h * 0.3),
+                Rect(0, 0, w, h * 0.35, shade(self.fill, 0.3), round=h * 0.3)]
+
+
+class Sign(Ready):
+    """A sign on a post, with words on it."""
+
+    default, fill_default = (120, 70), "white"
+
+    def __init__(self, fill=None, size=None, words="", ink="black"):
+        super().__init__(fill, size)
+        self.words, self.ink = words, ink
+
+    def parts(self, w, h):
+        board = h * 0.6
+        words = self.words or ""
+        size = min(board * 0.6, w * 1.7 / max(1, len(words)))
+        return [
+            Rect(w * 0.45, board, w * 0.1, h - board, (120, 90, 60)),
+            Rect(0, 0, w, board, self.fill, round=h * 0.08, outline=shade(self.fill, -0.35),
+                 width=2),
+            Text(words, w * 0.08, board / 2 - size * 0.35, self.ink, size=size),
+        ]
+
+
+# ----------------------------------------------------------------------------- things
+
+
+class Thing(pygame.Rect):
+    """Something in the scene. It IS a pygame.Rect -- its box for bumping into things --
+    so x, y, center, colliderect and collidelist all work on it. It also has a look, the
+    size it is drawn at, a layer, and how it moves by itself (``moves``, per frame)."""
+
+    def __init__(self, name, look, drawn, box, layer, moves=(0, 0), edges="wrap"):
+        super().__init__(box)
+        self.name, self.look, self.drawn, self.layer = name, look, drawn, layer
+        self.moves = list(moves)
+        self.edges = edges
+        self.start = self.topleft
+
+    def drawn_rect(self):
+        area = pygame.Rect(0, 0, *self.drawn)
+        area.center = self.center
+        return area
+
+    def respawn(self):
+        """Go round again: a moving thing to where it comes back in, a still one to a new
+        place along the same line."""
+        area = pygame.display.get_surface().get_rect()
+        drawn = self.drawn_rect()
+        if self.moves[0] < 0:
+            self.x += area.right - drawn.left
+        elif self.moves[0] > 0:
+            self.x -= drawn.right - area.left
+        elif self.moves[1] > 0:
+            self.y -= drawn.bottom - area.top
+        elif self.moves[1] < 0:
+            self.y += area.bottom - drawn.top
+        else:
+            half = min(drawn.width // 2, area.width // 2)
+            self.centerx = random.randint(half, area.width - half)
+
+
+class Scene:
+    """Everything the game shows, in layers, drawn back to front by ``draw()``."""
+
+    #: Every scene made while the game runs, newest last. Open Nest's test reads what each
+    #: one drew; nothing else uses it.
+    all = []
+
+    def __init__(self, screen=None):
+        self.screen = screen or pygame.display.get_surface()
+        self.entries = {}
+        self.shown = {}
+        Scene.all.append(self)
+
+    # -- building the scene --------------------------------------------------------
+
+    def add(self, name, look, *, rect=None, rects=None, scale=1.0, size=None, at=None,
+            on=None, layer="things", count=1, moves=(0, 0), edges="wrap", vary=0.0,
+            hitbox=None):
+        """Put something in the scene, or replace what is there under that name.
+
+        - ``rect=``/``rects=``: draw the game's own rectangle, or list of them, with this
+          look -- ``scale`` times the rectangle's size, keeping the look's own shape. Your
+          code keeps moving them and bumping into them; the scene only draws them.
+        - Otherwise the scene makes the thing: ``size`` to draw it at, ``at`` for its
+          top-left corner (or a list of corners, one each), ``on`` the name of something
+          it stands on, ``count`` of them spread along a row, ``moves`` = (x, y) each
+          frame, and ``vary`` to make copies different sizes (0.2 is a fifth either way).
+
+        Returns the thing -- or a list of them when there are several.
+        """
+        if layer not in LAYERS:
+            raise SceneError(f"{layer!r} is not a layer; the layers are {', '.join(LAYERS)}")
+        if rect is not None or rects is not None:
+            items = [rect] if rect is not None else rects
+            self.entries[name] = {"look": look, "layer": layer, "items": items,
+                                  "size": tuple(size) if size else None, "own": False,
+                                  "scale": scale, "starts": [r.topleft for r in items]}
+            return rect if rect is not None else rects
+        things = self._make(name, look, size, at, on, layer, count, moves, edges, vary,
+                            hitbox)
+        self.entries[name] = {"look": look, "layer": layer, "items": things, "size": None,
+                              "own": True}
+        return things[0] if len(things) == 1 and not isinstance(at, list) and count == 1 \
+            else things
+
+    def _make(self, name, look, size, at, on, layer, count, moves, edges, vary, hitbox):
+        area = self.screen.get_rect()
+        base = tuple(size) if size else tuple(look.natural_size() or (40, 40))
+        spots = [tuple(spot) for spot in at] if at and isinstance(at[0], (list, tuple)) \
+            else None
+        count = len(spots) if spots else max(1, count)
+        pick = random.Random(name)
+        things = []
+        for index in range(count):
+            factor = 1 + pick.uniform(-vary, vary) if vary else 1
+            drawn = (round(base[0] * factor), round(base[1] * factor))
+            if spots:
+                x, y = spots[index]
+            else:
+                # One thing goes in the middle; a row starts at the left edge.
+                x, y = at if at else ((area.width - base[0]) // 2 if count == 1 else 0,
+                                      (area.height - base[1]) // 2)
+                if count > 1:
+                    # Spread along a row. Moving things are spread over the whole loop they
+                    # travel, so they stay evenly spaced as they come round.
+                    span = area.width + base[0] if moves[0] else area.width - x
+                    slot = span / count
+                    x = round(x + index * slot + (slot - drawn[0]) / 2)
+                y += base[1] - drawn[1]            # copies of different sizes share a bottom
+            box = pygame.Rect(x, y, *drawn)
+            solid = hitbox or _hitbox(look, drawn)
+            body = pygame.Rect(0, 0, *solid)
+            body.center = box.center
+            thing = Thing(name, look, drawn, body, layer, moves, edges)
+            # What it stands on is looked up when the scene is first drawn, so the order
+            # things were added in never matters.
+            thing.on = on
+            things.append(thing)
+        return things
+
+    def _stand(self):
+        """Put everything that stands on something onto it, once both are in the scene."""
+        for entry in self.entries.values():
+            for thing in entry["items"] if entry["own"] else ():
+                if getattr(thing, "on", None) is not None:
+                    drawn = thing.drawn_rect()
+                    thing.y += self._top_of(thing.on) - drawn.bottom
+                    thing.start = thing.topleft
+                    thing.on = None
+
+    def _top_of(self, name):
+        if name not in self.entries:
+            raise SceneError(f"there is nothing called {name!r} in the scene to stand on -- "
+                             f"add it to the scene, or take away on={name!r}")
+        tops = [self._drawn_area(self.entries[name], item).top
+                for item in self.entries[name]["items"]]
+        return min(tops)
+
+    def get(self, name):
+        """Everything called ``name``, as a list."""
+        entry = self.entries.get(name)
+        return list(entry["items"]) if entry else []
+
+    def remove(self, name):
+        self.entries.pop(name, None)
+
+    def touching(self, rect, name):
+        """The things called ``name`` that ``rect`` is touching now, as a list."""
+        return [item for item in self.get(name) if rect.colliderect(item)]
+
+    def reset(self, name):
+        """Put what is called ``name`` back where it started."""
+        entry = self.entries.get(name)
+        if not entry:
+            return
+        starts = entry.get("starts") or [item.start for item in entry["items"]]
+        for item, start in zip(entry["items"], starts):
+            item.topleft = start
+
+    # -- every frame -----------------------------------------------------------------
+
+    def update(self):
+        """Move everything that moves by itself, and bring it round at the edges."""
+        self._stand()
+        area = self.screen.get_rect()
+        for entry in self.entries.values():
+            if not entry["own"]:
+                continue
+            for thing in entry["items"]:
+                if thing.moves == [0, 0]:
+                    continue
+                thing.x += thing.moves[0]
+                thing.y += thing.moves[1]
+                drawn = thing.drawn_rect()
+                if thing.edges == "bounce":
+                    if drawn.left < 0 or drawn.right > area.width:
+                        thing.moves[0] = -thing.moves[0]
+                    if drawn.top < 0 or drawn.bottom > area.height:
+                        thing.moves[1] = -thing.moves[1]
+                elif thing.edges == "wrap":
+                    # Only once it has gone off the side it is heading for: something that
+                    # starts off the other side is still on its way in.
+                    dx, dy = thing.moves
+                    gone = (dx < 0 and drawn.right < 0) or (dx > 0 and drawn.left > area.width)
+                    gone = gone or (dy < 0 and drawn.bottom < 0) or (
+                        dy > 0 and drawn.top > area.height)
+                    if gone:
+                        thing.respawn()
+
+    def draw(self, screen=None):
+        """Draw everything, back to front, one layer at a time."""
+        self._stand()
+        screen = screen or self.screen
+        area = screen.get_rect()
+        for layer in LAYERS:
+            for name, entry in self.entries.items():
+                if entry["layer"] != layer:
+                    continue
+                visible = 0
+                for item in entry["items"]:
+                    drawn = self._drawn_area(entry, item)
+                    size = drawn.size
+                    entry["look"].draw(screen, drawn, size)
+                    visible += drawn.colliderect(area)
+                seen = self.shown.setdefault(name, {"frames": 0, "on_screen": 0})
+                seen["frames"] += 1
+                seen["on_screen"] = max(seen["on_screen"], visible)
+
+    def _drawn_area(self, entry, item):
+        if entry["own"]:
+            return item.drawn_rect()
+        box = entry["size"] or (item.width * entry["scale"], item.height * entry["scale"])
+        shape = entry["look"].natural_size()
+        width, height = _fit_size(shape, box) if shape else box
+        area = pygame.Rect(0, 0, max(1, round(width)), max(1, round(height)))
+        area.center = item.center
+        return area
+
+    def report(self):
+        """What is in the scene and what the last frames drew -- for Open Nest's test,
+        and handy for finding out why something is not showing."""
+        found = []
+        for layer in LAYERS:
+            for name, entry in self.entries.items():
+                if entry["layer"] != layer:
+                    continue
+                seen = self.shown.get(name, {"frames": 0, "on_screen": 0})
+                found.append({"name": name, "layer": layer, "look": entry["look"].describe(),
+                              "count": len(entry["items"]), "frames": seen["frames"],
+                              "on_screen": seen["on_screen"]})
+        return found
+
+
+# --------------------------------------------------------------------------- helpers
+
+
+def _first(value):
+    if isinstance(value, (list, tuple)) and value and not isinstance(value[0], (int, float)):
+        return value[0]
+    return value
+
+
+def _scaled(box, sx, sy):
+    x, y, w, h = box
+    return pygame.Rect(round(x * sx), round(y * sy), max(1, round(w * sx)),
+                       max(1, round(h * sy)))
+
+
+def _render(shapes, box, size):
+    """Draw ``shapes`` placed in ``box``, as a picture of ``size``, smoothly."""
+    big = (max(1, round(size[0] * SMOOTH)), max(1, round(size[1] * SMOOTH)))
+    canvas = pygame.Surface(big, pygame.SRCALPHA)
+    sx, sy = big[0] / box[0], big[1] / box[1]
+    for shape in shapes:
+        shape.render(canvas, sx, sy)
+    return pygame.transform.smoothscale(canvas, (max(1, round(size[0])),
+                                                 max(1, round(size[1]))))
+
+
+def _fade(canvas, area, top, bottom, radius):
+    band = pygame.Surface(area.size, pygame.SRCALPHA)
+    height = max(1, area.height - 1)
+    for row in range(area.height):
+        mix = row / height
+        pygame.draw.line(band, top.lerp(bottom, mix), (0, row), (area.width, row))
+    if radius:
+        mask = pygame.Surface(area.size, pygame.SRCALPHA)
+        pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=radius)
+        band.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+    canvas.blit(band, area.topleft)
+
+
+def _load(path):
+    """A picture file from the project, ready to draw. Fails loudly, never quietly."""
+    place = Path(path)
+    if not place.is_absolute():
+        place = PROJECT / place if (PROJECT / place).exists() else Path.cwd() / place
+    if not place.is_file():
+        raise SceneError(f"scene.py cannot find the picture {path!r}")
+    try:
+        picture = pygame.image.load(str(place))
+    except pygame.error as exc:
+        raise SceneError(f"scene.py cannot load {path!r}: it is not a picture it can read "
+                         f"({exc})") from None
+    if pygame.display.get_surface() is None:
+        return picture
+    return picture.convert_alpha() if picture.get_alpha() is not None or \
+        picture.get_colorkey() is not None or picture.get_bitsize() == 32 \
+        else picture.convert()
+
+
+def _fit_size(shape, box):
+    """The biggest size with ``shape``'s proportions that fits inside ``box``."""
+    scale = min(box[0] / max(1, shape[0]), box[1] / max(1, shape[1]))
+    return (shape[0] * scale, shape[1] * scale)
+
+
+def _fit(picture, size, flip=False):
+    """``picture`` fitted inside ``size`` without stretching it, on a see-through box."""
+    width, height = picture.get_size()
+    scale = min(size[0] / width, size[1] / height)
+    fitted = pygame.transform.smoothscale(picture, (max(1, round(width * scale)),
+                                                    max(1, round(height * scale))))
+    if flip:
+        fitted = pygame.transform.flip(fitted, True, False)
+    box = pygame.Surface(size, pygame.SRCALPHA)
+    box.blit(fitted, fitted.get_rect(center=(size[0] // 2, size[1] // 2)))
+    return box
+
+
+def _cut(sheet, frames=None, columns=None):
+    """The frames of a sprite sheet, read left to right and top to bottom."""
+    width, height = sheet.get_size()
+    if not frames:
+        frames = max(1, round(width / height)) if width >= height else \
+            max(1, round(height / width))
+    if not columns:
+        # The grid whose cells are closest to square: a 12-frame sheet twice as wide as
+        # it is tall is 6 by 2, not 12 by 1.
+        options = [c for c in range(1, frames + 1) if frames % c == 0]
+        columns = min(options, key=lambda c: abs((width / c) / (height / (frames // c)) - 1))
+    rows = -(-frames // columns)
+    cell_w, cell_h = width // columns, height // rows
+    cut = []
+    for index in range(frames):
+        cell = pygame.Rect((index % columns) * cell_w, (index // columns) * cell_h,
+                           cell_w, cell_h)
+        cut.append(sheet.subsurface(cell).copy())
+    return cut
+
+
+def _hitbox(look, drawn):
+    """How big a thing's box for bumping into things is: the solid part of its picture,
+    a little smaller -- so a see-through corner never counts as a hit."""
+    try:
+        solid = look.solid_box(drawn)
+    except (pygame.error, SceneError, NotImplementedError):
+        solid = pygame.Rect(0, 0, *drawn)
+    if solid.width == 0 or solid.height == 0:
+        solid = pygame.Rect(0, 0, *drawn)
+    return (max(1, round(solid.width * 0.85)), max(1, round(solid.height * 0.85)))

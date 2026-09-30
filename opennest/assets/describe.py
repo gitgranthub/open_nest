@@ -109,7 +109,23 @@ def describe(path: Path, kind: str | None = None) -> Description:
     if kind == kinds.CODE:
         return Description(kind, f"{path.suffix.lstrip('.') or 'source'} code, "
                                  f"{_line_count(path)}")
+    if kinds.EXTENSIONS.get(path.suffix.lower()) == kinds.IMAGE:
+        # Named like a picture, and its bytes are not one. The owner's test03 had exactly
+        # this: an eagle.png the model had written a sentence into (SPIKES.md section 28A),
+        # listed in the Assets panel and taken for the eagle. A fact about the file.
+        what = "text" if _is_text(head) else "not an image"
+        return Description(kinds.OTHER, f"NOT a picture, though its name looks like one -- "
+                                        f"its bytes are {what} ({_size(path)}). A game "
+                                        f"cannot show it.", readable=False)
     return Description(kinds.OTHER, f"a file ({_size(path)})", readable=False)
+
+
+def _is_text(head: bytes) -> bool:
+    try:
+        head.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return bool(head) and b"\x00" not in head
 
 
 # -- images ------------------------------------------------------------------

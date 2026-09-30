@@ -662,7 +662,9 @@ def test_a_thing_named_after_only_the_starter_was_set_up_is_still_caught(empty_g
     ])
     turn = controller.send(OWNER_ASKED)
     assert "Look for the eagle" not in turn.text
-    assert "Do not say the game has a" in provider.calls[1][-1].content
+    # A request turn: the correction says the thing is not there and how to make it
+    # (Phase 13C); an answer turn keeps "Do not say the game has a...".
+    assert "its files have none" in provider.calls[1][-1].content
 
 
 def test_a_promise_in_an_answer_is_made_an_offer(project) -> None:

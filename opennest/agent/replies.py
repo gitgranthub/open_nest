@@ -57,6 +57,10 @@ _NOT_THINGS = frozenset((
     "button", "buttons", "idea", "ideas", "start", "end", "goal", "back", "forth",
     "front", "ones", "kind", "sort", "level", "levels", "version", "rest", "same",
     "other", "new", "old", "first", "last", "point", "points", "times", "score",
+    # Phase 13C: what a scene is described as, not a thing in it. A row of buildings is
+    # the town and the sky is the background -- checking them for a name of their own
+    # would correct Gary for a scene he really made.
+    "background", "scene", "world", "place", "style", "look", "feel",
 ))
 
 
@@ -76,7 +80,17 @@ _DESCRIBING = frozenset((
     "light", "bright", "flying", "parked", "moving", "falling", "shiny", "cute", "scary",
     "funny", "angry", "happy", "new", "old", "other", "fun", "cool", "simple", "short",
     "long", "little", "few", "nice", "real",
+    # Phase 13C: how a child describes a look -- "a clean modern mobile game".
+    "clean", "modern", "mobile", "colorful", "colourful", "friendly", "pretty",
+    "beautiful", "sunny", "cloudy", "busy", "quiet", "tall", "wide", "round", "soft",
+    "flat", "cartoon", "realistic", "whole",
 ))
+#: "add buildings", "put coins along the road": a plural straight after one of these is a
+#: thing asked for, with no "the" (Phase 13C's walk: "buildings" was never read).
+_PLACING = frozenset(("add", "put", "draw", "place", "show"))
+#: Verbs a joined word can be instead of a thing: "a town and avoid cars".
+_DOING = frozenset(("make", "fly", "move", "jump", "run", "go", "get", "see", "use", "play",
+                    "turn", "change", "drive", "fall", "shoot", "win", "lose", "try"))
 #: Words that follow a determiner and are not things: "a lot", "the same", "that".
 _NOT_NOUNS = frozenset((
     "that", "this", "these", "those", "same", "lot", "bit", "way", "of", "to", "and", "or",
@@ -88,23 +102,39 @@ def child_nouns(text: str) -> set[str]:
     past one describing word -- "an eagle", "the cars", "five parked cars"."""
     words = re.findall(r"[a-z']+", text.lower())
     found = set()
+
+    def thing(noun: str) -> bool:
+        return len(noun) >= 3 and noun.isalpha() and noun not in _NOT_THINGS \
+            and noun not in _NOT_NOUNS and noun not in _DESCRIBING \
+            and noun not in _DETERMINERS
+
     for index, word in enumerate(words[:-1]):
         following = words[index + 1]
-        if word in _BEFORE_PLURALS and following.endswith("s") and len(following) > 3 \
-                and following not in _NOT_THINGS and following not in _DESCRIBING:
+        if (word in _BEFORE_PLURALS or word in _PLACING) and following.endswith("s") \
+                and len(following) > 3 and following not in _NOT_THINGS \
+                and following not in _DESCRIBING:
             # "flies over cars", "a site about dinosaurs": a plural needs no "the".
             # Measured: "The car appears at the right edge" went unquestioned because
             # "over cars" was never read as a thing the child asked for.
             found.add(following)
+            at = index + 1
+        elif word in _DETERMINERS:
+            at = index + 1
+            # Past the words that describe it: "a clean modern mobile game".
+            while at < len(words) - 1 and words[at] in _DESCRIBING and at - index <= 3:
+                at += 1
+            if not thing(words[at]):
+                continue
+            found.add(words[at])
+        else:
             continue
-        if word not in _DETERMINERS:
-            continue
-        noun = words[index + 1]
-        if noun in _DESCRIBING and index + 2 < len(words):
-            noun = words[index + 2]
-        if len(noun) >= 3 and noun.isalpha() and noun not in _NOT_THINGS \
-                and noun not in _NOT_NOUNS and noun not in _DESCRIBING:
-            found.add(noun)
+        # "a sky and road": what is joined to a thing is a thing too -- but not "a town
+        # and avoid cars", where it is what happens next.
+        joined = words[at + 2] if at + 2 < len(words) else ""
+        if words[at + 1:at + 2] in (["and"], ["or"]) and thing(joined) and \
+                joined not in _BEFORE_PLURALS and joined not in _PLACING and \
+                joined not in _DOING:
+            found.add(joined)
     return found
 
 
@@ -269,4 +299,5 @@ _SHORT_CODE = 6
 #: Open Nest's own "[Open Nest: ...]" note, which a model reading its history may copy.
 _ARGUMENT_LINE = re.compile(
     r'^\s*(?:"?(?:old_text|new_text|content|arguments)"?\s*[:=]|\[Open Nest:|'
-    r'\{"name"\s*:\s*"(?:read_file|edit_file|write_file|run_project|compile_project)")')
+    r'\{"name"\s*:\s*"(?:read_file|edit_file|write_file|run_project|compile_project|'
+    r'game_object)")')

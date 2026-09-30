@@ -28,6 +28,10 @@
     "A new thing needs three pieces in three places, and with only two it does nothing: create it once ABOVE the game loop, move it INSIDE the loop, and draw it inside the loop AFTER screen.fill(...). Give its speed, size and colour named constants at the top.",
     "For a dodging game, make several things that drift across the screen and come back round, and check player.collidelist(things) every frame."
   ],
+  "guide_scene": [
+    "Build it with game_object, one call for each thing: the player's look (name player -- a picture they added, or a drawing), the things to dodge (a drawing, or a picture they added, with count, moves: left and touch: avoid), and a sky or a road if they want a scene. Open Nest draws and moves each one every frame.",
+    "Only what game_object has no word for -- a score that counts dodges, lives, a game over -- is edit_file."
+  ],
   "verify": [
     "playtest_passes",
     "moves_by_itself",

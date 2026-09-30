@@ -19,6 +19,9 @@
     "A new thing needs three pieces in three places, and with only two it does nothing: create it once ABOVE the game loop, move it INSIDE the loop, and draw it inside the loop AFTER screen.fill(...). Give its speed, size and colour named constants at the top.",
     "When the player's rect collides with it (player.colliderect(coin)), add one to the score and move the coin somewhere new. Draw the score with a font after screen.fill."
   ],
+  "guide_scene": [
+    "Call game_object for it: a drawing (a coin, a star) or a picture they added, where and how many, and touch: collect -- touching one then scores a point, and Open Nest adds a score if there is none."
+  ],
   "verify": [
     "playtest_passes",
     "drawn_after_fill"

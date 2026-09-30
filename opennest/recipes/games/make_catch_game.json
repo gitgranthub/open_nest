@@ -23,6 +23,10 @@
     "A new thing needs three pieces in three places, and with only two it does nothing: create it once ABOVE the game loop, move it INSIDE the loop, and draw it inside the loop AFTER screen.fill(...). Give its speed, size and colour named constants at the top.",
     "For a catching game, make things fall from the top, and when the player touches one, add a point and send it back to the top."
   ],
+  "guide_scene": [
+    "Build it with game_object, one call for each thing: the player's look (name player), and the things to catch (a drawing, with count, moves: down and touch: collect -- catching one then scores a point). Open Nest draws and moves each one every frame.",
+    "Only what game_object has no word for -- lives, a timer, a game over -- is edit_file."
+  ],
   "verify": [
     "playtest_passes",
     "moves_by_itself",

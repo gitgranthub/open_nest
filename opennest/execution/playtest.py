@@ -105,6 +105,11 @@ class Playtest:
     #: The project-relative picture of its last frame, when it passed. Empty otherwise.
     still: str = ""
     responded_to: tuple[str, ...] = ()
+    #: What the game's scene drew, back to front, when it uses the scene kit (Phase 13C):
+    #: one dict per thing -- name, layer, look, count, frames drawn, how many on screen.
+    #: Written by the child's process, so it is read like everything else from there:
+    #: bounded and checked (``_scene``), and never a verdict.
+    scene: tuple[dict, ...] = ()
 
     @property
     def failed(self) -> bool:
@@ -247,7 +252,9 @@ def classify(records: list[dict], result: RunResult, *, entry: str = "") -> Play
     reason = end.get("end", "")
     during = str(end.get("during", ""))
     base = {"entry": entry, "frames": len(frames), "seconds": round(result.seconds, 2),
-            "during": during}
+            "during": during,
+            "scene": _scene(next((r["scene"] for r in reversed(records) if "scene" in r),
+                                 None))}
 
     # Never reached the game: the sandbox could not be applied, pygame is not installed,
     # or the harness itself failed. The harness writes an end record however the game
@@ -285,6 +292,26 @@ def classify(records: list[dict], result: RunResult, *, entry: str = "") -> Play
         # quits on one of the keys, perhaps. Not something to repair on.
         return Playtest(INCONCLUSIVE, **base, **diagnostics)
     return Playtest(FROZEN, **base, **diagnostics)
+
+
+def _scene(report) -> tuple[dict, ...]:
+    """The scene record, with only what it should hold, of bounded size."""
+    if not isinstance(report, list):
+        return ()
+    kept = []
+    for item in report[:40]:
+        if not isinstance(item, dict):
+            continue
+        name, layer, look = item.get("name"), item.get("layer"), item.get("look")
+        if not all(isinstance(v, str) for v in (name, layer, look)):
+            continue
+        numbers = {key: item.get(key) for key in ("count", "frames", "on_screen")}
+        if not all(isinstance(v, int) and not isinstance(v, bool) and 0 <= v < 10 ** 7
+                   for v in numbers.values()):
+            continue
+        kept.append({"name": " ".join(name.split())[:40], "layer": layer[:20],
+                     "look": " ".join(look.split())[:80], **numbers})
+    return tuple(kept)
 
 
 def _responses(frames: list[dict]) -> tuple[str, ...]:

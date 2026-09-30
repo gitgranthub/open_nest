@@ -99,8 +99,28 @@ def _end(reason, during=""):
         if _state["ended"]:
             return
         _state["ended"] = True
+    _scene_record()
     _write({"end": reason, "during": during, "frames": _state["frames"],
             "seconds": round(time.monotonic() - _started, 3)})
+
+
+def _scene_record():
+    """What the game's scene drew, when it uses Open Nest's scene kit (src/scene.py).
+
+    Read from the kit's own ``Scene.report()`` -- the names, looks and layers it was asked
+    to draw, how many frames each was drawn in and how many were on screen -- so Gary can
+    be told what the game really showed, not what he described. Never a verdict, and
+    never the thing that breaks a test: a game without the kit, or a kit someone changed,
+    simply records nothing.
+    """
+    module = sys.modules.get("scene")
+    scenes = getattr(getattr(module, "Scene", None), "all", None)
+    if not scenes:
+        return
+    with contextlib.suppress(Exception):
+        report = scenes[-1].report()
+        if isinstance(report, list):
+            _write({"scene": report[:40]})
 
 
 try:

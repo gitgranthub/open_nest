@@ -98,6 +98,13 @@ class Change:
     values: dict[str, str] = field(default_factory=dict)
     #: What verification should expect, in terms the checks understand.
     expect: dict[str, Any] = field(default_factory=dict)
+    #: Tool calls to make instead of (or as well as) ``files``: ``(tool, arguments)``,
+    #: dispatched through the Toolbox exactly as a model's call would be. Phase 13C: a
+    #: recipe that changes a game's look calls ``game_object`` rather than writing the
+    #: scene kit into the conversation as edits.
+    calls: list[tuple[str, dict]] = field(default_factory=list)
+    #: The files those calls may change, so they can be put back exactly.
+    touches: tuple[str, ...] = ()
 
 
 #: Below this share, or with any ordering disagreeing, a detail is treated as unknown.

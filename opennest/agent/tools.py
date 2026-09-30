@@ -21,7 +21,9 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 
+from opennest.assets import kinds
 from opennest.execution import arduino, outputs, playtest
 from opennest.execution.python_runner import RunResult, run_project, stop_project
 from opennest.projects.manager import Project, plays_in_panel, source_fingerprint
@@ -174,6 +176,68 @@ SCHEMAS: dict[str, dict] = {
     "inspect_error": _schema(
         "inspect_error", "Look at the error from the last failed run.", {}, []
     ),
+    # Phase 13C: the game graphics layer (opennest/graphics). Gary says what a thing is
+    # and how it looks; Open Nest writes the pygame code. SPIKES.md section 28 has the
+    # prototype runs that shaped every description here.
+    "game_object": _schema(
+        "game_object",
+        "How things LOOK, and things to SEE: the player's picture, a sky, a road, "
+        "buildings, cars, clouds, coins. Say what it is and Open Nest writes the pygame "
+        "code that draws it, in layers, every frame. One call for each thing; the same "
+        "name again changes it. Not for how the game PLAYS -- keys, jumping, timers, "
+        "lives, score, game over, levels: those are edit_file.",
+        {
+            "name": {"type": "string",
+                     "description": "What it is, in a word or two: player, sky, road, "
+                                    "buildings, cars, coins. player is the one the arrow "
+                                    "keys move."},
+            "picture": {"type": "string",
+                        "description": "A picture file in the project to show, like "
+                                       "assets/eagle.png."},
+            "frames": {"type": "integer",
+                       "description": "If the picture holds several animation frames, how "
+                                      "many."},
+            "drawing": {"type": "string",
+                        "enum": ["vehicle", "building", "house", "tree", "cloud", "road",
+                                 "ground", "sky", "coin", "star", "platform", "sign"],
+                        "description": "A ready-made drawing, drawn to fit its size."},
+            "color": {"type": "string",
+                      "description": "Its main colour, like red, or #rrggbb."},
+            "text": {"type": "string", "description": "Words on a sign."},
+            "shapes": {"type": "array", "items": {"type": "object"},
+                       "description": "To draw it yourself: shapes inside its own box of "
+                                      "[width, height], 0,0 at the box's top-left. "
+                                      "{\"rect\": [x, y, w, h], \"color\": \"red\", "
+                                      "\"round\": 6}, {\"circle\": [x, y, radius]}, "
+                                      "{\"ellipse\": [x, y, w, h]}, {\"triangle\": [x, y, w, "
+                                      "h]}, {\"polygon\": [[x, y], ...]}, {\"line\": [x1, y1, "
+                                      "x2, y2], \"width\": 3, \"dash\": 12}, {\"text\": "
+                                      "\"words\", \"at\": [x, y], \"size\": 20}. Later shapes "
+                                      "are drawn on top."},
+            "size": {"type": "array", "items": {"type": "integer"},
+                     "description": "[width, height] in pixels."},
+            "at": {"type": "array",
+                   "description": "[x, y] of its top-left corner in the game window; y grows "
+                                  "downwards. The window's size is in what Open Nest has "
+                                  "checked."},
+            "on": {"type": "string",
+                   "description": "The name of a thing it stands on, like road."},
+            "layer": {"type": "string",
+                      "enum": ["background", "scenery", "things", "player", "effects", "ui"],
+                      "description": "background is drawn first, ui last."},
+            "count": {"type": "integer", "description": "How many, spread along a row."},
+            "moves": {"type": "string",
+                      "enum": ["still", "left", "right", "up", "down", "bounce"],
+                      "description": "Which way it keeps moving by itself. It comes back "
+                                     "round the other side."},
+            "speed": {"type": "number"},
+            "touch": {"type": "string", "enum": ["nothing", "avoid", "collect"],
+                      "description": "What touching it does: avoid sends the player back to "
+                                     "the start, collect scores a point."},
+            "remove": {"type": "boolean", "description": "true takes it out of the scene."},
+        },
+        ["name"],
+    ),
 }
 
 
@@ -214,6 +278,10 @@ class Toolbox:
         #: Told each :class:`Step` as it happens, or None. Set for one turn by
         #: ``AgentController.send(on_progress=...)``; the Workbench shows the steps.
         self.observer: Callable[[Step], None] | None = None
+        #: The child's message this turn and the pictures attached to it, for the one tool
+        #: that must tell "use my eagle picture" from a picture nobody mentioned
+        #: (game_object). Set and cleared by ``AgentController.send``, like ``observer``.
+        self.message: tuple[str, tuple[str, ...]] = ("", ())
 
     def report(self, step: Step) -> None:
         """Tell the observer. Showing progress must never be what breaks a turn."""
@@ -262,8 +330,12 @@ class Toolbox:
         path = args.get("path") if isinstance(args.get("path"), str) else ""
         before = self._file_text(path) if path and tool in ("edit_file", "write_file") \
             else None
+        if tool == "game_object":
+            # What each file it may change held before, so what changed can be shown.
+            before = {relative: self._file_text(relative) for relative in (
+                f"src/{self.project.manifest.entrypoint}", "src/scene.py")}
         if self.observer is not None:
-            self._report_start(tool, path, before)
+            self._report_start(tool, path, before, args)
         try:
             result = handler(args)
         except PathNotAllowed as exc:
@@ -276,30 +348,38 @@ class Toolbox:
             self._report_end(tool, path, before, result)
         return result
 
-    def _report_start(self, tool: str, path: str, before: str | None) -> None:
+    def _report_start(self, tool: str, path: str, before, args: dict | None = None) -> None:
         # A path the model made up outside the project is not repeated to the child.
         shown = path if path and self._inside(path) else "a file"
+        if tool == "game_object":
+            name = str((args or {}).get("name") or "something").strip()[:40]
+            self.report(Step("tool", f"drawing the {name}"))
+            return
         if tool == "write_file":
             text = f"{'writing' if before is not None else 'creating'} {shown}"
         else:
             text = _DOING.get(tool, "using " + tool.replace("_", " ")).format(path=shown)
         self.report(Step("tool", text, path=path if shown != "a file" else ""))
 
-    def _report_end(self, tool: str, path: str, before: str | None,
+    def _report_end(self, tool: str, path: str, before,
                     result: ToolResult) -> None:
         for changed in result.changed_files:
             content = self._file_text(changed)
             if content is None:
                 continue
-            # edit_file and write_file change the one file they were given, however the
-            # model spelled its path.
-            old = before if len(result.changed_files) == 1 else None
+            if isinstance(before, dict):
+                old = before.get(changed)
+            else:
+                # edit_file and write_file change the one file they were given, however
+                # the model spelled its path.
+                old = before if len(result.changed_files) == 1 else None
             self.report(Step("changed", f"{'created' if old is None else 'changed'} {changed}",
                              path=changed, content=content,
                              changed_lines=changed_lines(old, content),
                              created=old is None))
-        if not result.ok and tool in ("edit_file", "write_file"):
-            shown = path if path and self._inside(path) else "the file"
+        if not result.ok and tool in ("edit_file", "write_file", "game_object"):
+            shown = "the game" if tool == "game_object" else \
+                path if path and self._inside(path) else "the file"
             self.report(Step("refused", f"that change didn't fit {shown}, so it was left "
                                         "as it was", path=path))
 
@@ -347,6 +427,7 @@ class Toolbox:
         if not isinstance(content, str):
             content = str(content)
         path = resolve_in_project(self.project.directory, relative, for_write=True)
+        self._refuse_picture_name(relative)
         if path.exists():
             raise ToolError(
                 f"{relative!r} already exists. Use edit_file to change part of it, "
@@ -392,6 +473,7 @@ class Toolbox:
                             "file, use write_file.", reason="missing_argument")
 
         path = resolve_in_project(self.project.directory, relative, for_write=True)
+        self._refuse_picture_name(relative)
         if not path.is_file():
             raise ToolError(
                 f"There is no file called {relative!r} yet. Use write_file to create it.",
@@ -442,6 +524,51 @@ class Toolbox:
         path.write_text(updated, encoding="utf-8")
         rel = str(path.relative_to(self.project.directory.resolve()))
         return ToolResult(True, f"Changed {rel}.", changed_files=(rel,), recovered=recovered)
+
+    def _refuse_picture_name(self, relative: str) -> None:
+        """A picture or a sound is never written as text.
+
+        The owner's test03 project (SPIKES.md section 28A): asked to make the eagle look
+        like an eagle, the 4B model called ``write_file("assets/eagle.png", "i can't
+        generate images, so i can't add the eagle image...")``. The Assets panel then
+        listed an ``eagle.png``, the owner took it for a picture, and the game's code
+        failed to load it every frame inside a ``try`` that drew a square instead.
+        """
+        suffix = Path(relative).suffix.lower()
+        kind = kinds.EXTENSIONS.get(suffix)
+        if kind not in (kinds.IMAGE, kinds.AUDIO) and suffix != ".pdf":
+            return
+        what = {kinds.IMAGE: "a picture", kinds.AUDIO: "a sound"}.get(kind, "a PDF")
+        other = (" -- or draw it with game_object" if "game_object" in self.allowed
+                 else "")
+        raise ToolError(
+            f"{relative} is the name of {what}, and this tool only writes text, so it "
+            f"can't make one. Nothing was saved. Use one the child adds to the project"
+            f"{other}.", reason="not_text")
+
+    def _game_object(self, args: dict) -> ToolResult:
+        """Put a thing in the game's scene, or change how one looks (opennest/graphics).
+
+        Every file is checked before any is written: the path stays inside the project,
+        and the game's code must still parse -- the same rules edit_file keeps.
+        """
+        from opennest.graphics import game_object
+
+        outcome = game_object.run(self.project, args, message=self.message)
+        body = json.dumps(outcome.result)
+        if not outcome.ok:
+            return ToolResult(False, body, reason=outcome.reason)
+        ready = []
+        for relative, text in outcome.files.items():
+            path = resolve_in_project(self.project.directory, relative, for_write=True)
+            _reject_broken_python(relative, text)
+            ready.append((relative, path, text))
+        written = []
+        for _relative, path, text in ready:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+            written.append(str(path.relative_to(self.project.directory.resolve())))
+        return ToolResult(True, body, changed_files=tuple(written))
 
     def stop_running(self) -> None:
         """Stop the project if it is still running. Safe to call when it is not.

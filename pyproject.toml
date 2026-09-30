@@ -23,6 +23,9 @@ opennest = [
     "recipes/**/*.json",
     "projects/starters/**/*",
     "github/askpass.sh",
+    # The scene kit is copied into a child's project as src/scene.py. It is not a package
+    # (nothing in the app imports it -- it imports pygame), so it has to be listed.
+    "graphics/kit/*.py",
 ]
 
 [tool.ruff]

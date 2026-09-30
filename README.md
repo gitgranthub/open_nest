@@ -110,6 +110,11 @@ Open Nest can work with materials such as:
 
 Files can be added directly to a project and used as part of the building process.
 
+In a game, a picture the child adds can become the player, and a scene can be described
+in plain words -- a sky, a road, buildings, cars to dodge, coins to collect. The game
+draws it with `src/scene.py`, a small readable pygame helper that lives in the project,
+so the game is still ordinary Python that runs without Open Nest.
+
 ## Run What You Build
 
 Open Nest is designed around making real things.

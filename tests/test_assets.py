@@ -444,12 +444,15 @@ def build(project, replies, *, model=None):
 
 
 def test_attaching_a_picture_does_not_add_a_fifth_tool(project, dropped) -> None:
-    """SPIKES.md section 4: the set is four wide, and the asset layer must not widen it."""
+    """SPIKES.md section 4: the asset layer must not widen the tool set. (Games offers
+    game_object as its fifth tool since Phase 13C -- the profile's choice, measured in
+    SPIKES.md section 28C -- and an attachment adds nothing to it.)"""
     asset = assets.import_file(project, dropped("spaceship.png", SPACESHIP))
     controller, provider = build(project, [Reply(text="ok")])
     controller.send("use this", attachments=[asset])
     offered = {t["function"]["name"] for t in provider.tools_offered[0]}
-    assert offered == {"read_file", "edit_file", "write_file", "run_project"}
+    assert offered == set(project.profile.tools)
+    assert offered == {"read_file", "edit_file", "write_file", "run_project", "game_object"}
     assert "list_assets" not in offered
 
 

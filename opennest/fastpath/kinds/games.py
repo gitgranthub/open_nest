@@ -83,16 +83,21 @@ def entry_path(project) -> str:
 def facts(project, attachments=()) -> Facts:
     """Read the game file. Every value is a line number or a name, or absent."""
     path = entry_path(project)
-    values: dict = {"entry": path}
     images = [a.path for a in assets.list_assets(project) if a.kind == "image"]
     attached = [a.path for a in attachments if getattr(a, "kind", "") == "image"]
-    values["images"] = images or None
-    values["attached_images"] = attached or None
-
     file = project.directory / path
     if not file.is_file():
-        return Facts(values)
-    source = file.read_text(encoding="utf-8")
+        return Facts({"entry": path, "images": images or None,
+                      "attached_images": attached or None})
+    return facts_of(file.read_text(encoding="utf-8"), path, images, attached)
+
+
+def facts_of(source: str, path: str = "src/game.py", images=(), attached=()) -> Facts:
+    """The same facts, read from ``source`` rather than from the file on disk -- for the
+    graphics layer (``opennest.graphics``), which reads a game it is part-way through
+    changing."""
+    values: dict = {"entry": path, "images": list(images) or None,
+                    "attached_images": list(attached) or None}
     values["source"] = source
     try:
         tree = ast.parse(source)
@@ -344,13 +349,31 @@ def where(facts: Facts) -> str:
                      f"{show(facts.get('loop'))}")
     if facts.has("fill"):
         notes.append(f"- Move things inside the loop, before {show(facts.get('fill'))}")
-    if facts.has("flip"):
+    from opennest.graphics import source as scene_source
+
+    scene = scene_source.read(source)
+    if facts.has("flip") and scene.adopted:
+        # Measured (SPIKES.md section 28E): "after the fill" put a glow under the sky.
+        notes.append(f"- Draw things by hand inside the loop, after "
+                     f"{show(scene.draw_line)} and before {show(facts.get('flip'))} -- "
+                     f"anything drawn before scene.draw() is painted over by the scene")
+    elif facts.has("flip"):
         notes.append(f"- Draw things inside the loop, after the fill and before "
                      f"{show(facts.get('flip'))}")
     if facts.has("indent"):
         notes.append(f"- Code inside the loop is indented {len(facts.get('indent'))} spaces.")
     if facts.has("player"):
         notes.append(f"- The player is the rect called {facts.get('player')}.")
+    # Phase 13C: what the child sees is the scene's to draw, and needs none of the above.
+    if scene.adopted:
+        notes.append(f"- Things to see are in the scene, drawn by {show(scene.draw_line)} "
+                     f"-- change or add them with game_object, not with drawing code.")
+    elif len(notes) > 1:
+        # First, not last: a small model reads this top-down and does the first thing it
+        # can (SPIKES.md section 28E).
+        notes.insert(1, "- Things to see -- a picture, a sky, a road, cars, coins -- need no "
+                        "drawing code: game_object puts each one in the scene. The places "
+                        "below are for rules and movement.")
     return "\n".join(notes) if len(notes) > 1 else ""
 
 
@@ -1027,7 +1050,12 @@ def thing_look(ctx: Context) -> Change:
     edit = _Edit(ctx.facts.get("source"))
     said = []
     named = game_things.colour_in(ctx.request)
+    # A constant nothing reads draws nothing. Once the scene kit draws a thing (Phase
+    # 13C), its old _COLOUR no longer does, and changing it would be reported as a change
+    # the child cannot see.
+    used = _read_names(ctx.facts.get("source") or "")
     colour = constants.get(f"{prefix}_COLOUR")
+    colour = colour if colour is not None and colour.name in used else None
     if named is not None and colour is not None:
         edit.replace(colour.line, colour.start, colour.end, _rgb(named[1]))
         detail = constants.get(f"{prefix}_DETAIL")
@@ -1038,6 +1066,7 @@ def thing_look(ctx: Context) -> Change:
         said.append(named[0])
     words = set(re.findall(r"[a-z]+", ctx.request.lower()))
     size = constants.get(f"{prefix}_SIZE")
+    size = size if size is not None and size.name in used else None
     factor = 1.5 if words & {"big", "bigger", "large", "larger", "huge", "giant"} else \
         (1 / 1.5 if words & {"small", "smaller", "tiny", "little"} else None)
     changed = [f"{prefix}_COLOUR"] if said else []
@@ -1056,6 +1085,16 @@ def thing_look(ctx: Context) -> Change:
                           "changed": " and ".join(changed),
                           "were": "is" if len(changed) == 1 else "are"},
                   expect={})
+
+
+def _read_names(source: str) -> set[str]:
+    """Every name the code reads (not just assigns)."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return set()
+    return {node.id for node in ast.walk(tree)
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)}
 
 
 #: Every way a recipe can have made a thing move -- what an existing thing's code is
@@ -1192,33 +1231,28 @@ def thing_motion(ctx: Context) -> Change:
 
 
 def use_sprite(ctx: Context) -> Change:
-    """Draw a picture the child imported where the player's rectangle was drawn."""
-    _require(ctx.facts, "player", "player_draw", "set_mode_line")
+    """Make a picture the child imported the player's look.
+
+    Through the graphics layer (Phase 13C, ``opennest.graphics``), the same
+    ``game_object`` call Gary would make: the picture is drawn by the game's scene on the
+    player's own rectangle, which keeps moving and bumping into things exactly as before.
+    It used to be written here as raw ``pygame.image.load`` and ``blit`` lines.
+    """
+    _require(ctx.facts, "player", "set_mode_line")
     choices = ctx.facts.get("attached_images") or ctx.facts.get("images") or []
     if not choices:
         raise NeedsAnswer("there is no picture in the project yet")
     if len(choices) > 1:
         raise NeedsAnswer("there is more than one picture, and it does not say which")
     picture = choices[0]
-    player = ctx.facts.get("player")
-    size = ctx.facts.get("player_size")
-    surface = ctx.facts.get("surface", "screen")
-    edit = _Edit(ctx.facts.get("source"))
-    scale = size or f"{player}.width"
-    edit.after(ctx.facts.get("set_mode_line"), [
-        f"{player}_image = pygame.image.load({_python_string(picture)}).convert_alpha()",
-        f"{player}_image = pygame.transform.smoothscale(",
-        f"    {player}_image,",
-        f"    ({scale}, round({scale} * {player}_image.get_height() / "
-        f"{player}_image.get_width())),",
-        ")",
-    ])
-    first, last = ctx.facts.get("player_draw")
-    indent = ctx.facts.get("indent")
-    edit.replace_statement(first, last,
-                           f"{indent}{surface}.blit({player}_image, "
-                           f"{player}_image.get_rect(center={player}.center))")
-    return Change(files={ctx.facts.get("entry"): edit.text()},
+    from opennest.graphics import source as scene_source
+
+    worn = scene_source.read(ctx.facts.get("source") or "").entries.get("player")
+    if worn is not None and worn.look_class == "Picture" and picture in worn.look:
+        raise AlreadyDone(f"The player is already drawn with {picture}, so there was nothing "
+                          f"to change.")
+    return Change(files={}, calls=[("game_object", {"name": "player", "picture": picture})],
+                  touches=(ctx.facts.get("entry"), "src/scene.py"),
                   values={"picture": picture}, expect={"picture": picture})
 
 
@@ -1448,7 +1482,25 @@ def _check_motion(ctx):
     return Check("motion_set", FAIL, f"{prefix} does not {wanted} in the file")
 
 
+def _check_picture_drawn(ctx):
+    """The test saw the scene draw the player with the picture, on the screen."""
+    from opennest.execution import playtest as playtests
+    from opennest.fastpath.verifier import FAIL, PASS, UNAVAILABLE, Check
+
+    result = _playtest(ctx)
+    if result is None or result.verdict != playtests.PASSED:
+        return Check("picture_drawn", UNAVAILABLE, "the game was not tested")
+    wanted = f"picture {ctx.expect.get('picture')}"
+    for item in result.scene:
+        if item["name"] == "player" and item["look"] == wanted:
+            if item["frames"] and item["on_screen"]:
+                return Check("picture_drawn", PASS, f"{item['frames']} frames")
+            return Check("picture_drawn", FAIL, "the player's picture was never on screen")
+    return Check("picture_drawn", FAIL, "the test did not see the picture drawn")
+
+
 CHECKS = {
+    "picture_drawn": _check_picture_drawn,
     "motion_set": _check_motion,
     "playtest_passes": _check_playtest,
     "moves_by_itself": _check_moves,
@@ -1512,6 +1564,10 @@ def brief(facts: Facts) -> str:
     if not facts.has("loop"):
         return "The game has been changed a lot from the starter." if facts.has("source") \
             else ""
+    from opennest.graphics import source as scene_source  # Phase 13C's scene, if any
+
+    scene = scene_source.read(facts.get("source") or "")
+    in_scene = scene.entries if scene.adopted else {}
     parts = []
     if facts.has("player"):
         constants = facts.get("constants") or {}
@@ -1519,7 +1575,10 @@ def brief(facts: Facts) -> str:
         source = facts.get("source") or ""
         shape = {"rect": "square", "polygon": "ship shape", "circle": "circle"}.get(
             facts.get("player_shape"), "shape")
-        if f"{facts.get('player')}_image" in source:
+        worn = next((e for e in in_scene.values() if e.wraps == facts.get("player")), None)
+        if worn is not None:
+            look = scene_source.look_words(worn)
+        elif f"{facts.get('player')}_image" in source:
             look = "a picture"
         elif colour is not None:
             look = f"the {_nearest_colour(colour.value)} {shape}"
@@ -1527,8 +1586,11 @@ def brief(facts: Facts) -> str:
             look = f"a {shape}"
         parts.append(f"The player is {look}, moved with the arrow keys.")
     things = facts.get("things") or {}
-    if things:
-        names = [game_things.spoken_plural(prefix.split("_")[0].lower()) for prefix in things]
+    names = [game_things.spoken_plural(prefix.split("_")[0].lower()) for prefix in things]
+    names += [name for name, entry in in_scene.items()
+              if entry.wraps != facts.get("player") and name not in names
+              and name.rstrip("s") not in {n.rstrip("s") for n in names}]
+    if names:
         parts.append(f"Other things in the game: {', '.join(names)}.")
     else:
         parts.append("Nothing else is in the game yet.")

@@ -32,7 +32,7 @@ from opennest.fastpath.kinds import (
     family_for,
     kind_for,
 )
-from opennest.fastpath.registry import Recipe, RecipeRegistry
+from opennest.fastpath.registry import Recipe, RecipeRegistry, guide_for
 from opennest.fastpath.verifier import RecipeVerifier
 
 RECIPE = "recipe"
@@ -512,7 +512,7 @@ class FastPathRouter:
             record["stepped_aside"] = "guide-only recipe"
 
         result.guidance = self._guidance(recipe, kind, facts, record.get("stepped_aside"),
-                                         record.get("needs_answer"))
+                                         record.get("needs_answer"), project.profile.tools)
         record["seconds"] = round(time.monotonic() - started, 3)
         return result
 
@@ -587,7 +587,8 @@ class FastPathRouter:
             if recipe is not None and kind is not None:
                 guidance.append(self._guidance(recipe, kind, facts, entry.get("stepped_aside"),
                                                made.record.get("needs_answer")
-                                               if entry.get("recipe") else None))
+                                               if entry.get("recipe") else None,
+                                               project.profile.tools))
             before = part
 
         record["remaining"] = list(remaining)
@@ -711,7 +712,8 @@ class FastPathRouter:
         """
         values = {key: str(value) for key, value in change.values.items()}
         seed = zlib.crc32("|".join([getattr(project, "name", ""), recipe.id,
-                                    *sorted((before or {}).values())]).encode("utf-8"))
+                                    *sorted(v or "" for v in (before or {}).values())]
+                                   ).encode("utf-8"))
         phrasing = recipe.report[seed % len(recipe.report)] if recipe.report else ""
         # A value that is empty or ends in a space must not leave a gap in the sentence.
         said = " ".join(string.Template(phrasing).safe_substitute(values).split())
@@ -742,16 +744,18 @@ class FastPathRouter:
         checked = getattr(kind, "CHECKED", "")
         if checked and kind.verifiable(project):
             lines.append(f"HOW IT WILL BE CHECKED: {checked}")
-        if pattern is not None and pattern.guide.strip():
+        guide = guide_for(pattern, project.profile.tools) if pattern is not None else ""
+        if guide.strip():
             lines += ["A PATTERN THIS PROJECT CAN USE -- only if it fits what they asked; if "
                       "they asked a question, answer it and change nothing:",
-                      pattern.guide.strip()]
+                      guide.strip()]
         return "\n".join(line for line in lines if line)
 
     @staticmethod
-    def _guidance(recipe, kind, facts, why: str | None, needs_answer: str | None) -> str:
+    def _guidance(recipe, kind, facts, why: str | None, needs_answer: str | None,
+                  tools=()) -> str:
         """What Gary is given when he writes the change himself."""
-        lines = ["A KNOWN WAY TO DO THIS", recipe.guide.strip()]
+        lines = ["A KNOWN WAY TO DO THIS", guide_for(recipe, tools).strip()]
         if needs_answer:
             lines.append(f"Open Nest did not make this change by itself because "
                          f"{needs_answer}. Ask them before changing anything.")

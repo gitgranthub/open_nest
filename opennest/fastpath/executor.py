@@ -35,8 +35,9 @@ class EditRefused(NotApplicable):
 class Applied:
     change: Change
     calls: list[tuple[ToolCall, ToolResult]] = field(default_factory=list)
-    #: The bytes each touched file had before anything was applied.
-    originals: dict[str, str] = field(default_factory=dict)
+    #: The bytes each touched file had before anything was applied -- None for a file
+    #: that did not exist, which putting things back therefore removes.
+    originals: dict[str, str | None] = field(default_factory=dict)
 
     @property
     def changed_files(self) -> tuple[str, ...]:
@@ -64,6 +65,18 @@ class RecipeExecutor:
     def _apply(self, change: Change, toolbox: Toolbox, applied: Applied) -> Applied:
         project_dir = toolbox.project.directory
         number = 0
+        for relative in change.touches:
+            path = resolve_in_project(project_dir, relative, for_write=True)
+            applied.originals[relative] = path.read_text(encoding="utf-8") \
+                if path.is_file() else None
+        for tool, arguments in change.calls:
+            call = ToolCall(name=tool, arguments=dict(arguments), id=f"fastpath_{number}")
+            number += 1
+            result = toolbox.dispatch(call.name, call.arguments)
+            applied.calls.append((call, result))
+            if not result.ok:
+                self.rollback(applied, toolbox)
+                raise EditRefused(f"{tool} refused ({result.reason}): {result.content}")
         for relative, wanted in change.files.items():
             path = resolve_in_project(project_dir, relative, for_write=True)
             if not path.is_file():
@@ -96,6 +109,11 @@ class RecipeExecutor:
         project_dir = toolbox.project.directory
         for relative, original in applied.originals.items():
             path = resolve_in_project(project_dir, relative, for_write=True)
+            if original is None:
+                if path.is_file():
+                    path.unlink()
+                    toolbox.report(Step("undone", f"took {relative} back out", path=relative))
+                continue
             path.write_text(original, encoding="utf-8")
             toolbox.report(Step("undone", f"put {relative} back the way it was",
                                 path=relative, content=original))

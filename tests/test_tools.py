@@ -44,11 +44,21 @@ def test_tool_names_are_normalised(raw, expected) -> None:
 
 
 def test_no_profile_offers_an_explore_tool() -> None:
-    """SPIKES.md section 4: the file list is injected, never fetched by the model."""
+    """SPIKES.md section 4: the file list is injected, never fetched by the model.
+
+    Four tools wide, with one measured exception: Games has game_object as a fifth
+    (Phase 13C). What section 4 measured the cost of was a lookup the model reached for
+    instead of acting; the fifth tool acts, and its cost was measured on its own before
+    it was added (SPIKES.md section 28C). Any other fifth tool needs its own measurement.
+    """
     from opennest.projects.profiles import load_profiles
     for profile in load_profiles():
         assert "list_project_files" not in profile.tools, profile.id
-        assert len(profile.tools) <= 4, f"{profile.id} offers {len(profile.tools)} tools"
+        assert "inspect_error" not in profile.tools, profile.id
+        allowed = 5 if profile.id == "games" else 4
+        assert len(profile.tools) <= allowed, f"{profile.id} offers {len(profile.tools)} tools"
+        if len(profile.tools) == 5:
+            assert "game_object" in profile.tools
 
 
 def test_unknown_tool_is_refused_with_the_available_list(box: Toolbox) -> None:

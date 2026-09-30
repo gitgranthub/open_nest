@@ -203,6 +203,10 @@ _FIRST_STEPS: dict[str, tuple[str, ...]] = {
     "raspberry_pi": ("Make it blink 10 times",),
 }
 
+#: What Gary is told when he changed something and ended by saying what he will do next.
+CARRY_ON = ("You said you would do more, and then stopped. Do it now with your tools, then "
+            "say only what you made. If there is nothing more to do, say what you made.")
+
 #: How many turns back "nothing has changed lately" looks (``_quiet_lately``).
 QUIET_TURNS = 3
 
@@ -242,6 +246,11 @@ _PAGE_FORMS = {
     "heading": ("<h1", "<h2", "<h3"), "headline": ("<h1",), "list": ("<ul", "<ol"),
     "table": ("<table",), "form": ("<form",), "box": ("<input", "<div"),
 }
+
+#: How a game's code says a thing a child names by what it is made of. Measured on the 13C
+#: walk: "the eagle flies over the town" about a scene with a sky, a road and no building.
+_SCENE_FORMS = {"town": ("building", "house"), "city": ("building",),
+                "village": ("house", "building"), "street": ("road",)}
 
 #: What a Blank project can become by itself, from the child's own words: only what its
 #: one Run button (``python src/main.py``) can really run. The kit's entry file becomes
@@ -376,6 +385,9 @@ class Turn:
     step_from: int = 0
     #: Whether the message was a question, answered without tools or recipes.
     answered: bool = False
+    #: Gary's own calls this turn, (tool, arguments, result), in order -- what a claim
+    #: about a change is checked against when some of them were refused (Phase 13C).
+    calls: list[tuple[str, dict, ToolResult]] = field(default_factory=list)
     #: A Blank project asked for something it cannot do (a web page, a sketch), and told
     #: which project type can -- nothing built, no model call.
     routed: bool = False
@@ -743,10 +755,12 @@ class AgentController:
         for this turn only. The Workbench shows them; nothing here depends on them.
         """
         self.toolbox.observer = on_progress
+        self.toolbox.message = (text, tuple(a.path for a in attachments))
         try:
             return self._send(text, attachments, on_text)
         finally:
             self.toolbox.observer = None
+            self.toolbox.message = ("", ())
 
     def _send(self, text: str, attachments: Sequence[assets.Asset],
               on_text: Callable[[str], None] | None) -> Turn:
@@ -1449,7 +1463,7 @@ class AgentController:
         challenged: bool,
         corrected: bool,
     ) -> Turn:
-        looked = named = counted = False
+        looked = named = counted = carried = tallied = scened = disowned = False
         while True:
             reply = self._generate(on_text, turn=turn)
             self.history.append(
@@ -1498,8 +1512,10 @@ class AgentController:
                             ANSWER_CORRECTION if turn.answered else
                             RESULT_CORRECTION if claim == "result" else
                             "You did not actually change any file. Call edit_file now "
-                            "with the exact text to replace, or say plainly that you "
-                            "have not changed anything yet."
+                            "with the exact text to replace"
+                            + (" -- or game_object, for how something looks --"
+                               if "game_object" in self.toolbox.allowed else "")
+                            + ", or say plainly that you have not changed anything yet."
                         )))
                         continue
                     # The correction has been spent and the claim came back anyway.
@@ -1550,9 +1566,46 @@ class AgentController:
                     # Their question stays the point: measured, "say plainly that the
                     # eagle isn't there" turned "how do I undo that?" into an eagle report.
                     what = "game" if plays_in_panel(self.project) else "project"
+                    if turn.answered:
+                        self.history.append(Message(role="user", content=(
+                            f"Answer this again: \u201c{text}\u201d. Do not say the {what} "
+                            f"has a {missing} -- its files have none. {about}")))
+                    else:
+                        # A request: the thing may simply not have been made yet. Measured
+                        # on the 13C walk: "It's behind the road" after a turn that made
+                        # only the sky (SPIKES.md section 28E).
+                        self.history.append(Message(role="user", content=(
+                            f"The {what} has no {missing} -- its files have none. If they "
+                            f"asked for one, make it now with your tools; otherwise say "
+                            f"plainly it is not there. {about}")))
+                    continue
+                refused_claim = self._claims_what_was_refused(turn)
+                if refused_claim is not None and disowned:
+                    # Said again after its correction: Open Nest says what happened.
+                    correction, fact = refused_claim
+                    turn.text = f"{turn.text}\n\n({fact})"
+                    return self._finish_turn(turn)
+                if refused_claim is not None:
+                    disowned = True
+                    self._metered.kind = CORRECTION
+                    self.history.append(Message(role="user", content=refused_claim[0]))
+                    continue
+                misdescribed = None if scened else self._scene_claims(turn.text)
+                if misdescribed is not None:
+                    scened = True
+                    self._metered.kind = CORRECTION
+                    self.history.append(Message(role="user", content=misdescribed))
+                    continue
+                wrong_count = None if tallied else self._counts_nobody_made(turn.text)
+                if wrong_count is not None:
+                    tallied = True
+                    noun, actual, said_number = wrong_count
+                    self._metered.kind = CORRECTION
                     self.history.append(Message(role="user", content=(
-                        f"Answer this again: \u201c{text}\u201d. Do not say the {what} has "
-                        f"a {missing} -- its files have none. {about}")))
+                        f"The game has {actual} {noun if actual != 1 else _singular(noun)}, "
+                        f"not {said_number}. Say how many there really are -- or, if they "
+                        f"asked for {said_number}, game_object with count: {said_number} "
+                        f"makes that many.")))
                     continue
                 invented = None if counted else self._numbers_nobody_printed(turn.text, text)
                 if invented:
@@ -1580,6 +1633,16 @@ class AgentController:
                     looked = True
                     self._metered.kind = CORRECTION
                     self.history.append(Message(role="user", content=SIGHT_CORRECTION))
+                    continue
+                if not carried and self._promised_more(turn):
+                    # "The sky is now blue. I'll add the road now." -- and the turn ended,
+                    # three times on the second 4B walk (SPIKES.md section 28E): the small
+                    # model makes one call a reply and then says what it will do next.
+                    # Something did change, so this is not a false claim to correct; it is
+                    # a job half done. Once per turn, from the one budget.
+                    carried = True
+                    self._metered.kind = PRIMARY
+                    self.history.append(Message(role="user", content=CARRY_ON))
                     continue
                 return self._finish_turn(turn)
 
@@ -1675,6 +1738,10 @@ class AgentController:
         made = ran[-1].made_files if ran else ()
         drew = f" It drew {', '.join(made)}." if made else ""
 
+        drawn = _scene_changes(mine)
+        if drawn:
+            # game_object's own results say exactly what was made (Phase 13C).
+            return drawn
         if changed and only_launched:
             return f"I changed {', '.join(changed)} and started it."
         if changed and last_run_ok:
@@ -1830,6 +1897,17 @@ class AgentController:
         nouns = child_nouns(text)
         return evidence.undrawn(source, nouns) or evidence.made_every_frame(source, nouns)
 
+    def _promised_more(self, turn: Turn) -> bool:
+        """Gary's share changed something, and his last word says he will do more now."""
+        if turn.answered or not self._changed_anything(turn):
+            return False
+        budget = getattr(self, "_budget", None)
+        if budget is None or budget.remaining < 2:
+            return False
+        text = turn.text or ""
+        last = re.split(r"(?<=[.!?])\s+", text.strip())[-1] if text.strip() else ""
+        return "?" not in last and promises(last)
+
     def _only_promised(self, turn: Turn, text: str) -> bool:
         """A request, Gary's share changed nothing, and his last word is that he will --
         not a question back to the child, which is a fair way to end a turn."""
@@ -1859,12 +1937,20 @@ class AgentController:
             return None
         source = ""
         if plays_in_panel(project):
-            # A game: its code's names and strings, never its comments.
+            # A game: its code's names and strings, never its comments -- and never Open
+            # Nest's scene kit, which names every drawing it can make (Road, Building,
+            # Vehicle...). Read, it made "the road" true of a game with no road (the final
+            # 13C walk, SPIKES.md section 28E).
+            from opennest.graphics import looks
+
             for path in sorted((project.directory / "src").rglob("*.py")):
                 try:
-                    words = evidence.code_words(path.read_text(encoding="utf-8"))
+                    code = path.read_text(encoding="utf-8")
                 except (OSError, UnicodeDecodeError):
                     continue
+                if path.name == "scene.py" and looks.kit_version(code) is not None:
+                    continue
+                words = evidence.code_words(code)
                 if words is None:
                     return None       # code that does not parse: nothing can be said
                 source += words + "\n"
@@ -1893,10 +1979,177 @@ class AgentController:
             for word in sorted(wanted):
                 stem = word[:-1] if word.endswith("s") and len(word) > 3 else word
                 forms = (stem, *_PAGE_FORMS.get(stem, ())) if not plays_in_panel(project) \
-                    else (stem,)
+                    else (stem, *_SCENE_FORMS.get(stem, ()))
                 if re.search(rf"\b{stem}s?\b", lowered) and not any(
                         form in source for form in forms):
                     return word
+        return None
+
+    def _claims_what_was_refused(self, turn: Turn) -> tuple[str, str] | None:
+        """A correction when the reply says it changed something whose every edit this
+        turn was refused -- or None.
+
+        The turn-level guard (``_claimed_a_change_it_did_not_make``) only looks when
+        nothing changed at all. Measured on the final 4B walk (SPIKES.md section 28E):
+        "more colourful" changed the coins and the sky, and three edits to lines the
+        model imagined -- ``road.color = 'gray'`` -- were refused; the reply said the
+        roads were dark grey, the buildings tan and the clouds light grey. Only things
+        named in a refused call and in no call that landed are considered, and only in a
+        sentence that says so.
+        """
+        refused: set[str] = set()
+        landed: set[str] = set()
+        #: What each refused edit would have made a thing: "dark" in 'dark gray'.
+        values: set[str] = set()
+        for tool, arguments, result in turn.calls:
+            words = _call_words(tool, arguments)
+            if (result.ok and (result.changed_files or result.made_files)) or \
+                    result.reason == "no_change":
+                # "It already looks like that" is the thing as asked, not a failure --
+                # measured, counting it refused made "the road remains gray" a false alarm.
+                landed |= words
+            elif not result.ok and tool in ("edit_file", "game_object", "write_file"):
+                refused |= words
+                old = set(re.findall(r"[a-z]{3,}", str(arguments.get("old_text", "")).lower()))
+                new = set(re.findall(r"[a-z]{3,}", str(arguments.get("new_text", "")).lower()))
+                values |= new - old
+                if tool == "game_object":
+                    values |= set(re.findall(r"[a-z]{3,}", str(
+                        arguments.get("color", "")).lower()))
+        things = {_singular(word) for word in getattr(self, "_asked_for", set())}
+        if plays_in_panel(self.project):
+            from opennest.graphics import source as scene_source
+
+            try:
+                scene = scene_source.read(self.project.entrypoint_path.read_text(
+                    encoding="utf-8"))
+            except (OSError, UnicodeDecodeError):
+                scene = None
+            if scene is not None:
+                things |= {_singular(name) for name in scene.entries}
+        suspects = {word for word in refused - landed if len(word) > 2
+                    and _singular(word) in things}
+        if not suspects or not turn.text:
+            return None
+        said = []
+        for sentence in re.split(r"(?<=[.!?])\s+|\n+", turn.text):
+            lowered = sentence.lower()
+            if "?" in lowered or _OFFERED.search(lowered):
+                continue
+            words = set(re.findall(r"[a-z]+", lowered))
+            if not words & (_CHANGE_WORDS | values):
+                continue
+            said += sorted({word for word in words if word in suspects or
+                            _singular(word) in suspects} - set(said))
+        if not said:
+            return None
+        listed = ", ".join(said[:4])
+        one = len(said) == 1 and not said[0].endswith("s")
+        looks = "looks as it did -- that change" if one else "look as they did -- those changes"
+        return (f"The changes to the {listed} did not go in -- those edits were refused, so "
+                f"{'it looks' if one else 'they look'} as before. Say only what really "
+                f"changed. To change how a thing in the scene looks, use game_object with "
+                f"its name and the new colour.",
+                f"Open Nest: the {listed} {looks} did not go in.")
+
+    def _scene_claims(self, text: str) -> str | None:
+        """A correction for what a reply says a scene's thing does or where it is, when
+        the scene says otherwise -- or None.
+
+        Measured on the final Qwen3 8B walk (SPIKES.md section 28E): "avoid the cars" and
+        "collect coins" about things whose touch did nothing (the tool's own result said
+        so), and "10 cars moving left across the road" about cars driving along the top
+        of the screen. The scene knows both; only its own things are checked, and only in
+        a sentence that says so.
+        """
+        if not text or not plays_in_panel(self.project):
+            return None
+        from opennest.graphics import source as scene_source
+
+        try:
+            scene = scene_source.read(self.project.entrypoint_path.read_text(
+                encoding="utf-8"))
+        except (OSError, UnicodeDecodeError):
+            return None
+        if not scene.adopted:
+            return None
+        names = {form: name for name in scene.entries for form in (
+            name, _singular(name), name + "s")}
+        for sentence in re.split(r"(?<=[.!?])\s+|\n+", text):
+            lowered = sentence.lower()
+            # Not NOT_ASSERTED: "now you can avoid the cars" says what the game does. Only
+            # an offer, a question or a denial is left alone here.
+            if "?" in lowered or _OFFERED.search(lowered):
+                continue
+            for verb, wanted, fix in (("avoid|dodge", "avoid", "avoid"),
+                                      ("collect|grab|catch|pick up", "collect", "collect")):
+                for match in re.finditer(rf"\b(?:{verb})\w*\s+(?:the\s+|all\s+the\s+)?"
+                                         rf"(?:\w+\s+){{0,2}}?(\w+)\b", lowered):
+                    name = names.get(match.group(1))
+                    if name and scene_source.touch_rule(scene, name) != wanted:
+                        does = "send the player back" if wanted == "avoid" else \
+                            "score a point"
+                        return (f"Touching the {name} does not {does} in the game -- "
+                                f"nothing in its code does that. Say what touching them "
+                                f"really does, or give them touch: {fix} with game_object.")
+            for match in re.finditer(r"\b(?:on|along|across|down)\s+the\s+(road|ground|"
+                                     r"street|grass)\b", lowered):
+                band = match.group(1)
+                for word in re.findall(r"[a-z]+", lowered):
+                    name = names.get(word)
+                    if not name or name == band or name not in scene.entries:
+                        continue
+                    where = scene_source.relation(scene, name)
+                    if where.startswith(("above", "below")):
+                        return (f"The {name} are {where} -- not on it. Say where they "
+                                f"really are, or put them on it with game_object and "
+                                f"on: \"{band}\".")
+        return None
+
+    def _counts_nobody_made(self, text: str) -> tuple[str, int, int] | None:
+        """"Three red cars are now at..." about a game whose scene has one car.
+
+        Measured on the third 4B walk (SPIKES.md section 28E): three game_object calls all
+        named "car", each replacing the last, and a reply counting three. The scene knows
+        how many of each thing it makes, so a number said about one is checked -- only in
+        a game with a scene, only for a thing in it, and only in a sentence that says so.
+        """
+        if not text or not plays_in_panel(self.project):
+            return None
+        from opennest.fastpath.kinds import games
+        from opennest.graphics import source as scene_source
+
+        try:
+            source = self.project.entrypoint_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return None
+        scene = scene_source.read(source)
+        if not scene.adopted:
+            return None
+        constants = games.facts_of(source).get("constants") or {}
+        counts = {}
+        for entry in scene.entries.values():
+            if entry.wraps:
+                continue
+            count = entry.literals.get("count", 1)
+            if isinstance(entry.literals.get("at"), list):
+                count = len(entry.literals["at"])
+            elif isinstance(entry.keywords.get("count"), str) and \
+                    entry.keywords["count"] in constants:
+                count = constants[entry.keywords["count"]].value
+            if isinstance(count, int):
+                counts[entry.name] = count
+        for sentence in re.split(r"(?<=[.!?])\s+|\n+", text):
+            if NOT_ASSERTED.search(sentence.lower()):
+                continue
+            for match in _COUNTED.finditer(sentence.lower()):
+                said = _NUMBERS.get(match.group(1)) or (int(match.group(1))
+                                                        if match.group(1).isdigit() else 0)
+                noun = match.group(2)
+                for form in (noun, _singular(noun), noun + "s"):
+                    actual = counts.get(form)
+                    if actual is not None and said and actual != said:
+                        return noun, actual, said
         return None
 
     def _numbers_nobody_printed(self, reply: str, asked: str) -> list[str]:
@@ -2125,6 +2378,9 @@ class AgentController:
         for call in calls:
             result = self.toolbox.dispatch(call.name, call.arguments)
             turn.tool_results.append((call.name, result))
+            turn.calls.append((normalise_tool_name(call.name) or "",
+                               call.arguments if isinstance(call.arguments, dict) else {},
+                               result))
             self.history.append(
                 Message(
                     role="tool",
@@ -2319,6 +2575,82 @@ class AgentController:
                 "I fixed the problem and ran it to make sure."
             )
         return True
+
+
+#: Words a sentence uses when it says something was changed.
+_CHANGE_WORDS = frozenset(("changed", "change", "now", "made", "turned", "updated", "set",
+                           "gave", "painted", "coloured", "colored", "switched"))
+
+
+def _call_words(tool: str, arguments: dict) -> set[str]:
+    """The names a tool call was about: game_object's thing, or the identifiers in an
+    edit's old and new text ("road" from ``road.color = 'gray'``)."""
+    if tool == "game_object":
+        name = str(arguments.get("name") or "").lower()
+        return {part for part in re.split(r"[^a-z]+", name) if part} | (
+            {name.rstrip("s")} if name else set())
+    text = " ".join(str(arguments.get(key) or "") for key in ("old_text", "new_text", "path"))
+    return {word.lower() for word in re.findall(r"[A-Za-z]{3,}", text)}
+
+
+#: A sentence that offers, plans or denies rather than says what the game does.
+_OFFERED = re.compile(r"\b(?:if you want|want me to|would you like|shall i|i can add|i could|"
+                      r"could add|let me know|next|haven't|hasn't|isn't|aren't|not|no|yet|"
+                      r"don't|doesn't|didn't|without|instead|nothing)\b", re.IGNORECASE)
+
+#: Numbers a child's game is described with, in words.
+_NUMBERS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+            "eight": 8, "nine": 9, "ten": 10, "twelve": 12, "twenty": 20}
+#: "three red cars", "5 coins", "two big fluffy clouds": a number, a few describing
+#: words, and the thing.
+_COUNTED = re.compile(r"\b(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|twelve|"
+                      r"twenty)\s+(?:[a-z]+\s+){0,2}?([a-z]{3,}s)\b")
+
+
+def _singular(noun: str) -> str:
+    if noun.endswith("ies"):
+        return noun[:-3] + "y"
+    if noun.endswith("es") and noun[:-2].endswith(("s", "x", "ch", "sh")):
+        return noun[:-2]
+    return noun[:-1] if noun.endswith("s") else noun
+
+
+def _scene_changes(results) -> str:
+    """What game_object calls made this turn, from their results -- or "".
+
+    Only when every change in Gary's share came from game_object: its result is the
+    machine-readable account of what was done (``opennest.graphics.game_object``), so it
+    can be said as it is. Anything else changed as well is said the general way.
+    """
+    import json
+
+    said, other = [], False
+    for name, result in results:
+        if not result.changed_files:
+            continue
+        if normalise_tool_name(name) != "game_object":
+            other = True
+            continue
+        try:
+            record = json.loads(result.content)
+        except (TypeError, ValueError):
+            return ""
+        thing, look = record.get("object"), record.get("look")
+        if not thing:
+            return ""
+        if record.get("action") == "removed":
+            said.append(f"took the {thing} out of the scene")
+        elif thing == "player" and look:
+            said.append(f"made the player {look}")
+        elif record.get("action") == "added" and look:
+            said.append(f"added the {thing} ({look})")
+        else:
+            said.append(f"changed how the {thing} look" + ("s" if not thing.endswith("s")
+                                                           else ""))
+    if not said or other:
+        return ""
+    listed = ", ".join(said[:-1]) + (" and " if len(said) > 1 else "") + said[-1]
+    return f"I {listed}."
 
 
 def stream_reply(controller: AgentController, text: str) -> Iterator[str]:
