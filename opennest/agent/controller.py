@@ -47,6 +47,11 @@ from opennest.agent.replies import (
     SIGHT_CORRECTION,
     UNDERWAY_START,
     child_nouns,
+    colours_said,
+    files_said_wrongly,
+    hardware_claims,
+    hardware_correction,
+    instructs_edit,
     is_question,
     looped,
     presentable,
@@ -187,7 +192,12 @@ def _claim_phrases() -> tuple[str, ...]:
 
 #: Phrases a model uses when it believes it edited something. Used to catch the failure
 #: above deterministically rather than trusting the prompt to have fixed it.
-_CLAIMED_CHANGE = _claim_phrases()
+_CLAIMED_CHANGE = _claim_phrases() + (
+    # Said without "I": Qwen3 8B, asked "Tell me what changed the most." in a turn that
+    # changed nothing, answered "The most significant change was adding the code to plot
+    # ..." (the stress pass, SPIKES.md section 29).
+    "change was adding", "change was making", "change was creating", "change was writing",
+    "change was updating", "change was changing", "the change i made", "the changes i made")
 #: ...of which these say the work is happening now.
 _CLAIMED_UNDERWAY = tuple(phrase for phrase in _CLAIMED_CHANGE
                           if phrase.startswith(("i'm ", "i am ")))
@@ -618,6 +628,12 @@ class AgentController:
         #: Both are cleared once a turn has been told them (``evidence``).
         self._last_outcome = ""
         self._outside: list[str] = []
+        #: What the child did that changed no file -- pressed Run, Compile, Test on Mac --
+        #: told to Gary the same way, and kept apart from changes: a press of Run is not
+        #: a change, so it must not make "I updated main.py" believable (SPIKES §29).
+        self._events: list[str] = []
+        #: The reply an Undo just took back, until a turn has been told (``_repeats_undone``).
+        self._undone = ""
         #: The project's files as the last turn left them, so a change made between
         #: messages -- a file edited outside Open Nest -- is noticed, not assumed away.
         self._files_after = source_fingerprint(project.directory)
@@ -675,7 +691,8 @@ class AgentController:
 
     def _notes(self) -> list[str]:
         return [note for note in (getattr(self, "_last_outcome", ""),
-                                  *getattr(self, "_outside", ())) if note]
+                                  *getattr(self, "_outside", ()),
+                                  *getattr(self, "_events", ())) if note]
 
     def note_outside_change(self, what: str, *, undone: bool = False) -> None:
         """Something changed the project outside a message: an Undo, a starter added.
@@ -692,6 +709,7 @@ class AgentController:
             for index in range(len(self.history) - 1, 0, -1):
                 message = self.history[index]
                 if message.role == "assistant" and not message.tool_calls:
+                    self._undone = message.content
                     self.history[index] = Message(role="assistant", content=(
                         f"{message.content}\n\n[Open Nest: the child pressed Undo after "
                         f"this, so the change described here is no longer in the files.]"))
@@ -1073,14 +1091,24 @@ class AgentController:
         self._last_outcome = line
         self._recent_changes = [*getattr(self, "_recent_changes", []),
                                 bool(changed or made)][-QUIET_TURNS:]
+        self._recent_paths = [*getattr(self, "_recent_paths", []),
+                              set(changed) | set(made)][-QUIET_TURNS:]
         self._outside = []
+        self._events = []
+        self._undone = ""
         self._files_after = source_fingerprint(self.project.directory)
         self.refresh_state()
 
-    def note_event(self, what: str) -> None:
+    def note_event(self, what: str, *, drew: bool = False) -> None:
         """Something the child did that changed no file -- pressed Run, say. Gary is told
-        next turn; a plan is not affected."""
-        self._outside.append(what)
+        next turn; a plan is not affected.
+
+        ``drew``: the run drew a chart, which is something made, as a run of Gary's is
+        (``_changed_anything``). Anything else is only an event: measured on the stress
+        pass, a press of Test on Mac counted as a change, so "I updated the code in
+        main.py to set ON_SECONDS = 2.0" -- in an answer, about a turn that had only
+        described the edit -- went unchecked to the child (SPIKES.md section 29)."""
+        (self._outside if drew else self._events).append(what)
         self.refresh_state()
 
     def _notice_changes_since_last_turn(self) -> None:
@@ -1324,7 +1352,18 @@ class AgentController:
             # After Open Nest set up the starting files, "changed anything" is not true.
             first = ("I haven't built any of that yet." if turn.scaffolded
                      else "I haven't changed anything yet.")
-            turn.text = f"{first} Here's a way to build it, one step at a time:\n\n{listed}"
+            way = "Here's a way to build it, one step at a time:"
+            made = sorted({path for _, result in turn.tool_results
+                           for path in result.made_files})
+            if made:
+                # A run on the way drew a chart: that is something done, and the child is
+                # told where it is. Measured on the stress pass: "Graph this." drew
+                # charts/chart.png and was answered "I haven't changed anything yet" and
+                # a plan to draw the axes (SPIKES.md section 29).
+                first = (f"I haven't changed any file yet, but running the project drew "
+                         f"{', '.join(made)} -- click it in the Project panel to see it.")
+                way = "To build more on it, one step at a time:"
+            turn.text = f"{first} {way}\n\n{listed}"
             turn.plan_note = "Want me to start with the first one?"
             return turn
         turn.text = "\n\n".join(part for part in (turn.prefix, turn.text, turn.suffix)
@@ -1572,6 +1611,7 @@ class AgentController:
         corrected: bool,
     ) -> Turn:
         looked = named = counted = carried = tallied = scened = disowned = False
+        wired = hued = unsaid = filed = False
         while True:
             reply = self._generate(on_text, turn=turn)
             self.history.append(
@@ -1742,6 +1782,70 @@ class AgentController:
                     self._metered.kind = CORRECTION
                     self.history.append(Message(role="user", content=SIGHT_CORRECTION))
                     continue
+                if not self._changed_anything(turn) and self._repeats_undone(turn.text):
+                    if unsaid:
+                        # Said again after its correction: what is true now is said instead.
+                        now = re.sub(r"^I haven't changed anything in the (?:project|game) "
+                                     r"yet\.\s*", "It's back to how it started. ",
+                                     self._as_it_is_text())
+                        turn.text = f"You pressed Undo, so that last change is gone. {now}"
+                        return self._finish_turn(turn)
+                    # Measured on the stress pass (SPIKES.md section 29): after an Undo took
+                    # a Roar button back out, Qwen3 8B answered "What do I do now?" with its
+                    # own undone reply, word for word -- "I added a Roar button...".
+                    unsaid = True
+                    self._metered.kind = CORRECTION
+                    self.history.append(Message(role="user", content=(
+                        "The child pressed Undo after your last change, so what that reply "
+                        "described is not in the files any more. Do not say it again. "
+                        f"Answer \u201c{text}\u201d from what Open Nest has checked about the "
+                        "files as they are now.")))
+                    continue
+                unseen = self._hardware_claims(turn.text)
+                if unseen and wired:
+                    # Said again after its correction: those sentences go, and what Open
+                    # Nest knows about the hardware is said instead.
+                    turn.text = self._without_hardware_claims(turn.text, unseen)
+                    return self._finish_turn(turn)
+                if unseen:
+                    # "The code now confirms blinks on a real Pi" (the stress pass, SPIKES
+                    # section 29): nothing ran on a Pi, and nothing here can see one. Once.
+                    wired = True
+                    self._metered.kind = CORRECTION
+                    self.history.append(Message(role="user", content=hardware_correction(
+                        evidence.family(self.project), self.project.profile.run_label)))
+                    continue
+                off = self._colours_nobody_used(turn)
+                if off and hued:
+                    # Said again after its correction: the fact is added to it.
+                    turn.text = (f"{turn.text}\n\n(The page's files have no "
+                                 f"{' or '.join(off)} in them.)")
+                    return self._finish_turn(turn)
+                if off:
+                    # "It uses the warm orange accent colour", about a green one (the 4B,
+                    # stress pass, SPIKES.md section 29). Once.
+                    hued = True
+                    self._metered.kind = CORRECTION
+                    families, _words = evidence.page_colours(self.project)
+                    self.history.append(Message(role="user", content=(
+                        f"The page's files have no {' or '.join(off)} in them -- the colours "
+                        f"their CSS really has are {', '.join(sorted(families)) or 'none'}. "
+                        f"Say only colours the files have; if they asked for "
+                        f"{' or '.join(off)}, change the CSS now.")))
+                    continue
+                wrong = self._files_said_wrongly(turn)
+                if wrong and filed:
+                    # Said again after its correction: Open Nest adds what is so.
+                    turn.text = f"{turn.text}\n\n(Open Nest: {'; '.join(wrong)}.)"
+                    return self._finish_turn(turn)
+                if wrong:
+                    filed = True
+                    self._metered.kind = CORRECTION
+                    self.history.append(Message(role="user", content=(
+                        f"That is not what the files say: {'; '.join(wrong)}. Answer "
+                        f"\u201c{text}\u201d again, and say only what really happened -- the "
+                        f"project's files are listed in what Open Nest has checked.")))
+                    continue
                 if not carried and self._promised_more(turn):
                     # "The sky is now blue. I'll add the road now." -- and the turn ended,
                     # three times on the second 4B walk (SPIKES.md section 28E): the small
@@ -1806,6 +1910,11 @@ class AgentController:
             turn.plan_note = (f"Want me to start on step {index + 1}, \u201c"
                               f"{plan.steps[index].text}\u201d?" if index is not None
                               else "Want me to go ahead?")
+        elif not turn.plan_note and "?" not in turn.text and turn.answered and \
+                instructs_edit(turn.text):
+            # An answer telling them to change the code by hand: Gary can make that change,
+            # so it is offered (the stress pass, SPIKES.md section 29).
+            turn.plan_note = "Want me to make that change for you?"
         return turn
 
     @staticmethod
@@ -2018,13 +2127,81 @@ class AgentController:
 
     def _only_promised(self, turn: Turn, text: str) -> bool:
         """A request, Gary's share changed nothing, and his last word is that he will --
-        not a question back to the child, which is a fair way to end a turn."""
+        not a question back to the child, which is a fair way to end a turn.
+
+        Telling the child how to edit the code is the same thing: measured on the stress
+        pass, "Make it stay on for two seconds" was answered "Here is the exact text to
+        replace: ... Replace it with: ..." with no call made (SPIKES.md section 29)."""
         if is_question(text) or self._changed_anything(turn):
             return False
         lowered = (turn.text or "").lower()
         if "?" in lowered:
             return False
-        return promises(lowered)
+        return promises(lowered) or instructs_edit(turn.text)
+
+    def _repeats_undone(self, text: str) -> bool:
+        """Whether a reply says again what the reply an Undo took back said -- a sentence
+        of five words or more, word for word."""
+        undone = getattr(self, "_undone", "")
+        if not undone or not text:
+            return False
+
+        def sentences(words: str) -> set[str]:
+            return {" ".join(part.lower().split()) for part in
+                    re.split(r"(?<=[.!?])\s+|\n+", words) if len(part.split()) >= 5}
+
+        return bool(sentences(text) & sentences(undone))
+
+    def _files_said_wrongly(self, turn: Turn) -> list[str]:
+        """Files the reply names that the project has not got, or says were changed when
+        nothing changed them lately (``replies.files_said_wrongly``). After a change
+        outside a message -- an Undo, a hand edit -- only a missing file is said."""
+        try:
+            files = visible_files(self.project.directory)
+        except OSError:
+            return []
+        recent = set().union(*getattr(self, "_recent_paths", [])[-QUIET_TURNS:])
+        recent |= {path for _, result in turn.tool_results
+                   for path in (*result.changed_files, *result.made_files)}
+        recent |= set(turn.scaffolded)
+        return files_said_wrongly(turn.text, files, recent,
+                                  unchanged=not (self._outside or turn.scaffolded))
+
+    def _colours_nobody_used(self, turn: Turn) -> dict[str, str]:
+        """Colours Gary says his change to a website has, that none of its files do.
+
+        Only in a website, and only about a change of his to its CSS or HTML this turn:
+        what he just did is what he describes. Read generously -- a colour named anywhere
+        in the files, or any value near it ("coral" on an orange), is enough."""
+        if evidence.family(self.project) != "website":
+            return {}
+        mine = turn.tool_results[turn.gary_from:]
+        if not any(path.endswith((".css", ".html"))
+                   for _, result in mine for path in result.changed_files):
+            return {}
+        families, words = evidence.page_colours(self.project)
+        said = colours_said(turn.text, evidence.COLOUR_WORDS)
+        return {word: sentence for word, sentence in said.items()
+                if word not in words and not evidence.COLOUR_WORDS[word] & families}
+
+    def _hardware_claims(self, text: str) -> list[str]:
+        """Sentences saying what a real board or Pi did -- only in a project for one."""
+        if evidence.family(self.project) not in ("arduino", "raspberry_pi"):
+            return []
+        return hardware_claims(text)
+
+    def _without_hardware_claims(self, text: str, claims: list[str]) -> str:
+        kept = text
+        for sentence in claims:
+            kept = kept.replace(sentence, "")
+        kept = re.sub(r"[ \t]+\n", "\n", re.sub(r"\n{3,}", "\n\n", kept)).strip()
+        if evidence.family(self.project) == "raspberry_pi":
+            fact = (f"Nothing has run on a real Raspberry Pi, so nobody has seen the light: "
+                    f"{self.project.profile.run_label} shows what the pins would do.")
+        else:
+            fact = ("Open Nest can't see your board: once it is on the board with Send to "
+                    "Board, only you can see what it does.")
+        return f"{kept}\n\n{fact}".strip()
 
     def _names_what_is_not_there(self, turn: Turn, text: str) -> str | None:
         """A thing the child asked for, said to be in the game, when its code has none.
@@ -2154,10 +2331,13 @@ class AgentController:
         listed = ", ".join(said[:4])
         one = len(said) == 1 and not said[0].endswith("s")
         looks = "looks as it did -- that change" if one else "look as they did -- those changes"
+        # The scene's tool only where there is one: said in a Pi project, Luna told the
+        # child "No scene object was changed" (the stress pass, SPIKES.md section 29).
+        scene = (" To change how a thing in the scene looks, use game_object with its name "
+                 "and the new colour." if "game_object" in self.toolbox.allowed else "")
         return (f"The changes to the {listed} did not go in -- those edits were refused, so "
                 f"{'it looks' if one else 'they look'} as before. Say only what really "
-                f"changed. To change how a thing in the scene looks, use game_object with "
-                f"its name and the new colour.",
+                f"changed.{scene}",
                 f"Open Nest: the {listed} {looks} did not go in.")
 
     def _scene_claims(self, text: str) -> str | None:

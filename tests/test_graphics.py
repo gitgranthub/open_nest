@@ -97,7 +97,7 @@ def test_the_kit_imports_nothing_but_pygame_and_the_standard_library() -> None:
     imported |= {node.module.split(".")[0] for node in ast.walk(tree)
                  if isinstance(node, ast.ImportFrom) and node.module}
     assert imported <= {"pygame", "random", "pathlib"}
-    assert looks.kit_version() == 1
+    assert looks.kit_version() == 2
 
 
 def test_colours_by_name_hex_and_numbers(kit) -> None:
@@ -179,6 +179,92 @@ def test_a_thing_is_a_rect_so_the_games_own_collisions_still_work(kit) -> None:
     player.center = cars[1].center
     assert player.collidelist(cars) == 1
     assert world.touching(player, "cars") == [cars[1]]
+
+
+def test_a_touch_counts_once_however_long_it_lasts(kit) -> None:
+    """SPIKES.md section 29: Luna's ``hits += 1`` under ``touching`` showed HITS 18 for one
+    bump. Not touching -> a touch begins: counted once -> still touching: not again ->
+    apart -> the next touch counts. ``touching`` itself stays every frame."""
+    scene, pygame, screen = kit
+    world = scene.Scene(screen)
+    car = world.add("cars", scene.Vehicle(), size=(80, 40), at=(300, 200))
+    player = pygame.Rect(100, 200, 20, 20)
+    hits, lasting = 0, 0
+
+    def frame() -> None:
+        nonlocal hits, lasting
+        world.update()
+        hits += len(world.touched(player, "cars"))
+        lasting += len(world.touching(player, "cars"))
+        world.draw()
+
+    frame()
+    assert (hits, lasting) == (0, 0)                  # not touching
+    player.center = car.center
+    for _ in range(20):                               # one touch, twenty frames long
+        frame()
+    assert (hits, lasting) == (1, 20)
+    player.x = 0                                      # apart
+    frame()
+    player.center = car.center                        # a second touch
+    for _ in range(5):
+        frame()
+    assert (hits, lasting) == (2, 25)
+
+
+def test_every_rule_asking_in_the_frame_a_touch_begins_hears_it(kit) -> None:
+    """Two rules on one touch -- a point and a sound -- each count it, once."""
+    scene, pygame, screen = kit
+    world = scene.Scene(screen)
+    coin = world.add("coins", scene.Coin(), size=(20, 20), at=(50, 50))
+    player = pygame.Rect(0, 0, 20, 20)
+    player.center = coin.center
+    points = sounds = 0
+    for _ in range(3):
+        points += len(world.touched(player, "coins"))
+        sounds += len(world.touched(player, "coins"))
+        world.draw()
+    assert (points, sounds) == (1, 1)
+
+
+def test_touched_takes_the_games_own_rects_too(kit) -> None:
+    """A recipe's asteroids, or Gary's own list, need not have a name in the scene."""
+    scene, pygame, screen = kit
+    world = scene.Scene(screen)
+    rocks = [pygame.Rect(0, 0, 30, 30), pygame.Rect(200, 0, 30, 30)]
+    player = pygame.Rect(5, 5, 10, 10)
+    seen = []
+    for _ in range(4):
+        seen.append(world.touched(player, rocks))
+        world.draw()
+    assert seen == [[rocks[0]], [], [], []]
+    player.x = 500
+    world.draw()
+    assert world.touched(player, rocks[1]) == []      # a single rect works as well
+
+
+def test_a_car_crossing_the_start_no_longer_pins_the_player_there(kit) -> None:
+    """SPIKES.md section 28I: the avoid rule sent the player back on every frame a car
+    overlapped it, so a car driving through the start held the player there for as long
+    as it took to pass. Sent back once, the player can move off straight away."""
+    scene, pygame, screen = kit
+
+    def frames_held(rule: str) -> int:
+        world = scene.Scene(screen)
+        world.add("cars", scene.Vehicle(), size=(80, 40), at=(270, 200), moves=(-1, 0))
+        player = pygame.Rect(300, 200, 40, 40)
+        start, held = player.topleft, 0
+        for _ in range(60):                           # one second of holding Right
+            player.x += 3
+            world.update()
+            if getattr(world, rule)(player, "cars"):
+                player.topleft = start
+            held += player.topleft == start
+            world.draw()
+        return held
+
+    assert frames_held("touching") > 20               # held at the start while it passes
+    assert frames_held("touched") == 1                # sent back once, then away
 
 
 def test_moving_things_come_back_round_only_off_the_side_they_head_for(kit) -> None:
@@ -315,6 +401,7 @@ def test_buildings_stand_on_the_road_and_cars_drive_on_it(eagle) -> None:
     assert cars.literals["on"] == "road" and cars.keywords["moves"] == "(-3, 0)"
     assert "cars" in scene.rules
     assert "player.topleft = (WIDTH // 2, HEIGHT // 2)" in game(eagle)
+    assert 'if scene.touched(player, "cars"):' in game(eagle)     # once per bump
     assert outcome.result["touch"] == "touching it sends the player back to the start"
 
 
@@ -324,8 +411,93 @@ def test_coins_to_collect_bring_a_score_with_them(eagle) -> None:
     source = game(eagle)
     assert "score = 0" in source and "score += 1" in source
     assert "coin.respawn()" in source
+    assert 'for coin in scene.touched(player, "coins"):' in source   # a point per catch
     assert "SCORE_COLOUR = (35, 38, 45)" in source      # dark on a light sky
     compile(source, "game.py", "exec")
+
+
+# ---------------------------------------------------- a touch counts once (SPIKES §29)
+
+KIT_V1 = (REPO / "tests" / "fixtures" / "scene_kit_v1.txt").read_text(encoding="utf-8")
+
+
+def test_the_kit_shipped_before_is_known_exactly() -> None:
+    """Version 1, byte for byte as 13C put it in projects -- and never the current kit."""
+    assert looks.is_earlier_kit(KIT_V1) and looks.kit_version(KIT_V1) == 1
+    assert "touched" not in looks.kit_methods(KIT_V1)
+    assert not looks.is_earlier_kit(looks.kit_source())
+    assert "touched" in looks.kit_methods() and "touching" in looks.kit_methods()
+    assert looks.is_earlier_kit(KIT_V1 + "# changed\n") is False
+
+
+def test_a_rule_written_before_the_kit_counted_touches_is_found_and_replaced(eagle) -> None:
+    call(eagle, name="cars", drawing="vehicle", count=2, moves="left", touch="avoid")
+    eagle.entrypoint_path.write_text(game(eagle).replace(
+        'scene.touched(player, "cars")', 'scene.touching(player, "cars")'))
+    assert "cars" in scene_source.read(game(eagle)).rules
+    assert scene_source.touch_rule(scene_source.read(game(eagle)), "cars") == "avoid"
+    call(eagle, name="cars", touch="collect")
+    source = game(eagle)
+    assert "scene.touching" not in source and "sends the player back" not in source
+    assert 'scene.touched(player, "cars"):' in source and "score += 1" in source
+
+
+def test_an_unchanged_earlier_kit_is_brought_up_to_date_by_the_next_change(eagle) -> None:
+    call(eagle, name="sky", drawing="sky")
+    kit = eagle.directory / "src" / "scene.py"
+    kit.write_text(KIT_V1, encoding="utf-8")        # a project from before version 2
+    refused = game_object.run(eagle, {"name": "sky", "drawing": "sky"})
+    assert refused.reason == "no_change" and refused.files == {}   # not a change by itself
+    outcome = call(eagle, name="cars", drawing="vehicle", moves="left", touch="avoid")
+    assert outcome.ok and outcome.result["files_changed"] == ["src/game.py", "src/scene.py"]
+    assert kit.read_text(encoding="utf-8") == looks.kit_source()
+    assert any("brought up to date" in note for note in outcome.result["notes"])
+    assert 'scene.touched(player, "cars")' in game(eagle)
+
+
+def test_a_kit_changed_by_hand_without_touched_keeps_the_rule_it_can_run(eagle) -> None:
+    """A child's own kit is never overwritten; the rule is the one that kit runs."""
+    call(eagle, name="sky", drawing="sky")
+    kit = eagle.directory / "src" / "scene.py"
+    kit.write_text(KIT_V1.replace("SMOOTH = 3", "SMOOTH = 2"), encoding="utf-8")
+    outcome = call(eagle, name="cars", drawing="vehicle", moves="left", touch="avoid")
+    assert outcome.ok and "src/scene.py" not in outcome.result["files_changed"]
+    assert 'if scene.touching(player, "cars"):' in game(eagle)
+    assert "SMOOTH = 2" in kit.read_text(encoding="utf-8")
+
+
+def test_a_recipe_hit_on_a_game_that_has_no_scene_yet_is_counted_by_the_scene(eagle) -> None:
+    """The dodging recipe writes ``scene.touched`` before its look call gives the game
+    its scene: a name only read is not a name the game has taken."""
+    source = game(eagle)
+    assert "scene" not in source
+    change = games.add_things(Context(eagle, games.facts(eagle), *DODGE_CARS))
+    assert "if scene.touched(player, cars):" in change.files["src/game.py"]
+    tree = ast.parse(change.files["src/game.py"])
+    assert "scene" in scene_source.names_used(tree)
+    assert "scene" not in scene_source.names_bound(tree)
+
+
+def test_a_collision_added_later_counts_with_the_scene_only_when_its_kit_can(dodging) -> None:
+    """``add_collision`` gives no look, so it brings no kit: it uses ``touched`` only when
+    the kit already in the project has it."""
+    from opennest.fastpath.classifier import Classification, Scored
+
+    def hit(question, options):
+        return Classification((Scored("reset_player", 1.0),), 20, 1.0, 2, 1.0, 0.0)
+
+    source = game(dodging).replace("if scene.touched(player, cars):\n"
+                                   "        player.center = (WIDTH // 2, HEIGHT // 2)\n", "")
+    assert "scene.touched" not in source
+    dodging.entrypoint_path.write_text(source)
+    ctx = Context(dodging, games.facts(dodging), "make something happen when I touch a car",
+                  {}, choose=hit)
+    written = games.add_collision(ctx).files["src/game.py"]
+    assert "if scene.touched(player, cars):" in written
+    (dodging.directory / "src" / "scene.py").write_text(KIT_V1, encoding="utf-8")
+    ctx = Context(dodging, games.facts(dodging), ctx.request, {}, choose=ctx.choose)
+    assert "if player.collidelist(cars) != -1:" in games.add_collision(ctx).files[
+        "src/game.py"]
 
 
 def test_the_same_name_again_changes_only_what_was_given(eagle) -> None:
@@ -445,7 +617,9 @@ def hand_drawn(eagle):
     source = change.files["src/game.py"].replace(
         "    pygame.display.flip()",
         "    for car in cars:\n        pygame.draw.rect(screen, CAR_COLOUR, car)\n"
-        "    pygame.display.flip()")
+        "    pygame.display.flip()").replace(
+        # With no scene, the rule is the one recipes wrote before the kit counted touches.
+        "if scene.touched(player, cars):", "if player.collidelist(cars) != -1:")
     eagle.entrypoint_path.write_text(source)
     return eagle
 
@@ -457,7 +631,9 @@ def test_the_recipes_cars_are_in_the_scene_drawn_on_their_own_rects(dodging) -> 
     # The only drawing by hand left is the starter's own square for the player.
     assert source.count("pygame.draw.") == 1 and "pygame.draw.rect(screen, PLAYER_COLOUR" \
         in source
-    assert "player.collidelist(cars)" in source and "car.x -= CAR_SPEED" in source
+    # A hit is once per touch (SPIKES.md section 29): a car crossing the middle cannot
+    # hold the player there.
+    assert "if scene.touched(player, cars):" in source and "car.x -= CAR_SPEED" in source
     assert games.motion_of(games.facts(dodging), "CAR")[0] == "drift"
 
 
@@ -466,7 +642,7 @@ def test_a_recipes_cars_get_a_new_look_and_keep_moving_and_colliding(dodging) ->
     assert outcome.ok, outcome.result
     after = game(dodging)
     assert 'scene.add("cars", Vehicle("blue", size=(80, 40)), rects=cars' in after
-    assert "player.collidelist(cars)" in after            # the rule is kept
+    assert "scene.touched(player, cars)" in after            # the rule is kept
     assert "car.x -= CAR_SPEED" in after                  # so is the movement
     assert outcome.result["moves"] == "the game's own code moves them"
     assert outcome.result["touch"].startswith("touching one sends the player back")
@@ -494,7 +670,7 @@ def test_a_recipes_cars_asked_onto_the_road_are_handed_to_the_scene(dodging) -> 
             'moves=(-CAR_SPEED, 0)') in source.replace("\n", " ").replace("  ", " ") or \
         "moves=(-CAR_SPEED, 0)" in source
     assert "car.x -= CAR_SPEED" not in source            # the scene moves them now
-    assert "player.collidelist(cars)" in source          # the rule still works on Things
+    assert "scene.touched(player, cars)" in source          # the rule still works on Things
     compile(source, "game.py", "exec")
 
 
@@ -544,7 +720,7 @@ def test_a_recipes_things_can_wear_a_childs_picture(dodging) -> None:
         (dodging.directory / relative).write_text(text, encoding="utf-8")
     source = game(dodging)
     assert 'scene.add("cars", Picture("assets/eagle.png")' in source
-    assert "car.x -= CAR_SPEED" in source and "player.collidelist(cars)" in source
+    assert "car.x -= CAR_SPEED" in source and "scene.touched(player, cars)" in source
 
 
 def test_shapes_handed_to_the_scene_keep_their_size(tmp_path) -> None:
@@ -850,6 +1026,83 @@ def test_a_scene_add_inside_the_loop_is_made_every_frame() -> None:
     source = ("import pygame\nscene = Scene(None)\nwhile True:\n"
               "    scene.add('car', Vehicle(), at=(0, 0))\n    pygame.display.flip()\n")
     assert evidence.made_every_frame(source, {"car"}) == ["car"]
+
+
+SPACE_RUN = '''import pygame
+from scene import Scene
+screen = pygame.display.set_mode((640, 480))
+scene = Scene(screen)
+player = pygame.Rect(0, 0, 40, 40)
+enemy = pygame.Rect(50, 50, 40, 40)
+coins, hits, lives, score = [], 0, 3, 0
+hit_before = False
+while True:
+    scene.update()
+{rule}
+    screen.fill((0, 0, 0))
+    scene.draw()
+    pygame.display.flip()
+'''
+
+#: Luna's space run (SPIKES.md section 28M), and the same shape with a lost life.
+COUNTED_EVERY_FRAME = [
+    '    if scene.touching(player, "asteroids"):\n        hits += 1',
+    '    if player.colliderect(enemy):\n        lives -= 1',
+    '    for rock in scene.touching(player, "rocks"):\n        hits += 1',
+    '    if player.collidelist(coins) != -1:\n        score += 1',
+]
+#: Counted once per touch, or not a count: none of these may be flagged.
+COUNTED_ONCE = [
+    '    if scene.touched(player, "asteroids"):\n        hits += 1',
+    '    for coin in scene.touching(player, "coins"):\n        score += 1\n'
+    '        coin.respawn()',
+    '    for coin in coins:\n        if player.colliderect(coin):\n            score += 1\n'
+    '            coin.x = 700',
+    '    if player.colliderect(enemy) and not hit_before:\n        lives -= 1',
+    '    if scene.touching(player, "cars"):\n        player.topleft = (0, 0)',
+    '    if scene.touching(player, "lava"):\n        print("hot")',
+    '    hit_before = player.colliderect(enemy)',
+]
+
+
+@pytest.mark.parametrize("rule", COUNTED_EVERY_FRAME)
+def test_a_count_made_on_every_frame_of_a_touch_is_said(rule) -> None:
+    from opennest.agent import evidence
+
+    found = evidence.counted_every_frame(SPACE_RUN.format(rule=rule))
+    assert len(found) == 1 and "every frame of a touch" in found[0]
+    if "scene.touching" in rule:
+        assert "scene.touched(player, " in found[0]
+
+
+@pytest.mark.parametrize("rule", COUNTED_ONCE)
+def test_a_count_made_once_per_touch_is_left_alone(rule) -> None:
+    from opennest.agent import evidence
+
+    assert evidence.counted_every_frame(SPACE_RUN.format(rule=rule)) == []
+
+
+def test_the_edit_that_counts_every_frame_is_told_so_in_its_result(eagle) -> None:
+    """Said the turn it is written, so Gary can put it right before the child plays."""
+    from opennest.agent import evidence
+
+    call(eagle, name="sky", drawing="sky")
+    call(eagle, name="asteroids", drawing="star", count=3, moves="down")
+    box = Toolbox(eagle)
+    source = game(eagle)
+    anchor = "    scene.update()\n"
+    assert anchor in source
+    result = box.dispatch("edit_file", {
+        "path": "src/game.py", "old_text": anchor,
+        "new_text": anchor + '    if scene.touching(player, "asteroids"):\n'
+                             '        score += 1\n'})
+    assert result.ok and result.content.startswith("Changed src/game.py. Note: `score += 1`")
+    assert 'scene.touched(player, "asteroids") is true only' in result.content
+    again = box.dispatch("edit_file", {"path": "src/game.py", "old_text": "PLAYER_SPEED = 5",
+                                       "new_text": "PLAYER_SPEED = 6"})
+    assert again.content == "Changed src/game.py."       # said once, when it was made
+    block = evidence.checked_block(eagle, box, (), ())
+    assert "`score += 1` runs on every frame of a touch" in block
 
 
 def test_what_the_test_saw_the_scene_draw_is_said_and_off_screen_is_flagged() -> None:

@@ -463,7 +463,8 @@ class Toolbox:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         rel = str(path.relative_to(self.project.directory.resolve()))
-        return ToolResult(True, f"Wrote {rel} ({len(content)} characters).",
+        return ToolResult(True, f"Wrote {rel} ({len(content)} characters)."
+                          + _counting_note(relative, "", content),
                           changed_files=(rel,),
                           recovered="escaping" if unescaped else "")
 
@@ -545,7 +546,8 @@ class Toolbox:
         _reject_broken_python(relative, updated)
         path.write_text(updated, encoding="utf-8")
         rel = str(path.relative_to(self.project.directory.resolve()))
-        return ToolResult(True, f"Changed {rel}.", changed_files=(rel,), recovered=recovered)
+        return ToolResult(True, f"Changed {rel}." + _counting_note(relative, text, updated),
+                          changed_files=(rel,), recovered=recovered)
 
     def _refuse_picture_name(self, relative: str) -> None:
         """A picture or a sound is never written as text.
@@ -929,6 +931,18 @@ def _reject_broken_python(relative: str, content: str) -> None:
     except ValueError as exc:  # e.g. NUL bytes
         raise ToolError(f"That content cannot be saved to {relative}: {exc}",
                         reason="bad_content") from exc
+
+
+def _counting_note(relative: str, before: str, after: str) -> str:
+    """A count this write just made happen on every frame of a touch, said in its result
+    -- the turn it is written, not the turn after (SPIKES.md section 29)."""
+    if not relative.endswith(".py") or "pygame" not in after:
+        return ""
+    from opennest.agent import evidence
+
+    new = [s for s in evidence.counted_every_frame(after)
+           if s not in evidence.counted_every_frame(before)]
+    return "".join(f" Note: {sentence}" for sentence in new)
 
 
 def _require(args: dict, key: str) -> str:

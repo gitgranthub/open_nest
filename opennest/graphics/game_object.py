@@ -158,7 +158,7 @@ def _run(project, args: dict, pictures, kit_text, message=("", ())) -> Outcome:
     kit_now = _kit_status(project, kit_text) if needs_scene else "not needed"
     if kit_now == "missing":
         files[KIT_PATH] = looks.kit_source()
-    if needs_scene and scene.variable is None and "scene" in source.names_used(scene.tree):
+    if needs_scene and scene.variable is None and "scene" in source.names_bound(scene.tree):
         raise Refused(f"{entry} already uses the name 'scene' for something else, so Open "
                       f"Nest can't add its scene.", "name_taken")
     if needs_scene and not scene.adopted:
@@ -177,7 +177,13 @@ def _run(project, args: dict, pictures, kit_text, message=("", ())) -> Outcome:
             raise Refused(f"src/scene.py was changed and no longer has "
                           f"{', '.join(sorted(needed))}, which this needs. Nothing was "
                           f"changed.", "kit_changed")
-    if text == path.read_text(encoding="utf-8") and KIT_PATH not in files:
+    unchanged = text == path.read_text(encoding="utf-8")
+    if kit_now == "earlier" and not unchanged:
+        # A kit an earlier Open Nest put here, exactly as it was: the current one keeps
+        # everything it had and adds what this change may use (``touched``, version 2).
+        files[KIT_PATH] = looks.kit_source()
+        notes.append("src/scene.py was brought up to date with Open Nest's newest scene kit")
+    if unchanged and KIT_PATH not in files:
         # The same rule edit_file keeps: a change that leaves the game exactly as it was is
         # not a change, and must not be reported or counted as one.
         raise Refused(f"The {result.get('object', name)} already looks like that, so nothing "
@@ -286,7 +292,8 @@ def _project_pictures(project) -> list[str]:
 
 
 def _kit_status(project, kit_text: str | None) -> str:
-    """"missing", "ours" (the shipped kit or one changed by hand), or refuse."""
+    """"missing", "earlier" (a kit an earlier Open Nest shipped, unchanged), "ours" (the
+    current kit or one changed by hand), or refuse."""
     place = project.directory / KIT_PATH
     if not place.is_file():
         return "missing"
@@ -298,7 +305,22 @@ def _kit_status(project, kit_text: str | None) -> str:
         raise Refused("There is already a src/scene.py in this project that isn't Open "
                       "Nest's scene kit, so Open Nest won't touch it. Nothing was changed.",
                       "kit_taken")
-    return "ours"
+    return "earlier" if looks.is_earlier_kit(present) else "ours"
+
+
+def counts_touches(project) -> bool:
+    """Whether the kit this project will have after a change has ``Scene.touched``: it
+    has none yet (it gets the current one), an earlier one of ours unchanged (brought up
+    to date), or a changed one that has it anyway. A child's changed kit without it keeps
+    the rules it can run -- ``touching``, every frame."""
+    place = project.directory / KIT_PATH
+    if not place.is_file():
+        return True
+    try:
+        present = place.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False
+    return looks.is_earlier_kit(present) or "touched" in looks.kit_methods(present)
 
 
 def _adopt(text: str, facts, scene: source.GameScene) -> str:
@@ -917,8 +939,9 @@ class _Work:
             if not source._mentions(stmt, {items}):
                 continue
             if any(isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
-                   and n.func.attr in ("collidelist", "colliderect", "touching")
-                   and (_dotted_name(n.func.value) == player or n.func.attr == "touching")
+                   and n.func.attr in ("collidelist", "colliderect", "touching", "touched")
+                   and (_dotted_name(n.func.value) == player
+                        or n.func.attr in ("touching", "touched"))
                    for n in ast.walk(stmt)):
                 return "collect" if "score" in ast.unparse(stmt) else "avoid"
         return ""
@@ -1046,8 +1069,9 @@ class _Work:
         if collect and framed.count("\n" + block + "\n") == 1:
             start = framed[:framed.index("\n" + block + "\n")].count("\n")
             one = thing.item
+            touch_call = "touched" if counts_touches(self.project) else "touching"
             edit.replace(start, start + len(collect) - 1, [
-                f"{indent}for {one} in {self.var}.touching({self.facts.get('player')}, "
+                f"{indent}for {one} in {self.var}.{touch_call}({self.facts.get('player')}, "
                 f"{quoted(self.name)}):", f"{indent}    score += 1",
                 f"{indent}    {one}.respawn()"])
         self._rule(edit, self.name)
@@ -1376,19 +1400,22 @@ class _Work:
         var = self.var
         at = (self.scene.update_line + 1) if self.scene.update_line is not None else \
             self.facts.get("fill")
+        # Once per touch, in the frame it begins: a bump that lasts twenty frames is one
+        # bump, and a car crossing the start cannot pin the player there (SPIKES §29).
+        touch_call = "touched" if counts_touches(self.project) else "touching"
         if touch == "avoid":
             start = source.rect_start(self.scene.tree, player) or \
                 f"({self.width // 2}, {self.height // 2})"
             block = [f"{indent}{source.RULE_MARK}touching {name} sends the player back to "
                      f"the start.",
-                     f"{indent}if {var}.touching({player}, {quoted(name)}):",
+                     f"{indent}if {var}.{touch_call}({player}, {quoted(name)}):",
                      f"{indent}    {player}.topleft = {start}"]
         else:
             one = _singular(name)
             if one in source.names_used(self.scene.tree) or not one.isidentifier():
                 one = "touched"
             block = [f"{indent}{source.RULE_MARK}touching {name} scores a point.",
-                     f"{indent}for {one} in {var}.touching({player}, {quoted(name)}):",
+                     f"{indent}for {one} in {var}.{touch_call}({player}, {quoted(name)}):",
                      f"{indent}    score += 1",
                      f"{indent}    {one}.respawn()"]
             self._score(edit)
@@ -1399,9 +1426,11 @@ class _Work:
         player = self.facts.get("player")
         for stmt in loop.body if loop else ():
             for node in ast.walk(stmt):
-                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and \
-                        node.func.attr in ("collidelist", "colliderect") and _dotted_name(
-                            node.func.value) == player and source._mentions(stmt, {items}):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and (
+                        (node.func.attr in ("collidelist", "colliderect")
+                         and _dotted_name(node.func.value) == player)
+                        or node.func.attr in ("touched", "touching")) and \
+                        source._mentions(stmt, {items}):
                     return True
         return False
 

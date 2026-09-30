@@ -2,9 +2,9 @@
   "id": "research_basic",
   "profile": "research",
   "name": "Research Starter",
-  "description": "A place for a question, the data, the notes and what you found.",
+  "description": "An analysis that says what is in the first .csv in data/ and draws a chart of it -- press Run Analysis -- and a place for the question, the notes and what you found.",
   "entry_point": "analysis.py",
-  "version": 1,
+  "version": 2,
   "files": [
     "analysis.py",
     "question.md",

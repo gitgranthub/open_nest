@@ -19,16 +19,9 @@ How a game uses it:
     while running:
         ...                                    # your own movement and rules
         scene.update()                         # moves the things that move by themselves
-        if scene.touched(player, "cars"):      # once per bump, not on every frame of it
-            hits += 1
         screen.fill(BACKGROUND)
         scene.draw()                           # everything, back to front, layer by layer
         pygame.display.flip()
-
-Two ways to ask about touching: ``scene.touched(player, "coins")`` is the coins the player
-has just started touching -- each touch counts once, however long it lasts, so use it for
-a point, a hit, a catch or a lost life. ``scene.touching(player, "lava")`` is everything
-it is touching right now, on every frame the touch goes on.
 
 What something LOOKS like and what it DOES are kept apart. A thing's rectangle is its
 position, its size for bumping into things, and what your code moves; its look is only
@@ -42,8 +35,7 @@ from pathlib import Path
 import pygame
 
 #: Scene files are versioned so Open Nest can tell its own copy from one you changed.
-#: 2 added ``Scene.touched``.
-VERSION = 2
+VERSION = 1
 
 #: Layers, drawn back to front. Things in the same layer are drawn in the order added.
 LAYERS = ("background", "scenery", "things", "player", "effects", "ui")
@@ -662,9 +654,6 @@ class Scene:
         self.screen = screen or pygame.display.get_surface()
         self.entries = {}
         self.shown = {}
-        # For touched(): which touches are going on, and the frame each one began in.
-        self.contacts = {}
-        self.frame = 0
         Scene.all.append(self)
 
     # -- building the scene --------------------------------------------------------
@@ -761,26 +750,8 @@ class Scene:
         self.entries.pop(name, None)
 
     def touching(self, rect, name):
-        """The things called ``name`` that ``rect`` is touching now, as a list -- on every
-        frame the touch goes on. For something that lasts while you touch it."""
+        """The things called ``name`` that ``rect`` is touching now, as a list."""
         return [item for item in self.get(name) if rect.colliderect(item)]
-
-    def touched(self, rect, name):
-        """The things called ``name`` -- or in a rect or list of rects -- that ``rect`` has
-        just started touching, as a list. Each touch counts once, in the frame it begins,
-        however long it lasts; only after they come apart can the next one count. For a
-        point, a hit, a catch or a crash."""
-        things = self.get(name) if isinstance(name, str) else \
-            [name] if isinstance(name, pygame.Rect) else list(name)
-        began = []
-        for item in things:
-            pair = (id(rect), id(item))
-            if not rect.colliderect(item):
-                self.contacts.pop(pair, None)
-            elif self.contacts.setdefault(pair, self.frame) == self.frame:
-                # New this frame -- for every rule that asks in it, not just the first.
-                began.append(item)
-        return began
 
     def reset(self, name):
         """Put what is called ``name`` back where it started."""
@@ -824,7 +795,6 @@ class Scene:
     def draw(self, screen=None):
         """Draw everything, back to front, one layer at a time."""
         self._stand()
-        self.frame += 1
         screen = screen or self.screen
         area = screen.get_rect()
         for layer in LAYERS:

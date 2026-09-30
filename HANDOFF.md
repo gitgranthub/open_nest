@@ -13,8 +13,29 @@ branch, nothing merged to `main`). Five pieces, in order:
 | 13B | Pop out / Put back: the same game widget moved into a window of its own and back, never restarted | PHASE_13_HANDOFF §8, SPIKES §26J |
 | **13C** | **the game graphics and scene layer**: a child's picture becomes the player; a scene -- sky, road, buildings, cars to dodge, coins to collect -- built from Gary's plain choices through one tool, `game_object`, drawn by `src/scene.py`, a small pygame kit in the project; look kept separate from movement and collisions; the playtest records what the scene drew | PHASE_13_HANDOFF §9, SPIKES §28 |
 | **13C finished** | the same building blocks for everyone: the Fast Path's add-a-thing recipes give every look through `game_object` (no inline pygame, no named drawings added); a Blank project that has become a game is offered `game_object` (measured first); Gary can change anything in the scene -- look, colour, size, place, motion, layer, touch; a made-up drawing name is answered with how to compose it; clicked through the real app under cocoa, 45/45 | PHASE_13_HANDOFF §9.11, SPIKES §28H-N |
+| **stress pass** | Website, Research, Arduino, Pi and Blank driven with the local 4B and 8B, Luna and -- for the first time -- Sonnet; the touch bug fixed (`scene.touched`, once per touch; kit v2); sixteen shared-layer fixes for what the walks found, none provider-specific | PHASE_13_HANDOFF §10, SPIKES §29 |
 
-**1572 tests pass, ruff is clean** (1525 when 13C was paused, 1430 before 13C). The
+**The stress pass in one paragraph** (SPIKES §29). The same three kinds of message -- a
+change, a question about the project, a question about Open Nest -- through every non-game
+preset and Blank begun five ways, with four models, through the real Workbench
+(`benchmarks/stress/`). No question changed a file in any run, and no tool protocol reached
+the chat from any provider. What got through was fixed in the shared layer: a press of Run
+counted as a change (so "I updated main.py" in an answer went unchecked); edit
+instructions handed to the child instead of an edit; "confirms blinks on a real Pi";
+a chart drawn and "nothing changed"; a website colour no file has; a starter described
+without saying what it does (Arduino "does not blink yet"; the Research starter charting
+`week` against the row number); a reply repeating what an Undo took back; a file named that
+does not exist ("outputs/growth.png", from a stale line in the Research prompt), or said to
+be changed when nothing changed it; and three false positives of Open Nest's own checks,
+found by Sonnet and the 8B. The touch bug: `scene.touched` counts a hit, a point, a catch
+or a lost life once per touch; the rules, the dodging recipe and Gary's own code use it,
+and unchanged v1 kits are brought up to date. Luna and Sonnet behaved alike and well;
+Sonnet needed nothing of its own. The keys the owner left in `.env` are in the Keychain,
+the file is gone, and no key material is in any file, log, result or commit.
+
+**1622 tests pass, ruff is clean** (1572 after 13C, 1525 when 13C was paused, 1430 before
+13C). The Phase 12 app walk is 41/41 under cocoa after the stress pass too
+(`benchmarks/stress/results/app_walk_stress.txt`). The
 Phase 12 app walk 41/41 through MainWindow under cocoa, its dodging game now built with
 `game_object`. The 13C acceptance walks -- the work order's eagle sequence through the
 real Workbench with the real 4B and with Qwen3 8B, the real-app click-through, the
@@ -73,25 +94,23 @@ name and all, into the chat.
    owner's ruling), and says when a picture has a solid background. Next: take a plain
    background away for the child -- `Picture(path, see_through=True)` in the kit (the
    corner colour's connected area made transparent with `pygame.mask`, so a white eye is
-   kept), `VERSION = 2` with unchanged v1 kits in projects brought up to date, and a
-   `see_through` argument on `game_object` -- a description change, so re-run
-   `benchmarks/graphics/tool_choice.py` before it ships.
+   kept), `VERSION = 3` -- the bringing-up-to-date is built now (SPIKES §29B): add v2's
+   SHA-256 to `looks.EARLIER_KITS` -- and a `see_through` argument on `game_object` -- a
+   description change, so re-run `benchmarks/graphics/tool_choice.py` before it ships.
 3. **Phase 14 -- Publish Version**, reshaped by the owner (PHASE_13_HANDOFF §6,
    PHASE_12_HANDOFF §7). Not started. The sunglasses wait for it.
 4. **Hardening items, each separate and none the graphics layer's** (SPIKES §28N): the
    playtest sees under two seconds of a game, so a crash behind a timer is missed (three
    options, with their latency cost -- a parser check for pygame names that do not exist
-   is the cheap one); a touch counts on every frame it lasts, so a dodging game can pin its
-   player at the start and a hit counter counts 18 for one hit (`scene.touched`, true on the
-   frame a touch begins, is the proposal); Gary can repeat one refused call until the
-   turn's budget runs out.
+   is the cheap one); Gary can repeat one refused call until the turn's budget runs out.
+   ~~A touch counts on every frame it lasts~~ -- **fixed** by `scene.touched` (SPIKES §29B).
 5. **Known limits, recorded rather than hidden**: the 4B's layouts are its own and
    uneven; motion is left, right, up, down or bounce (a recipe's other motions stay its
    own code); what a picture *shows* is not checked; a Blank project cannot become a
    Website or Arduino project in place (architecture work). SPIKES §27E-F, §28G, §28N.
-6. **A working Anthropic key**, to run the same walks with Claude (Luna has been run):
-   `benchmarks/graphics/eagle_walk.py <label> claude-sonnet` and
-   `benchmarks/graphics/scenes_walk.py <label> claude-sonnet` (SPIKES §28K).
+6. ~~**A working Anthropic key**~~ -- the owner handed over a new one; **Sonnet has run**
+   the stress pass (SPIKES §29). Its Games walks are still `benchmarks/graphics/eagle_walk.py
+   <label> claude-sonnet` and `scenes_walk.py <label> claude-sonnet`, if they are wanted.
 
 Phase 12's own definition of done -- a child asks for a game and gets one -- is still the
 owner's call to close; everything below is the history that led here, and the traps.
@@ -1080,11 +1099,17 @@ does.** Do not "clean up" these without re-measuring:
   shows it. The local provider used to hold the only copy, so a cloud model's written-out
   call would have reached the child. `AgentWorker.chunk` is the raw stream -- connect it to
   the chat and the filter is bypassed.
-- **"The keys do not work" in a dodging game can be the game.** The avoid rule sends the
-  player back to its start on every frame it touches, so a car crossing the start pins it
-  there (§28I). A driver that reads the player's place after a key hold, not during it,
-  reports a working game as broken. And Run Game disables the chat box until its startup
-  check reports: a driver that types straight after Stop types into nothing.
+- **"The keys do not work" in a dodging game could be the game.** The avoid rule used to
+  send the player back on every frame it touched, so a car crossing the start pinned it
+  there (§28I); since SPIKES §29B it is `scene.touched`, once per touch. A driver still
+  has to read the player's place during a key hold, not after it. And Run Game disables
+  the chat box until its startup check reports: a driver that types straight after Stop
+  types into nothing.
+- **`touching` is every frame; `touched` is once per touch** (SPIKES §29B). A point, a
+  hit, a catch or a lost life is `touched`; something that lasts while touched is
+  `touching`. A kit change is `VERSION` raised plus the old file's SHA-256 in
+  `looks.EARLIER_KITS` -- without it, projects holding the old kit run new rules against
+  it and crash (`tests/fixtures/scene_kit_v1.txt` is v1, byte for byte).
 
 **Phase 11 traps:**
 

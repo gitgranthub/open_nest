@@ -187,6 +187,84 @@ def made_every_frame(source: str, nouns) -> list[str]:
     return found
 
 
+#: Collision checks that are true on every frame two things overlap.
+_OVERLAPS = ("colliderect", "collidelist", "collidelistall", "collideobjects", "touching")
+#: What moves one of the two apart, so the next frame no longer overlaps.
+_SEPARATES = ("respawn", "remove", "pop", "kill", "reset", "clear")
+
+
+def counted_every_frame(source: str) -> list[str]:
+    """Counters the game changes on every frame a touch lasts, as sentences for Gary.
+
+    Measured in Luna's space run (SPIKES.md section 28M): ``if scene.touching(player,
+    "asteroids"): hits += 1`` showed "HITS 18" for one bump in two and a half seconds, and
+    ``lives -= 1`` the same way takes every life in one touch. Read with the parser: an
+    ``if`` (or ``for``) in the game loop headed only by an overlap check, whose body adds
+    to or takes from a number and moves nothing apart -- a collected coin that respawns
+    is counted once, and a check with its own guard (``and not hit_before``) is left
+    alone. ``scene.touched`` counts once per touch, and is what each sentence points to.
+    """
+    import ast
+
+    from opennest.graphics import looks
+    from opennest.graphics import source as scene_source
+
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return []
+    loop = scene_source.main_loop(tree)
+    if loop is None:
+        return []
+    scene = scene_source.read(source)
+    counts = scene.adopted and "touched" in looks.kit_methods()
+
+    def overlap(head) -> ast.Call | None:
+        if isinstance(head, ast.Compare) and len(head.ops) == 1:
+            head = head.left                   # player.collidelist(cars) != -1
+        if isinstance(head, ast.Call) and isinstance(head.func, ast.Attribute) and \
+                head.func.attr in _OVERLAPS:
+            return head
+        return None
+
+    found = []
+    for node in (n for stmt in loop.body for n in ast.walk(stmt)):
+        head = node.test if isinstance(node, ast.If) else node.iter if isinstance(
+            node, ast.For) else None
+        call = overlap(head)
+        if call is None:
+            continue
+        body = [n for stmt in node.body for n in ast.walk(stmt)]
+        counters = [n for n in body if isinstance(n, ast.AugAssign)
+                    and isinstance(n.target, ast.Name) and isinstance(n.op, (ast.Add, ast.Sub))]
+        apart = any(isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                    and n.func.attr in _SEPARATES for n in body) or any(
+            isinstance(n, ast.Assign) and any(isinstance(t, (ast.Attribute, ast.Subscript))
+                                               for t in n.targets) for n in body)
+        if not counters or apart:
+            continue
+        def code(part) -> str:                 # as the game writes it, quotes and all
+            return ast.get_source_segment(source, part) or ast.unparse(part)
+
+        counter, check = code(counters[0]), code(call)
+        if counts and call.func.attr == "touching":
+            instead = f"{scene.variable}.touched({', '.join(code(a) for a in call.args)})"
+        elif counts and len(call.args) == 1:
+            instead = f"{scene.variable}.touched({code(call.func.value)}, " \
+                      f"{code(call.args[0])})"
+        else:
+            instead = ""
+        way = (f"{instead} is true only in the frame a touch begins" if instead else
+               "count it only in the frame a touch begins, by remembering whether they "
+               "were touching the frame before")
+        sentence = (f"`{counter}` runs on every frame of a touch ({check}), so a touch "
+                    f"lasting one second changes it about 60 times. If it should happen "
+                    f"once per touch -- a hit, a point, a catch, a lost life -- {way}.")
+        if sentence not in found:
+            found.append(sentence)
+    return found[:3]
+
+
 def _drawn_under_the_scene(scene) -> list[str]:
     """What the loop draws by hand between the fill and ``scene.draw()`` -- painted over.
 
@@ -308,6 +386,7 @@ def _game_lines(project: Project, source: str, asked=()) -> list[str]:
     for noun in made_every_frame(source, asked):
         lines.append(f"- The {noun} is made again inside the game loop every frame, so it "
                      f"is put back where it started each time and cannot move anywhere.")
+    lines += [f"- {sentence}" for sentence in counted_every_frame(source)]
     return lines
 
 
@@ -563,6 +642,9 @@ def _arduino_lines(project: Project, toolbox) -> list[str]:
         lines.append(f"- Pins the sketch uses, read from the code: {said}.")
     else:
         lines.append("- The sketch names no pins.")
+    doing = _sketch_does(project)
+    if doing:
+        lines.append(f"- What it does, read from the code: {doing}")
     board = project.manifest.arduino_board
     lines.append(f"- Board chosen beside Compile: {board}." if board else
                  "- No board is chosen yet. They pick theirs beside the Compile button; "
@@ -574,6 +656,29 @@ def _arduino_lines(project: Project, toolbox) -> list[str]:
     lines.append("- Nothing in Open Nest can see or test the board. After Send to Board, only "
                  "the child can say what it does.")
     return lines
+
+
+def _sketch_does(project: Project) -> str:
+    """The blink the sketch's loop() really does, from its constants -- or "".
+
+    Measured on the stress pass (SPIKES.md section 29): after an Undo back to the
+    starter, Luna told the child "the sketch is back to the starter, so it does not blink
+    yet" -- the starter blinks, and nothing Gary was handed said so."""
+    try:
+        from opennest.fastpath.kinds import arduino
+
+        facts = arduino.facts(project)
+    except Exception:  # noqa: BLE001 - a fact that cannot be read is simply not said
+        return ""
+    constants = facts.get("constants") or {}
+    if not (facts.has("blink_times") and facts.has("led_writes")):
+        return ""
+    pin = constants.get("LED_PIN")
+    light = ("the board's own light (LED_BUILTIN)" if pin is not None and
+             pin.value == "LED_BUILTIN" else f"the light on {pin.value}" if pin else
+             "the light")
+    return (f"loop() turns {light} on for {constants['ON_MILLISECONDS'].value} ms and off "
+            f"for {constants['OFF_MILLISECONDS'].value} ms, over and over -- it blinks.")
 
 
 def _pi_lines(project: Project) -> list[str]:
@@ -649,6 +754,107 @@ def _data_and_picture_lines(project: Project, toolbox) -> list[str]:
     return lines
 
 
+#: A colour word, and the colour families a page's values may have for it to be true --
+#: generous at the edges: "coral" is fine on an orange, a pink or a red.
+COLOUR_WORDS = {
+    "red": {"red", "pink"}, "crimson": {"red"}, "scarlet": {"red"}, "cherry": {"red"},
+    "orange": {"orange", "red"}, "coral": {"orange", "pink", "red"},
+    "peach": {"orange", "pink"}, "tangerine": {"orange"}, "amber": {"orange", "yellow"},
+    "yellow": {"yellow", "orange"}, "gold": {"yellow", "orange"},
+    "golden": {"yellow", "orange"}, "lemon": {"yellow"}, "green": {"green", "teal"},
+    "lime": {"green", "yellow"}, "mint": {"green", "teal"}, "teal": {"teal", "green", "blue"},
+    "turquoise": {"teal", "blue"}, "cyan": {"teal", "blue"}, "aqua": {"teal", "blue"},
+    "blue": {"blue", "teal", "purple"}, "navy": {"blue"}, "purple": {"purple", "pink"},
+    "violet": {"purple"}, "lavender": {"purple"}, "lilac": {"purple", "pink"},
+    "pink": {"pink", "red", "purple"}, "magenta": {"pink", "purple"},
+    "brown": {"brown", "orange"}, "black": {"black"}, "white": {"white"},
+    "gray": {"gray"}, "grey": {"gray"}, "silver": {"gray", "white"},
+}
+#: CSS's own colour names that pages use most, by value.
+_CSS_NAMED = {
+    "red": (255, 0, 0), "orange": (255, 165, 0), "yellow": (255, 255, 0),
+    "green": (0, 128, 0), "blue": (0, 0, 255), "purple": (128, 0, 128),
+    "pink": (255, 192, 203), "brown": (165, 42, 42), "black": (0, 0, 0),
+    "white": (255, 255, 255), "gray": (128, 128, 128), "grey": (128, 128, 128),
+    "gold": (255, 215, 0), "coral": (255, 127, 80), "tomato": (255, 99, 71),
+    "salmon": (250, 128, 114), "crimson": (220, 20, 60), "orangered": (255, 69, 0),
+    "darkorange": (255, 140, 0), "khaki": (240, 230, 140), "lime": (0, 255, 0),
+    "limegreen": (50, 205, 50), "forestgreen": (34, 139, 34), "seagreen": (46, 139, 87),
+    "teal": (0, 128, 128), "turquoise": (64, 224, 208), "cyan": (0, 255, 255),
+    "aqua": (0, 255, 255), "skyblue": (135, 206, 235), "navy": (0, 0, 128),
+    "royalblue": (65, 105, 225), "dodgerblue": (30, 144, 255), "violet": (238, 130, 238),
+    "indigo": (75, 0, 130), "magenta": (255, 0, 255), "hotpink": (255, 105, 180),
+    "lavender": (230, 230, 250), "beige": (245, 245, 220), "tan": (210, 180, 140),
+    "chocolate": (210, 105, 30), "sienna": (160, 82, 45), "silver": (192, 192, 192),
+    "lightgray": (211, 211, 211), "darkgray": (169, 169, 169),
+}
+
+
+def colour_family(rgb) -> str:
+    """The plain name a child would give a colour: its hue, or black / white / gray."""
+    import colorsys
+
+    red, green, blue = (max(0, min(255, int(v))) / 255 for v in rgb[:3])
+    hue, light, sat = colorsys.rgb_to_hls(red, green, blue)
+    hue *= 360
+    if light > 0.93:
+        return "white"
+    if light < 0.12:
+        return "black"
+    if sat < 0.15:
+        return "white" if light > 0.85 else "black" if light < 0.2 else "gray"
+    if hue < 12 or hue >= 345:
+        return "brown" if light < 0.3 else "pink" if light > 0.75 else "red"
+    if hue < 45:
+        return "brown" if light < 0.35 else "orange"
+    if hue < 70:
+        return "yellow"
+    if hue < 165:
+        return "green"
+    if hue < 200:
+        return "teal"
+    if hue < 255:
+        return "blue"
+    if hue < 290:
+        return "purple"
+    return "pink"
+
+
+def page_colours(project: Project) -> tuple[set[str], set[str]]:
+    """The colour families a website's own files use, and the colour words in them.
+
+    Read from every .css and .html file under src/: hex, rgb() and hsl() values and CSS's
+    colour names, each given its plain name (``colour_family``). The words -- "orange"
+    in a class name, a comment or the page's own text -- are kept too, so a colour named
+    anywhere in the files is never said to be missing."""
+    import colorsys
+    import re as _re
+
+    families, words = set(), set()
+    for path in sorted((project.directory / "src").rglob("*")):
+        if path.suffix.lower() not in (".css", ".html"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8").lower()
+        except (OSError, UnicodeDecodeError):
+            continue
+        words |= set(_re.findall(r"[a-z]+", text)) & set(COLOUR_WORDS)
+        for value in _re.findall(r"#([0-9a-f]{6}|[0-9a-f]{3})\b", text):
+            if len(value) == 3:
+                value = "".join(c * 2 for c in value)
+            families.add(colour_family(tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))))
+        for numbers in _re.findall(r"rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)", text):
+            families.add(colour_family(tuple(int(n) for n in numbers)))
+        for h, sat, light in _re.findall(r"hsla?\(\s*(\d+)[a-z]*[,\s]+(\d+)%[,\s]+(\d+)%",
+                                          text):
+            rgb = colorsys.hls_to_rgb(int(h) / 360, int(light) / 100, int(sat) / 100)
+            families.add(colour_family(tuple(v * 255 for v in rgb)))
+        for name in _re.findall(r"[:\s,(]([a-z]+)\b", text):
+            if name in _CSS_NAMED:
+                families.add(colour_family(_CSS_NAMED[name]))
+    return families, words
+
+
 def summary_for_child(project: Project) -> str:
     """One or two plain sentences on what the project has, from its files -- for the
     replies Open Nest writes itself when Gary's answer could not be used."""
@@ -659,15 +865,26 @@ def summary_for_child(project: Project) -> str:
             page = _Page(entry.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError):
             return ""
-        titles = ", ".join(f"\u201c{words}\u201d" for _tag, words in page.headings[:8])
+        # The title and the section headings, not every card's: measured on the stress
+        # pass, "the page has 4 sections: " followed by eight headings read as a count
+        # that did not add up (SPIKES.md section 29).
+        main = [words for tag, words in page.headings if tag in ("h1", "h2")] or \
+            [words for _tag, words in page.headings]
+        titles = ", ".join(f"\u201c{words}\u201d" for words in main[:8])
         return (f"Right now the page has {page.sections} section"
-                f"{'' if page.sections == 1 else 's'}{': ' + titles if titles else ''}. "
+                f"{'' if page.sections == 1 else 's'}"
+                f"{', with the headings ' + titles if titles else ''}. "
                 f"Press {project.profile.run_label} to see it.")
     lines = (_arduino_lines(project, None) if kind == "arduino" else
              _pi_lines(project) if kind == "raspberry_pi" else [])
     lines += _data_and_picture_lines(project, None)
-    said = " ".join(line[2:] for line in lines[:2])
-    return f"Right now: {said}" if said else ""
+    # Written for Gary, said to the child: not "What it does, read from the code: ..."
+    # (measured on the stress pass, when Sonnet's answer came back empty).
+    said = " ".join(line[2:].replace("What it does, read from the code: ", "")
+                    .replace(", read from the code:", ":") for line in lines[:2])
+    where = f" Its code is {_entry(project)}, in the Project panel on the left." \
+        if project.entrypoint_path.is_file() else ""
+    return f"Right now: {said}{where}" if said else ""
 
 
 def _blank_limits(project: Project, kind: str | None) -> list[str]:
@@ -710,9 +927,12 @@ def checked_block(project: Project, toolbox=None, notes: Sequence[str] = (),
     if not path.is_file():
         lines += kind_lines
         thing = "game" if project.profile.playtest == "pygame" else "project"
-        lines.append(f"- There is no {entry} yet, so there is no {thing} to run or play. If "
-                     f"they want to build something, Open Nest sets up the starting files "
-                     f"when they ask for it.")
+        # Measured on the stress pass: an empty Blank project's "what do I do now?" was
+        # answered "No src/main.py file exists" -- a name the child never needs.
+        lines.append(f"- There is no {entry} yet, so there is no {thing} to run or play: "
+                     f"say the project is empty, without that file's name. If they want to "
+                     f"build something, Open Nest sets up the starting files when they ask "
+                     f"for it.")
         return "\n".join(lines)
     try:
         source = path.read_text(encoding="utf-8")
@@ -758,6 +978,24 @@ def _run_line(profile, live: bool = False) -> str:
             f"Build / Preview; \u201cStop\u201d ends one that keeps running.")
 
 
+def _new_project_line() -> str:
+    """How a new project is started, from the Flight Deck's own cards. Measured on the
+    stress pass: sent there from a Blank project, the child was told to click a "New
+    Project" button that does not exist (SPIKES.md section 29)."""
+    try:
+        from opennest.projects.profiles import load_profiles
+
+        names = [profile.name for profile in load_profiles()]
+    except Exception:  # noqa: BLE001 - a guide line that cannot be read is not said
+        return ""
+    if not names:
+        return ""
+    cards = ", ".join(f"\u201c{name}\u201d" for name in names)
+    return (f" On the Flight Deck, \u201cWhat do you want to make?\u201d has a card for each "
+            f"kind of project -- {cards} -- and clicking one starts a new project of that "
+            f"kind.")
+
+
 def guide(profile, *, live: bool = False) -> str:
     """The Workbench as the child sees it, for questions about Open Nest itself.
     ``live``: Run plays a game in the panel (``plays_in_panel``), Blank included."""
@@ -774,6 +1012,6 @@ def guide(profile, *, live: bool = False) -> str:
         "Version\u201d keeps how it is now; \u201cUndo\u201d goes back one change; "
         "\u201cBuild Style\u201d is just build it, or build it and teach me.",
         "- Top: \u201c\u2190 Flight Deck\u201d is all their projects; \u201cModel\u201d picks "
-        "the AI.",
+        "the AI." + _new_project_line(),
         "- It saves by itself. There is no Publish or Share yet.",
     ])

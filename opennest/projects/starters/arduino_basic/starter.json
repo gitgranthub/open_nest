@@ -2,7 +2,7 @@
   "id": "arduino_basic",
   "profile": "arduino",
   "name": "Basic Arduino Sketch",
-  "description": "A sketch with setup() and loop() that compiles as it is.",
+  "description": "A sketch that blinks the board's own light, on for half a second and off for half a second. It compiles as it is.",
   "_entry_point_note": "arduino-cli requires a sketch folder whose name matches its .ino file, so the entry point carries the subdirectory. Measured in SPIKES.md section 14; the flat layout fails with 'main file missing from sketch: src/src.ino'.",
   "entry_point": "project/project.ino",
   "version": 1,

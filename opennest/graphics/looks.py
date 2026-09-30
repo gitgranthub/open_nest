@@ -22,12 +22,21 @@ Both are reported in the tool's result, so what Gary says afterwards can match.
 from __future__ import annotations
 
 import ast
+import hashlib
 import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 KIT = Path(__file__).with_name("kit") / "scene.py"
+
+#: Every kit Open Nest has shipped before this one, by the SHA-256 of its exact bytes. A
+#: project holding one of these unchanged is brought up to the current kit the next time
+#: its scene changes -- the current kit keeps everything they had. A kit a child changed
+#: matches none of them and is never overwritten.
+EARLIER_KITS = {
+    "682fdd81378c8f5b716ebbf915069e3e6164d8d043f5874456fa25ea793b4445": 1,
+}
 
 #: The kit's ready-made drawings, as Gary names them, and the class that draws each.
 DRAWINGS = {
@@ -103,6 +112,20 @@ def kit_version(source: str | None = None) -> int | None:
                 return None
             return value if isinstance(value, int) else None
     return None
+
+
+def is_earlier_kit(source: str) -> bool:
+    """Whether ``source`` is, byte for byte, a kit Open Nest shipped before this one."""
+    return hashlib.sha256(source.encode("utf-8")).hexdigest() in EARLIER_KITS
+
+
+def kit_methods(source: str | None = None) -> set[str]:
+    """What a scene.py's ``Scene`` can do -- ``touched`` arrived in version 2."""
+    tree = _parse(source if source is not None else kit_source())
+    for node in tree.body if tree else ():
+        if isinstance(node, ast.ClassDef) and node.name == "Scene":
+            return {item.name for item in node.body if isinstance(item, ast.FunctionDef)}
+    return set()
 
 
 def kit_classes(source: str | None = None) -> set[str]:

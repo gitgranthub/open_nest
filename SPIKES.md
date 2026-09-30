@@ -4445,3 +4445,157 @@ the planet "256 x 256"; once each, no tool words. Not built, and why: cutting a 
 background out automatically. It wants a `game_object` argument (a description change is a
 tool-choice re-run, HANDOFF trap), a kit version the projects' copied kits can be brought
 up to when unchanged, and a way the 4B would reach it; the design is in HANDOFF.
+
+## 29. The cross-preset stress pass after 13C
+
+The owner's order after 13C: not more architecture -- a conservative stress test of the
+other project builders before the owner's in-person test. The same three kinds of message
+(a build or change request, a question about the project, a question about how to use
+Open Nest) in Website, Research, Arduino, Raspberry Pi and Blank begun five ways, with four
+models: the local Qwen3 4B as the baseline, Qwen3 8B as a local spot check, OpenAI Luna as
+the cloud baseline and Anthropic Sonnet -- run for the first time -- as the cloud spot
+check. Not a ranking. The question was whether Open Nest stays safe, grounded and
+understandable when different models make different choices. And one known bug to fix:
+a touch counted on every frame it lasted.
+
+`benchmarks/stress/stress_walk.py` is `owner_pass/parity_walk.py`'s driving -- the real
+Workbench, VersionHistory, memory, the Fast Path and the Toolbox wired as MainWindow wires
+them, off the GUI thread -- with a model argument, the work order's own child-style
+prompts, a small deterministic table (`inputs/garden.csv`: week, sunflower_cm, tomato_cm;
+sunflower grows most overall, tomato has the biggest single week), and every step's tools
+offered, calls with arguments and results, provider token counts, the raw reply before any
+correction, and the project's files afterwards. A cloud model gets no Fast Path, as in the
+app. `summarise.py` lays each run out and flags what a reader must check: a question that
+changed a file, tool syntax or code in the chat, a hardware claim, edit instructions.
+Results in `benchmarks/stress/results/`.
+
+### 29A. The keys
+
+The owner dropped both keys in `.env`. Moved into the Keychain with the application's own
+`Credentials.save_key` by a scratch script that printed only which provider each line was
+and its length, read back equal, and deleted the file (the credential-handoff rule). One
+smallest call each through the app's providers: Luna 13 in / 5 out, Sonnet 16 in / 4 out,
+both "ready". At the end every file under the repository, the scratchpad, the staged diff
+and the whole git history were searched for either key, whole or by a 12-character prefix
+or suffix: none.
+
+### 29B. A touch counts once
+
+`scene.touching(rect, name)` is true on every frame two things overlap, and three things
+were built on it that mean a single event: `game_object`'s avoid rule (a car crossing the
+start held the player there, §28I), its collect rule, and the dodging recipe's
+`player.collidelist(...)` hit (the player held in the middle). Gary's own code did it too
+-- Luna's `if scene.touching(player, "asteroids"): hits += 1` showed HITS 18 for one bump
+(§28M).
+
+The narrowest reusable distinction, in the kit (`VERSION = 2`): **`scene.touched(rect,
+what)`** -- the things `rect` has just started touching, a list: counted in the frame a
+touch begins, not again while it lasts, again only after they come apart. `what` is a name
+in the scene, a rect, or a list of the game's own rects. The frame is `scene.draw()`'s
+count, so every rule that asks in that frame hears the same touch (a point and a sound
+both count it once). `touching` is unchanged, for what should go on while touched -- lava,
+a drain, a push.
+
+- `game_object`'s avoid and collect rules are written with `touched`; rules written with
+  `touching` before are still found, re-ruled and replaced.
+- The dodging recipe's hit is `scene.touched(player, cars)` when the look call gives the
+  game its scene (a name only read, not bound, no longer counts as "scene is taken"); a
+  collision added later uses it only when the project's kit already has it, and keeps the
+  plain check otherwise.
+- **Unchanged earlier kits are brought up to date.** A project's `src/scene.py` that is,
+  byte for byte, a kit Open Nest shipped (`looks.EARLIER_KITS`, SHA-256 of v1) is replaced
+  by the current one the next time `game_object` changes the game -- never on a call that
+  changes nothing, and a kit the child changed is never touched: its rules keep `touching`.
+- **Gary is told** when code counts on every frame of a touch -- `hits += 1`, `lives -= 1`
+  under an overlap check that moves nothing apart (`evidence.counted_every_frame`, 4 bad
+  and 7 good fixtures, none of the good flagged): in the edit's own result the turn he
+  writes it, and in the checked facts after. The add-collision, game-rules and avoid-game
+  guides say once per touch.
+
+Measured in the app: Luna's Blank game (§29D) wrote `lives -= 1` under `scene.touched(...)`
+itself, from the rules it read; the 4B's Blank game got its car and coin rules as
+`touched`; the kit test holds a player at the start 1 frame instead of 20+ while a car
+crosses it.
+
+### 29C. What the walks found, and what changed
+
+Each fix is in the shared layer -- nothing provider-specific was needed, and nothing was
+added for one model.
+
+| found | model | what changed |
+|---|---|---|
+| "How do I test this?" answered "I updated the code in main.py to set ON_SECONDS = 2.0" about a turn that had only described the edit: the child's press of Test on Mac had counted as a change, so answers were not checked | 4B | a press of Run / Compile / Test on Mac is an *event*, told to Gary but not a change; a run that drew a chart still is one |
+| "Make it stay on for two seconds" answered "Here is the exact text to replace: ```ON_SECONDS = 0.3``` Replace it with ..." -- no call, code in the chat | 4B | edit instructions on a request that changed nothing are treated as an unkept promise (planned, never relayed); "I need to" is a promise; an answer telling the child to edit by hand is offered: "Want me to make that change for you?" |
+| "The code now confirms blinks on a real Pi." | 4B | `replies.hardware_claims`: a sentence saying what a real board, Pi or light did, read a sentence at a time -- not one looking ahead, telling them what to do, saying it has not run there, or about Test on Mac's printed pins. Corrected once in the project's own words ("Test on Mac runs it here with pretend pins"); said again, the sentence goes and the fact is said. Tightened twice on false positives -- Sonnet's wiring instructions, the 8B's "the default onboard light on the Arduino Uno" -- and measured on every hardware reply of every run: one flag, the true one |
+| "Graph this." drew charts/chart.png on the way to a plan and was told "I haven't changed anything yet" and a plan to draw the axes | 4B | a chart drawn is said, with where to click, before any plan |
+| "It's lighter and uses the warm orange accent color" -- the accent was the starter's green, no orange anywhere | 4B | `evidence.page_colours` reads every colour a site's CSS and HTML use (hex, rgb, hsl, CSS names, colour words); a colour Gary says his change has that no file does is corrected once. Luna's and Sonnet's colour claims (yellow-to-orange, coral, teal, dino green) all pass |
+| after an Undo back to the starter: "so it does not blink yet" -- the starter blinks | Luna | the Arduino facts say what `loop()` does ("on for 500 ms and off for 500 ms, over and over -- it blinks"), and the starter's description says it blinks. Sonnet then: "It already does", and after the Undo "blinking every half second again"; the 8B: "back to the starter version. It blinks ... 500 ms" |
+| "No scene object was changed", in a Pi project | Luna | the refused-edit correction names `game_object` and the scene only where the project has them |
+| after an Undo, "What do I do now?" answered with the undone reply word for word -- "I added a Roar button..." | 8B | a reply repeating a sentence of the reply an Undo took back is corrected once; again, Open Nest says the Undo happened and what the files have |
+| Sonnet's true "Did you click Preview Website again?" corrected into a denial: "a website about dinosaurs" had made "website" a thing to find in a page titled "Dinosaur World" | Sonnet | the website itself (website, site, page) is not a thing its page must name |
+| the Research starter charted a table of numbers as `week` against the row number -- a straight line -- and the 4B said it "shows both sunflower and tomato growth over weeks" | 4B | the starter draws an all-number table's other columns against a first column that only goes up, and prints what it drew ("sunflower_cm and tomato_cm by week"), so a claim about the chart has something to be checked against (starter v2) |
+| "the most significant change was adding the code ... saves it as outputs/growth.png", then "This change was made in src/analysis.py" -- no edit had ever landed, no such file | 8B | `replies.files_said_wrongly`: a file named as there that the project has not got, or said to have been changed when nothing changed it in the last few turns, is corrected once, then stated. Over every reply of seven walks it flagged those two and the 4B's "I updated the code in main.py", and nothing true |
+| both local models: the chart "will appear in outputs/growth.png" | 4B, 8B | the Research prompt said "save into outputs/"; the starter and every recipe draw into charts/, and now the prompt says so |
+| "The LED is already blinking ... There it is." / "Run the game to see it. There it is." | 8B, 4B | "There it is." is a look nobody took (the sight check) |
+| sent to the Flight Deck, told to click a "New Project" button that does not exist | 4B | the guide says the Flight Deck's cards start a new project, from the real profile names |
+| an empty Blank project: "No src/main.py file exists" | 4B | the fact asks for "the project is empty", without the file's name |
+| Open Nest's own fallback: "the page has 4 sections: " and eight headings; "Right now: What it does, read from the code: ..." | all | the summary names the page's title and section headings, drops Gary-facing phrasing, and says where the code is |
+
+### 29D. The matrix
+
+Per preset and model: did the artifact work, did truthfulness hold, did help questions stay
+help, anything leaked, and what verification said. "Held" means no false claim reached the
+child in the final state; a false claim caught and corrected by the shared checks counts as
+held. Help routing: across every run, **no question changed a file**.
+
+| | **4B** (baseline, every preset) | **8B** (spot check) | **Luna** (cloud baseline) | **Sonnet** (cloud spot check, first run) |
+|---|---|---|---|---|
+| **Website** | first run: turn 1 left the starter unthemed and planned; the header "warm orange" was false. Final: a dinosaur page from turn 1, Fossils by recipe, the header colours as said (cyan, green, blue), the Roar button and three facts real; after Undo it repeated its undone reply -- caught, and Open Nest said the Undo and what the page has. Help held (Preview "at the bottom", files on the left). No leaks | works; "brighter orange" true (`--accent: #ff9800`); "Preview ... in the middle of the screen" loose; first run repeated its undone reply after Undo -- relayed; final run: caught. No leaks | works, richly (a field guide, a Dig-up-a-fact button, a fossil timeline); every colour it named is in the CSS; "Why didn't that section show up?" answered from the checked headings. No leaks | works; "It's there in the code ... press Preview again"; after Undo "the Roar button and the fun facts got removed". One of Open Nest's checks corrected a true answer ("website" as a thing) -- fixed |
+| **Research** | chart only when a run happens; "Graph this." planned in one final run (edits refused) and ran the analysis in the other; first run said the starter's chart "shows both sunflower and tomato" -- it showed `week` (starter fixed); final: truthful, but "what changed the most" not computed; "outputs/growth.png" (the prompt's stale folder -- fixed). Numbers it gave were in the data | every edit refused; "the most significant change was adding the code ... outputs/growth.png", "This change was made in src/analysis.py" -- none true, relayed. Confirming run on the final code: "I didn't change any files. The chart was drawn using the existing code in src/analysis.py, which was unchanged"; "the change was adding the code" is a claim now too | works: edited the analysis, drew named charts, sunflower 33 vs tomato 30, "That compares week 1 with week 8" | works, and surfaces the ambiguity unasked: 33 cm vs 30 cm overall, but tomato's single biggest week (+9, week 6) |
+| **Arduino** | compile verified with the real toolchain (arduino:avr:uno); first run changed the timing for "Make the LED blink"; final: "the starter ... with a blinking LED"; after Undo, grounded; no hardware claim | final: "The code blinks the board's built-in LED on for 500 ms and off for 500 ms"; after Undo "back to the original blink setup (500 ms ...)"; first run's "The LED is already blinking ... There it is." -- both now checked | compile path right ("Open Nest rejected the compile because no Arduino board is selected"); after Undo "it does not blink yet" -- false (facts fixed); final: grounded; "Open Nest cannot test the physical board, so you will need to check the light yourself" | "It already does ... on for half a second"; after Undo "blinking every half second again"; "Compile just checks the code" |
+| **Pi** | first run: code handed to the child as instructions, then "I updated the code in main.py" in an answer -- both relayed (fixed; the re-run planned honestly instead); "stay on for two seconds" never landed (model); never claimed the Pi did anything; after a hand edit, pin 27 at once | "Blink an LED" planned though it already blinks (model); "stay on for two seconds" made as a plan step; "Nothing has run on a real Raspberry Pi yet"; pin 27 after the hand edit | works (ON_SECONDS 2.0, run with pretend pins); "It has not been tested with a real Raspberry Pi yet"; one OpenAI `response.failed` mid-stream, shown as the service's error | works; "nobody's run it on your actual Pi yet, so no real light has blinked"; one empty reply answered with Open Nest's own summary (now worded for the child) |
+| **Blank** | stays blank for "what do I do now?"; website and sketch sent to their project types; data, Pi and game became only that family; the game was offered `game_object` only once it was one, and got `touched` rules; first run's Blank Pi "confirms blinks on a real Pi" (checked now); empty-project help still names src/main.py (the 4B parrots the fact) | Blank Game: cars through `game_object`, the avoid rule `touched` | all five intents right; Blank Game with lives under `scene.touched` written by Luna itself; "No scene object was changed" in a Pi project (Open Nest's correction text -- fixed) | Blank Pi and Blank Game right; cars through `game_object`, `touched` |
+
+- **Leakage**: no tool call, argument or protocol text reached the chat from any provider in
+  any run; the one code block in the first 4B run (the edit instructions) is fixed. Luna
+  once showed three lines of expected output in a `text` fence -- a short block, allowed.
+- **Help routing**: ten runs, 269 turns, 158 of them questions -- **none changed a file**.
+- **Hardware**: over every Arduino and Pi reply of every run, one claim that real hardware
+  did something -- the 4B's Blank Pi -- now caught; Luna and Sonnet volunteered that nothing
+  had run on the board or Pi.
+- **Refusals**: handled the same for every provider -- the refused-edit correction, the
+  compile refusal with no board, the no-change refusal -- with no provider-specific branch.
+
+Confirming runs on the final code (`stress_4b_final`, `stress_4b_confirm`,
+`stress_8b_final`, `stress_8b_confirm`, `stress_luna_final`): 102 turns, no leak, no
+code, no hardware claim, no edit instructions, no question that changed a file. The 4B's
+Research turn became the one this pass was after: "Graph this." ran the analysis, and the
+chart, the reply and the run's own words agreed ("sunflower_cm and tomato_cm by week");
+"What did you actually change?" -- "I did not change src/analysis.py. The chart in
+charts/chart.png was drawn by the existing code."
+
+### 29E. Model-only limitations, recorded rather than chased
+
+- **The 4B's edits to the Research analysis are refused** (old text it imagined), so
+  "Graph this." can become a plan ("Draw the x- and y-axes") instead of a run; pressing Run
+  Analysis draws the chart, and the facts say so. The 8B the same. "Graph this" on its own
+  is still not taken by the Fast Path's chart recipe (§25M), and the classifier is frozen.
+- **The 4B's plans are its own**: "Make it stay on for two seconds" split into a pause, the
+  lights, and a sound. Truthful, not useful.
+- **Local answers wander** -- "Preview in the middle", "the child must", "No src/main.py
+  file exists" after the facts asked it not to -- and the 4B does not compute "what changed
+  the most". The cloud models do all of it well from the same facts.
+- **Luna, asked "Make the LED blink" with no board chosen, talks about the compile** rather
+  than saying it already blinks. True, and it says what to do next.
+
+### 29F. Regression and usage
+
+The suite: 1622 passed (1572 before), ruff clean. The Phase 12 app walk through MainWindow
+under cocoa: 41/41, the same recipe routes (`results/app_walk_stress.txt`) -- the dodging
+game's hit now `scene.touched`.
+
+
+Cloud, provider-reported, every turn: Luna 412k input / 19.5k output tokens over 82 calls
+(the full pass) plus 206k / 8.0k over 31 (the confirming run); Sonnet 370k / 13.1k over 60.
+Plus two probes of ~15 tokens each, and one memory summary per project closed. At the
+catalogue's $2 per million input tokens, Sonnet's input was about $0.74.

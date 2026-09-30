@@ -1660,7 +1660,7 @@ class Workbench(QWidget):
         else:
             said = f"The child pressed {label}, and it failed (the error is in Last run)."
         with contextlib.suppress(Exception):
-            self.controller.note_event(said)
+            self.controller.note_event(said, drew=bool(run.ok and result.made_files))
 
     def _start_game(self) -> None:
         """Run Game, for a game drawn here: started off the UI thread (``RunWorker``).

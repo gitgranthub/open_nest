@@ -12,7 +12,7 @@
   "op": "add_collision",
   "params": {},
   "guide": [
-    "Inside the loop, after things have moved, check player.colliderect(thing) -- or player.collidelist(list) for many -- and do what should happen right there."
+    "Inside the loop, after things have moved, check player.colliderect(thing) -- or player.collidelist(list) for many -- and do what should happen right there. Those are true on every frame the two overlap, so a point, a hit or a lost life must happen once per touch: move the thing away, or in a game with a scene use scene.touched(player, things), which is true only in the frame a touch begins."
   ],
   "verify": [
     "playtest_passes"

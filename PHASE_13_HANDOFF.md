@@ -444,7 +444,9 @@ once, and blits it centred on a rectangle.
   rectangle** with a look, `scale` times its size keeping the look's shape. The game
   keeps moving and colliding it; the scene only draws it. This is how the player's look is
   separate from its logic: the picture follows the rect when `PLAYER_SIZE` changes.
-- `scene.touching(rect, name)`, `scene.reset(name)`, `scene.get(name)`, `thing.respawn()`.
+- `scene.touching(rect, name)` (every frame of a touch), `scene.touched(rect, what)` (once,
+  in the frame a touch begins -- kit version 2, §10), `scene.reset(name)`, `scene.get(name)`,
+  `thing.respawn()`.
 - `scene.update()` moves what moves by itself; `scene.draw()` draws everything **back to
   front by layer**: `background`, `scenery`, `things`, `player`, `effects`, `ui`; within
   a layer in the order added. `scene.report()` says what each thing is and how many
@@ -477,7 +479,8 @@ What Open Nest decides, so the model does not have to:
 - **Adoption**: the first call adds `from scene import ...`, `scene = Scene(screen)` and
   the two calls in the loop, and changes nothing else in the game.
 - **Rules**: `touch: avoid` writes "touching it sends the player back to where this game
-  starts it"; `touch: collect` scores a point and adds a score if there is none.
+  starts it"; `touch: collect` scores a point and adds a score if there is none. Both are
+  once per touch (`scene.touched`, §10).
 - **What goes**: the player's old drawing (the starter's rect, the old sprite recipe's
   blit, test03's `try` that drew a square), unused `player_image` lines, and colour
   constants nothing draws with any more -- so an edit to `PLAYER_COLOUR` cannot "succeed"
@@ -534,8 +537,9 @@ keep the drawing patterns (`guide_scene` is used only where `game_object` is off
 The game stays ordinary Python and pygame. `src/scene.py` is plain, commented source in
 the project -- no Open Nest import, no network, no build step -- and pictures are found
 from the project folder (`src/..`), so `python src/game.py` works from anywhere, with or
-without Open Nest. `VERSION = 1` lets Open Nest tell its own copy from one the child
-changed; a changed kit is used as it is and never overwritten.
+without Open Nest. `VERSION` lets Open Nest tell its own copy from one the child changed;
+a changed kit is used as it is and never overwritten, and since version 2 an earlier kit
+Open Nest shipped, byte for byte, is brought up to date by the next change (§10).
 
 ### 9.8 Limits, recorded rather than hidden
 
@@ -672,3 +676,51 @@ game, + Add to Project, and what to say. Tools are named by kind only, a drawing
 AI picture maker with a grown-up (the owner's ruling, 2026-09-30). A picture used with a
 solid background is said to show as a rectangle. `AgentController._picture_how_to`;
 SPIKES §28O. The automatic cut-out is designed, not built (HANDOFF "What is next").
+
+
+---
+
+## 10. The cross-preset stress pass -- before the owner's in-person test
+
+The owner's order after 13C: no new architecture; a conservative stress test of Website,
+Research, Arduino, Raspberry Pi and Blank across four models -- the local Qwen3 4B
+(baseline) and 8B (spot check), OpenAI Luna (cloud baseline) and Anthropic Sonnet (cloud
+spot check, run for the first time) -- and the known touch bug fixed. SPIKES §29 has every
+finding, the fix each got, and the matrix; `benchmarks/stress/` has the driver, the table,
+the results and a summariser.
+
+**The touch bug** (§29B): `scene.touched(rect, what)` in the kit (`VERSION = 2`) -- true in
+the frame a touch begins, not while it lasts, again after they part; `touching` unchanged
+for what lasts. The avoid and collect rules `game_object` writes use it, the dodging
+recipe's hit uses it, an unchanged v1 `src/scene.py` is brought up to date by the next
+change (a changed one never), and Gary is told -- in the edit's result and in his facts --
+when his own counter counts every frame. In the Blank-game walks Luna then wrote its own
+`lives -= 1` under `scene.touched`.
+
+**What the pass fixed**, all in the shared layer, none for one provider (§29C): a Run
+press no longer counts as a change (so a false "I updated main.py" in an answer is
+checked); a reply that tells the child how to edit instead of editing is not relayed, and
+an answer that does is offered "Want me to make that change for you?"; what a real board or
+Pi did is not said; a chart drawn on the way to a plan is said; a colour a website's files
+do not have is not claimed; the Arduino facts say what `loop()` does; a reply repeating
+what an Undo took back is corrected; "There it is." is a look nobody took; the Research
+starter charts a table of numbers against its first column and prints what it drew; the
+Flight Deck's cards are in the guide; Open Nest's own fallback text reads cleanly; and
+three false positives in Open Nest's own checks, found by Sonnet and the 8B, are gone.
+
+**Verified**: 1622 tests (1572 before; `tests/test_stress_pass.py` and the kit and rule
+tests in `tests/test_graphics.py` are this pass's), ruff clean, the Phase 12 app walk 41/41
+under cocoa with the same recipe routes, and ten stress runs -- 269 turns, 158 questions,
+none changed a file -- the last five on the final code with nothing flagged (SPIKES §29D).
+
+**Rules this pass adds:**
+
+- **A kit change is a version bump and a hash.** A new `scene.py` behaviour needs
+  `VERSION` raised and the old file's SHA-256 in `looks.EARLIER_KITS`, or projects holding
+  the old kit will run new code against it. `tests/fixtures/scene_kit_v1.txt` is v1.
+- **Say what the starter does.** Two findings (Arduino, Research) were models reasoning
+  correctly from facts that did not say what the starter code does. A starter's
+  description and the per-preset facts are grounding, not labels.
+- **A check that corrects a true sentence is a bug.** Every new reply check was run over
+  every reply of every walk before it stayed (§29C); keep its fixtures in
+  `tests/test_stress_pass.py` when you touch it.

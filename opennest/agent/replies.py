@@ -40,7 +40,10 @@ CLAIMED_SIGHT = ("i see the", "i see that", "i see it", "i see your", "i see a "
                   "i see there", "i see no", "i can see", "i could see",
                   # A chart is a picture too, and nobody has looked at it (parity walk):
                   "the chart shows", "the graph shows", "the plot shows", "chart shows the",
-                  "i watched", "i looked at the game", "i played it", "i can tell it")
+                  "i watched", "i looked at the game", "i played it", "i can tell it",
+                  # ...and pointing at it, as if it were on screen in front of Gary: "Run
+                  # the game to see it. There it is." (the 4B and the 8B, stress pass).
+                  "there it is.", "there they are.", "there it is!", "there they are!")
 
 
 #: A sentence that suggests, plans or denies rather than says a thing is there: "I can
@@ -67,6 +70,11 @@ _NOT_THINGS = frozenset((
     # walk (SPIKES.md section 28M): "the deep sea" made "deep" a thing, and Gary was
     # corrected into telling the child "The deep is not in the game".
     "sea", "ocean", "water", "space", "night", "day",
+    # ... and the website itself. Measured on the stress pass (SPIKES.md section 29):
+    # "Make me a website about dinosaurs" made "website" a thing, and Sonnet's true answer
+    # "Did you click Preview Website again?" was corrected, because a page titled
+    # "Dinosaur World" never says the word.
+    "website", "websites", "site", "page", "pages", "webpage",
 ))
 
 
@@ -150,10 +158,145 @@ def child_nouns(text: str) -> set[str]:
 
 
 #: Saying it will do it now -- which, at the end of a turn that changed nothing, it did not.
+#: "I need to edit the main.py file" is the same (the stress pass, SPIKES.md section 29).
 PROMISES = re.compile(
-    r"\b(?:i'll|i will|let me|i'm going to|i am going to)\s+(?:now\s+|first\s+|just\s+)?"
+    r"\b(?:i'll|i will|let me|i'm going to|i am going to|i need to|i have to)\s+"
+    r"(?:now\s+|first\s+|just\s+)?"
     r"(?:add|make|create|edit|build|write|change|update|fix|put|set|do|draw|move|"
     r"style|insert)\b", re.IGNORECASE)
+
+#: Telling the child how to change the code instead of changing it: "Here is the exact
+#: text to replace: ON_SECONDS = 0.3 ... Replace it with: ON_SECONDS = 2.0" -- the 4B, on
+#: a request, with no call made (the stress pass, SPIKES.md section 29). Only code-shaped
+#: targets: "change the title to My Dog Club" is a thing a child can ask for, not an edit.
+_CODE_THING = r"(?:`[^`\n]+`|[A-Za-z_]*_[A-Za-z_]+|[A-Z]{3,}|src/[\w./-]+)"
+INSTRUCTS_EDIT = re.compile(
+    r"\bexact (?:text|line|code) to (?:replace|change)\b|"
+    r"\breplace (?:it|this|that|the (?:line|text|code|value)|" + _CODE_THING + r")\s+with\b|"
+    r"\b(?:change|set|update) " + _CODE_THING + r" (?:from \S+ )?to\b|"
+    r"\b(?:open|in|edit) " + _CODE_THING + r",? (?:and )?(?:change|replace|set|add)\b|"
+    r"\byou (?:need|have|will need) to (?:edit|change|update|replace|open) (?:the )?"
+    r"(?:file|code|line|src/|`)", re.IGNORECASE)
+
+
+def instructs_edit(text: str) -> bool:
+    """Whether a reply tells the child how to edit the code -- a change described rather
+    than made, which on a request is the same as a promise with nothing done."""
+    return bool(INSTRUCTS_EDIT.search(text or ""))
+
+
+#: Saying what real hardware did. Nothing in Open Nest can see a board or a Pi: Compile
+#: checks the code, Test on Mac runs it with pretend pins, and after Send to Board only
+#: the child can say what the light does. Measured on the stress pass (SPIKES.md section
+#: 29): "The code now confirms blinks on a real Pi." Read a sentence at a time; one that
+#: looks ahead ("will", "when you", "once"), tells them what to do, or says it has not
+#: run there is not a claim, and neither is one about Test on Mac's printed pretend pins.
+_HARDWARE = r"(?:raspberry pi|pi|board|arduino|breadboard|circuit)"
+_RESULT = (r"(?:confirm\w*|works?|worked|working|blink\w*|flash\w*|lit|light(?:s|ed)? up|"
+           r"glow\w*|tested|verified|proved?|ran|runs|running|turn(?:s|ed) on|spin\w*)")
+_HARDWARE_SEEN = re.compile(
+    r"\b" + _RESULT + r"\b[^.!?\n]*\bon (?:a|the|your) (?:real |actual |physical )?"
+    + _HARDWARE + r"\b|"
+    r"\bon (?:a|the|your) (?:real |actual |physical )?" + _HARDWARE + r"\b[^.!?\n]*\b"
+    + _RESULT + r"\b|"
+    r"\b(?:the |your )?(?:led|light|lamp|bulb|motor|buzzer)s? (?:is|are|was|were|has been|"
+    r"have been|kept) (?:now |already |still |currently )?(?:blinking|flashing|lit|glowing|"
+    r"shining|spinning|turning|"
+    r"buzzing|working)\b", re.IGNORECASE)
+_LOOKS_AHEAD = re.compile(
+    r"\b(?:will|would|'ll|when|whenever|once|if|after|should|can|could|might|may|need|"
+    r"needs|want|expect|until|pretend|not|no|nothing|never|hasn't|haven't|isn't|aren't|"
+    r"wasn't|didn't|doesn't|cannot|can't|only you|you'll|to see|output|printed|prints|"
+    r"simulat\w*|this mac|the mac)\b", re.IGNORECASE)
+_TELLING_TO = re.compile(
+    r"^\s*(?:\d+[.)]\s*)?(?:test|try|run|send|plug|connect|upload|copy|put|use|press|"
+    r"click|wire|hook|check|watch|look)\b", re.IGNORECASE)
+
+
+def hardware_claims(text: str) -> list[str]:
+    """The sentences in ``text`` that say what a real board or Pi did or is doing."""
+    found = []
+    for sentence in re.split(r"(?<=[.!?])\s+|\n+", text or ""):
+        if _HARDWARE_SEEN.search(sentence) and not _LOOKS_AHEAD.search(sentence) and \
+                not _TELLING_TO.match(sentence):
+            found.append(sentence.strip())
+    return found
+
+
+#: A sentence that offers or wonders about a colour rather than saying the page has it.
+_WONDERING = re.compile(r"\b(?:can|could|would|want|wants|if|next|'ll|will|try|maybe|might|"
+                      r"like|prefer|or|should|let's|ask)\b|\?", re.IGNORECASE)
+
+
+def colours_said(text: str, known) -> dict[str, str]:
+    """Colour words said as fact, each with its sentence: "a sunny orange header" -- not
+    "I can make it orange" or "want it orange?"."""
+    found = {}
+    for sentence in re.split(r"(?<=[.!?])\s+|\n+", text or ""):
+        if _WONDERING.search(sentence):
+            continue
+        for word in re.findall(r"[a-z]+", sentence.lower()):
+            if word in known and word not in found:
+                found[word] = sentence.strip()
+    return found
+
+
+#: A file named in a reply: a path with an extension a project's files have.
+_PATH = re.compile(r"(?<![\w/.:-])((?:[\w.-]+/)*[\w-]+\.(?:png|jpe?g|gif|svg|csv|py|html?|css|js|"
+                   r"ino|md|txt|json))(?![\w/])", re.IGNORECASE)
+#: ...said to have been changed: "I added code in ...", "This change was made in ...".
+_CHANGED_IT = re.compile(
+    r"\b(?:i|i've|i have)\s+(?:just\s+)?(?:added|changed|edited|updated|wrote|made|modified|"
+    r"created|fixed|put)\b|\b(?:was|were|has been|have been)\s+(?:added|changed|edited|"
+    r"updated|written|made|modified|created)\b|\bchange was made\b", re.IGNORECASE)
+#: ...or a sentence that denies, doubts or tells them what to do, which is neither.
+_DENYING = re.compile(r"\b(?:no|not|nothing|never|isn't|aren't|doesn't|don't|didn't|hasn't|"
+                      r"haven't|wasn't|missing|yet|without)\b", re.IGNORECASE)
+_TELLING = re.compile(r"^\s*(?:\d+[.)]\s*|[-*]\s*)?(?:press|click|open|run|try|look|go|drop|drag|"
+                      r"add|put|save|check|pick|choose|select|use|write|type)\b", re.IGNORECASE)
+
+
+def files_said_wrongly(text: str, files, recent, *, unchanged: bool = True) -> list[str]:
+    """What a reply says about the project's files that is not so: a file named as there
+    that the project has not got, or -- with ``unchanged`` -- one said to have been changed
+    when nothing has changed it lately (``recent``: the paths the last few turns changed or
+    drew). Matched by path, or by name alone, so "index.html" is src/index.html.
+
+    Measured on the stress pass (SPIKES.md section 29), Qwen3 8B in a Research project
+    that no edit had ever landed in: "saves it as outputs/growth.png", then, asked "What
+    did you actually change?", "This change was made in src/analysis.py." Run over every
+    reply of seven walks before it stayed: those two, the 4B's "I updated the code in
+    main.py", and nothing true."""
+    have = set(files)
+    names = {name.rsplit("/", 1)[-1] for name in have}
+    touched = {name.rsplit("/", 1)[-1] for name in recent}
+    found = []
+    for sentence in re.split(r"(?<=[.!?])\s+|\n+", text or ""):
+        if _WONDERING.search(sentence) or _DENYING.search(sentence) or \
+                _TELLING.match(sentence):
+            continue
+        for path in _PATH.findall(sentence.replace("`", "")):
+            name = path.rsplit("/", 1)[-1]
+            if re.fullmatch(r"[A-Z][a-z]+\.js", path):
+                continue                        # a library's name -- Chart.js -- not a file
+            if path not in have and f"src/{path}" not in have and name not in names:
+                found.append(f"there is no {path} in this project")
+            elif unchanged and _CHANGED_IT.search(sentence) and name not in touched:
+                found.append(f"{path} has not changed -- no edit to it went in")
+    return list(dict.fromkeys(found))
+
+
+def hardware_correction(family: str, run_label: str) -> str:
+    """What Gary is told when he says what real hardware did -- in this project's words:
+    Luna copied a generic "Compile and Test on Mac" into a Pi answer, which has no
+    Compile."""
+    if family == "arduino":
+        checks, where = f"{run_label} checks the code only", "board"
+    else:
+        checks, where = f"{run_label} runs it here with pretend pins", "Raspberry Pi"
+    return (f"Nothing in Open Nest has run this on a real {where}, and nothing can see one: "
+            f"{checks}. So do not say what the {where} or the light did or is doing. Say it "
+            f"again: what the code does, and that they will see it on their own {where}.")
 
 
 def promises(text: str) -> bool:

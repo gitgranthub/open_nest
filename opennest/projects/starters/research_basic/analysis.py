@@ -51,37 +51,48 @@ def describe(table, frame):
 
 
 def draw(frame, numbers, table_name):
-    """One chart, with both axes labelled. A chart nobody can read is not a result."""
+    """One chart, with both axes labelled -- and said in words, because a chart nobody can
+    read is not a result, and the words are what you (and Gary) can check."""
     CHART_DIR.mkdir(exist_ok=True)
 
     figure, axes = plt.subplots(figsize=(8, 4.5))
 
-    # Use the first non-numeric column as the labels along the bottom if there is one;
-    # otherwise just count the rows.
+    # Along the bottom: the first column of words if there is one (a name, a date).
     labels = None
     for name in frame.columns:
         if name not in numbers.columns:
-            labels = frame[name].astype(str)
+            labels = name
             break
 
     first_number = numbers.columns[0]
-    values = numbers[first_number]
+    others = [name for name in numbers.columns if name != first_number][:4]
 
     if labels is not None and len(frame) <= 30:
-        axes.bar(labels, values)
-        axes.set_xlabel(str(frame.columns[0]))
+        shown, along = [first_number], labels
+        axes.bar(frame[labels].astype(str), numbers[first_number])
         plt.setp(axes.get_xticklabels(), rotation=45, ha="right")
+    elif labels is None and others and numbers[first_number].is_monotonic_increasing:
+        # All numbers, and the first one only goes up -- week 1, 2, 3 -- so it is what
+        # the others are measured against: one line for each of them.
+        shown, along = others, first_number
+        for name in others:
+            axes.plot(numbers[first_number], numbers[name], marker="o", label=str(name))
+        if len(others) > 1:
+            axes.legend()
     else:
-        axes.plot(range(len(values)), values, marker="o", markersize=3)
-        axes.set_xlabel("Row number")
+        shown, along = [first_number], None
+        axes.plot(range(len(frame)), numbers[first_number], marker="o", markersize=3)
 
-    axes.set_ylabel(str(first_number))
-    axes.set_title(f"{first_number} from {table_name}")
+    what = " and ".join(str(name) for name in shown)
+    by = f"by {along}" if along is not None else "row by row"
+    axes.set_xlabel(str(along) if along is not None else "Row number")
+    axes.set_ylabel(what if len(shown) == 1 else "value")
+    axes.set_title(f"{what} {by}, from {table_name}")
     figure.tight_layout()
 
     chart = CHART_DIR / "chart.png"
     figure.savefig(chart, dpi=110)
-    print(f"\nChart saved to {chart}")
+    print(f"\nChart saved to {chart}: {what} {by}.")
     return chart
 
 

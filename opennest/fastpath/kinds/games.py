@@ -857,11 +857,17 @@ def _score_pieces(facts: Facts, rule: str) -> dict[str, list[str]]:
     return {"constants": constants, "setup": setup, "move": move, "draw": draw}
 
 
-def _touch_pieces(thing: _Thing, facts: Facts, rule: str) -> list[str]:
+def _touch_pieces(thing: _Thing, facts: Facts, rule: str, scene: str | None = None) -> list[str]:
+    """What touching one of ``thing`` does, as code for the loop. With ``scene`` -- the
+    game's scene variable, when its kit has ``touched`` -- a hit happens once per touch,
+    in the frame it begins: every frame of it would hold the player in the middle for as
+    long as a thing crossing the middle takes to pass (SPIKES.md section 29)."""
     player = facts.get("player")
     width, height = _screen_size(facts)
     if rule == "reset_player":
-        return [f"if {player}.collidelist({thing.items}) != -1:",
+        test = f"{scene}.touched({player}, {thing.items})" if scene else \
+            f"{player}.collidelist({thing.items}) != -1"
+        return [f"if {test}:",
                 f"    {player}.center = ({width} // 2, {height} // 2)"]
     if rule == "collect":
         return [f"for {thing.item} in {thing.items}:",
@@ -869,6 +875,35 @@ def _touch_pieces(thing: _Thing, facts: Facts, rule: str) -> list[str]:
                 "        score += 1"] + [
             f"        {line}" for line in _respawn(thing, thing.item, width, height)]
     return []
+
+
+def _counting_scene(ctx: Context, *, adopting: bool) -> str | None:
+    """The scene variable to count touches with, or None for the pygame-only check.
+
+    ``adopting``: this recipe's own ``game_object`` call follows its edits, and gives the
+    game a scene -- and the current kit -- when it has none. Otherwise only a scene the
+    game already has, whose kit already has ``touched``.
+    """
+    from opennest.graphics import game_object, looks
+    from opennest.graphics import source as scene_source
+
+    scene = scene_source.read(ctx.facts.get("source") or "")
+    if scene.adopted:
+        variable = scene.variable
+    elif adopting:
+        variable = "scene"
+    else:
+        return None
+    if ctx.project is None:
+        return variable if adopting else None
+    if adopting:
+        return variable if game_object.counts_touches(ctx.project) else None
+    kit = ctx.project.directory / game_object.KIT_PATH
+    try:
+        present = kit.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    return variable if "touched" in looks.kit_methods(present) else None
 
 
 def _ship_call(ctx: Context) -> tuple[str, dict] | None:
@@ -942,8 +977,10 @@ def add_things(ctx: Context) -> Change:
     if score:
         pieces.append(_score_pieces(ctx.facts, score))
     if on_touch:
-        # Collisions come after every move, so they test where things are this frame.
-        pieces[0]["move"] = pieces[0]["move"] + _touch_pieces(thing, ctx.facts, on_touch)
+        # Collisions come after every move, so they test where things are this frame. The
+        # look call below gives the game its scene if it has none, so the scene can count.
+        pieces[0]["move"] = pieces[0]["move"] + _touch_pieces(
+            thing, ctx.facts, on_touch, _counting_scene(ctx, adopting=True))
     source = _assemble(ctx, pieces, needs_random=True,
                        needs_math=thing.motion in ("wave", "orbit"))
     calls = [_look_call(thing, on_touch)]
@@ -1033,7 +1070,8 @@ def add_collision(ctx: Context) -> Change:
     ]))
     if answer not in ("reset_player", "collect"):
         raise NotApplicable("not sure what should happen on touching")
-    pieces = [{"move": _touch_pieces(thing, ctx.facts, answer)}]
+    pieces = [{"move": _touch_pieces(thing, ctx.facts, answer,
+                                     _counting_scene(ctx, adopting=False))}]
     if answer == "collect":
         pieces.append(_score_pieces(ctx.facts, "shown") if not ctx.facts.has("score")
                       else {})

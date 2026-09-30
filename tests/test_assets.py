@@ -624,7 +624,9 @@ def test_the_agent_pulls_the_model_up_and_it_corrects_itself(project, dropped) -
 
 
 def test_an_honest_reply_costs_no_extra_round_trip(project, dropped) -> None:
-    asset = assets.import_file(project, dropped("spaceship.png", SPACESHIP))
+    # The picture the honest reply names: a reply naming a file the project has not got is
+    # itself corrected since the stress pass (SPIKES.md section 29).
+    asset = assets.import_file(project, dropped("red-dragon-with-wings.png", SPACESHIP))
     controller, provider = build(project, [Reply(text=REPLY_HONEST)], model=BLIND)
     turn = controller.send("What is in my picture?", attachments=[asset])
     assert not turn.corrected_invention

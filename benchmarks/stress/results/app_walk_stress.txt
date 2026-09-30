@@ -1,0 +1,83 @@
+  [PASS] the local model finishes loading at launch
+  [PASS] the Flight Deck offers Games
+  [PASS] the New Project dialog opened
+  [PASS] OK enables once the project is named
+  [PASS] the project was created and opened
+  [PASS] it is on disk
+  [PASS] step 22: the message reached the box
+FASTPATH {"route": "recipe", "reason": "confident, whole game", "intent": "make_avoid_game", "score": 0.9983, "agreement": 1.0, "recipe": "game.make_avoid_game", "result": "success", "changed_files": ["src/game.py", "src/scene.py"], "stepped_aside": null, "seconds": 4.02, "checks": [["playtest_passes", "pass"], ["moves_by_itself", "pass"], ["thing_drawn", "pass"]]}
+GARY-SAID "I added five asteroids that zigzag across the screen and come back round. If one touches the player, the player goes back to the middle. Move with the arrow keys and keep out of their way. The player is drawn as a little ship now. I tested it without a window: it runs, and something moves on its own now."
+  [PASS] step 22: the turn finished
+  [PASS] step 22: Gary said something
+  [note] step 22: tools -> edit_file(ok), edit_file(ok), edit_file(ok), edit_file(ok), game_object(ok), game_object(ok)
+  [note] Gary, first turn: ' … drawing the asteroids\n   … drawing the player\n   … testing the game without a window\nGary: I added five asteroids that zigzag across the screen and come back round. If one touches the player, the player goes back to the middle. Move with the arrow keys and keep out of their way. The player is drawn as a little ship now. I tested it without a window: it runs, and something moves on its own now.\n'
+  [PASS] no reasoning monologue reached the transcript
+  [PASS] the project has an entry point on disk
+  [PASS] a Run button is offered
+  [PASS] the run finished
+  [note] run output: 'Your game is running here. Press Stop when you are done.'
+  [PASS] the run was confined, not refused
+  [PASS] Stop ends the run and closes the game window
+  [PASS] importing asks what the file is
+  [note] asset-kind prompt: 'What is spaceship.png?' default 'Use it in the project'
+  [PASS] the picture was imported and attached to the next message
+  [PASS] the attachment is visible to the child
+  [note] attachment line: 'Going with your next message: spaceship.png'
+  [PASS] it was copied into the project
+  [PASS] step 27: the message reached the box
+FASTPATH {"route": "recipe", "reason": "confident, and the picture is attached", "intent": "replace_player_sprite", "score": 1.0, "agreement": 1.0, "recipe": "game.replace_player_sprite", "result": "success", "changed_files": ["src/game.py"], "stepped_aside": null, "seconds": 2.386, "checks": [["playtest_passes", "pass"], ["picture_drawn", "pass"]]}
+GARY-SAID "I put assets/spaceship.png where the square was, sized to the player. I haven't seen the picture itself, so tell me if it needs turning or resizing. I tested it without a window, and it runs."
+  [PASS] step 27: the turn finished
+  [PASS] step 27: Gary said something
+  [note] step 27: tools -> game_object(ok)
+  [PASS] Gary does not claim to have looked at the picture
+  [PASS] step 29: the message reached the box
+FASTPATH {"route": "recipe", "reason": "confident", "intent": "change_thing_speed", "score": 0.9747, "agreement": 1.0, "recipe": "game.change_thing_speed", "result": "success", "changed_files": ["src/game.py"], "stepped_aside": null, "seconds": 3.385, "checks": [["value_set", "pass"], ["playtest_passes", "pass"], ["moves_by_itself", "pass"]]}
+GARY-SAID "I raised ASTEROID_SPEED from 3 to 5. I tested it without a window: it runs, and something moves on its own now."
+  [PASS] step 29: the turn finished
+  [PASS] step 29: Gary said something
+  [note] step 29: tools -> edit_file(ok)
+  [PASS] the change reached the file
+  [PASS] Undo is offered once there is something to undo
+  [PASS] Undo does not stop to ask -- it is the safety net
+  [PASS] Undo put the previous version back
+  [PASS] Back returns to the Flight Deck
+  [PASS] a Research profile exists
+  [PASS] the Research project opened
+  [PASS] importing the CSV asks what it is
+  [note] asset-kind prompt: 'What is weather.csv?' default 'Data to work with'
+  [PASS] step 33: the message reached the box
+FASTPATH {"route": "recipe", "reason": "two parts, and one recipe draws the chart the other asks for", "intent": "biggest_change", "score": 1.0, "agreement": 1.0, "recipe": "analysis.biggest_change", "result": "success", "changed_files": ["src/analysis.py"], "stepped_aside": null, "seconds": 8.856, "checks": [["runs_clean", "pass"], ["chart_written", "pass"], ["printed_result", "pass"]]}
+GARY-SAID "The analysis works out how much each number column changed now, and draws it in charts/change_by_column.png.\n\nI ran it, and it printed:\n\n    How much each column changed from the first month to the last:\n    rainfall_mm       7\n    sunshine_hours   -4\n    The biggest change was rainfall_mm: +7.00"
+  [PASS] step 33: the turn finished
+  [PASS] step 33: Gary said something
+  [note] step 33: tools -> edit_file(ok), run_project(ok)
+  [note] research output: 'Reading weather.csv\n  12 rows, 3 columns\n  columns: month, rainfall_mm, sunshine_hours\n  no empty cells\n\nThe number columns, summarised:\n       rainfall_mm  sunshine_hours\ncount    12.000000       12.000000\nmean     66.500000      127.750000\nstd      19.374304       65.234019\nmin      42.000000       40.000000\n25%      51.250000       66.000000\n50%      62.000000      130.000000\n75%      86.500000'
+  [note] research output, end: '12.000000\nmean     66.500000      127.750000\nstd      19.374304       65.234019\nmin      42.000000       40.000000\n25%      51.250000       66.000000\n50%      62.000000      130.000000\n75%      86.500000      191.500000\nmax      95.000000      215.000000\n\nChart saved to charts/chart.png: rainfall_mm by month.\n\nHow much each column changed from the first month to the last:\nrainfall_mm       7\nsunshine_hours   -4\nThe biggest change was rainfall_mm: +7.00\nChart saved to charts/change_by_column.png\n'
+  [note] original step-34 check (outputs/): would fail -- nothing writes there
+  [note] charts written: ['change_by_column.png', 'chart.png']
+  [PASS] step 34: a chart was produced
+  [note] models offered in the picker: ['Qwen3 4B — On this Mac', 'Qwen3 8B — On this Mac', 'Qwen3 14B — On this Mac', 'Qwen3 Coder 30B — On this Mac', 'Qwen2.5 Coder 3B — On this Mac', 'Llama 3.2 3B — On this Mac', 'Claude — Internet', 'Claude Haiku — Internet', 'OpenAI — Internet']
+  [PASS] switching to cloud says something first
+  [note] cloud message: 'Claude uses the internet, and cloud AI is turned off.\n\nA parent can turn it on in Settings.'
+  [PASS] step 38: no path escapes the project through the file tools
+  [PASS] the window closed without aborting the process
+
+=== app-walk: 41/41 checks passed ===
+  notes:
+    - step 22: tools -> edit_file(ok), edit_file(ok), edit_file(ok), edit_file(ok), game_object(ok), game_object(ok)
+    - Gary, first turn: ' … drawing the asteroids\n   … drawing the player\n   … testing the game without a window\nGary: I added five asteroids that zigzag across the screen and come back round. If one touches the player, the player goes back to the middle. Move with the arrow keys and keep out of their way. The player is drawn as a little ship now. I tested it without a window: it runs, and something moves on its own now.\n'
+    - run output: 'Your game is running here. Press Stop when you are done.'
+    - asset-kind prompt: 'What is spaceship.png?' default 'Use it in the project'
+    - attachment line: 'Going with your next message: spaceship.png'
+    - step 27: tools -> game_object(ok)
+    - step 29: tools -> edit_file(ok)
+    - asset-kind prompt: 'What is weather.csv?' default 'Data to work with'
+    - step 33: tools -> edit_file(ok), run_project(ok)
+    - research output: 'Reading weather.csv\n  12 rows, 3 columns\n  columns: month, rainfall_mm, sunshine_hours\n  no empty cells\n\nThe number columns, summarised:\n       rainfall_mm  sunshine_hours\ncount    12.000000       12.000000\nmean     66.500000      127.750000\nstd      19.374304       65.234019\nmin      42.000000       40.000000\n25%      51.250000       66.000000\n50%      62.000000      130.000000\n75%      86.500000'
+    - research output, end: '12.000000\nmean     66.500000      127.750000\nstd      19.374304       65.234019\nmin      42.000000       40.000000\n25%      51.250000       66.000000\n50%      62.000000      130.000000\n75%      86.500000      191.500000\nmax      95.000000      215.000000\n\nChart saved to charts/chart.png: rainfall_mm by month.\n\nHow much each column changed from the first month to the last:\nrainfall_mm       7\nsunshine_hours   -4\nThe biggest change was rainfall_mm: +7.00\nChart saved to charts/change_by_column.png\n'
+    - original step-34 check (outputs/): would fail -- nothing writes there
+    - charts written: ['change_by_column.png', 'chart.png']
+    - models offered in the picker: ['Qwen3 4B — On this Mac', 'Qwen3 8B — On this Mac', 'Qwen3 14B — On this Mac', 'Qwen3 Coder 30B — On this Mac', 'Qwen2.5 Coder 3B — On this Mac', 'Llama 3.2 3B — On this Mac', 'Claude — Internet', 'Claude Haiku — Internet', 'OpenAI — Internet']
+    - cloud message: 'Claude uses the internet, and cloud AI is turned off.\n\nA parent can turn it on in Settings.'
+  11 screenshots in /Users/grantcheney/Documents/Grant/github/open_nest/.opennest-sandbox/phase12

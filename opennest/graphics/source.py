@@ -162,10 +162,12 @@ def read(source: str) -> GameScene:
 
 
 def _touched_name(stmt: ast.stmt, var: str) -> str | None:
-    """The name in ``scene.touching(player, "cars")`` heading an if or a for."""
+    """The name in ``scene.touched(player, "cars")`` heading an if or a for -- or
+    ``scene.touching``, which the rules were written with before the kit's version 2."""
     head = stmt.test if isinstance(stmt, ast.If) else stmt.iter if isinstance(
         stmt, ast.For) else None
-    if isinstance(head, ast.Call) and _dotted(head.func) == f"{var}.touching" and \
+    if isinstance(head, ast.Call) and _dotted(head.func) in (f"{var}.touched",
+                                                             f"{var}.touching") and \
             len(head.args) == 2 and isinstance(head.args[1], ast.Constant) and \
             isinstance(head.args[1].value, str):
         return head.args[1].value
@@ -348,6 +350,23 @@ def names_used(tree: ast.Module) -> set[str]:
     return used
 
 
+def names_bound(tree: ast.Module) -> set[str]:
+    """The names a game gives a value to: assigned, imported, defined, or an argument.
+    A name that is only read -- ``scene.touched(...)`` a recipe wrote just before its
+    look call gives the game its scene -- is not one the game has taken."""
+    bound = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            bound.add(node.id)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            bound.add(node.name)
+        elif isinstance(node, ast.alias):
+            bound.add((node.asname or node.name).split(".")[0])
+        elif isinstance(node, ast.arg):
+            bound.add(node.arg)
+    return bound
+
+
 def rect_start(tree: ast.Module, player: str) -> str | None:
     """Where the player's rect starts, as code: the first two arguments of its
     ``pygame.Rect(...)``, so "back to the start" means where this game starts it."""
@@ -527,7 +546,7 @@ def touch_rule(scene: GameScene, name: str) -> str:
         if not mentioned & {items, target} - {None}:
             continue
         if any(isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and
-               n.func.attr in ("collidelist", "colliderect", "touching")
+               n.func.attr in ("collidelist", "colliderect", "touching", "touched")
                for n in ast.walk(stmt)):
             return "collect" if "score" in ast.unparse(stmt) else "avoid"
     return ""

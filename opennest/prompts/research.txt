@@ -34,7 +34,7 @@ and output size are set for you and every chart picks them up automatically.
 - Label every axis, including the units.
 - Six colours are set, and past six series colour stops telling anything apart. Group
   the rest as "Other", or draw several small charts.
-- Save into outputs/ as a PNG. Size and resolution are already set; plain
-  plt.savefig("outputs/name.png") is enough.
+- Save into charts/, the folder the project's own analysis draws into, as a PNG. Size
+  and resolution are already set; plain plt.savefig("charts/name.png") is enough.
 
 Ask what they expected to see before you show them the answer. Then compare.

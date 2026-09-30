@@ -3,7 +3,7 @@
   "intent": "add_game_rules",
   "describe": "add lives, a timer, levels, a start screen or a game over screen",
   "guide": [
-    "Keep the rule's number in a named variable made once above the loop (lives = 3, time_left = 30). Change it inside the loop when the event happens, draw it after screen.fill with a font, and when it runs out, show a message rather than closing the window straight away.",
+    "Keep the rule's number in a named variable made once above the loop (lives = 3, time_left = 30). Change it inside the loop when the event happens, draw it after screen.fill with a font, and when it runs out, show a message rather than closing the window straight away. A life lost on touching something is lost once per touch, not on every frame of it: scene.touched(player, things) is true only in the frame a touch begins.",
     "A timer is easiest from pygame.time.get_ticks(): remember the start time above the loop and work out the seconds left each frame."
   ],
   "requires": [],
