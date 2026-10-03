@@ -223,3 +223,7 @@ spikes/
 
 # Contained development sandbox (models, runtime, caches)
 .opennest-sandbox/
+
+# The owner test04 replays draw the owner's own pictures (assets/test_builds, not in git):
+# their frames stay on the machine that ran them.
+benchmarks/owner_test04/results/*/

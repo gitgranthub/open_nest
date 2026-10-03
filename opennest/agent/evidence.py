@@ -408,9 +408,11 @@ def _scene_lines(project: Project, source: str) -> list[str]:
         return lines
     things = scene_source.describe(scene, facts.get("player"))
     if things:
+        # Said as a list, not indented like code: measured on the test04 replays, both
+        # models copied one of these lines into edit_file as the text to replace.
         lines.append("- The game's scene, read from its code and drawn back to front -- "
-                     "game_object changes any of these by name:\n"
-                     + "\n".join(f"    {thing}" for thing in things))
+                     "described in words, not the code itself; game_object changes any of "
+                     "these by name:\n" + "\n".join(f"  * {thing}" for thing in things))
     skies = [entry for entry in scene.entries.values() if entry.look_class == "Sky"]
     background = facts.get("background")
     if skies and background and skies[0].look == f"Sky({background})":

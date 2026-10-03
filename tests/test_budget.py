@@ -248,7 +248,9 @@ def test_a_silent_turn_that_ran_successfully_says_so(project) -> None:
 def test_a_turn_that_did_nothing_is_not_given_words_to_say(project) -> None:
     """No invented summary when there is nothing to summarise."""
     controller, _ = build(project, [Reply()])
-    turn = controller.send("hello")
+    # A request: a hello is answered like a question now (the owner's test04), and an
+    # empty answer is given what the project has.
+    turn = controller.send("do the thing")
     assert turn.text == ""
 
 

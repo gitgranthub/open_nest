@@ -73,7 +73,8 @@ def test_plain_reply_needs_no_tools(project) -> None:
 
 def test_only_profile_tools_are_offered(project) -> None:
     controller, provider = make(project, [Reply(text="ok")])
-    controller.send("hi")
+    # A request: a hello is answered with words and no tools (the owner's test04).
+    controller.send("add a cloud")
     offered = {t["function"]["name"] for t in provider.tools_offered[0]}
     # A Games project: the four, and game_object since Phase 13C.
     assert offered == {"read_file", "edit_file", "write_file", "run_project", "game_object"}

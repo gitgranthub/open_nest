@@ -701,7 +701,8 @@ def test_a_fast_path_that_raises_is_recorded_and_gary_takes_the_turn(project) ->
 
     provider = ScriptedProvider([Reply(text="Hello.")])
     controller = AgentController(project, provider, Toolbox(project), fastpath=Exploding())
-    turn = controller.send("hi")
+    # A request: a hello is answered without the Fast Path (the owner's test04).
+    turn = controller.send("add a cloud")
     assert turn.text == "Hello."
     assert "bug" in turn.fastpath["reason"]
 

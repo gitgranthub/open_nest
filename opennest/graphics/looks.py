@@ -36,6 +36,7 @@ KIT = Path(__file__).with_name("kit") / "scene.py"
 #: matches none of them and is never overwritten.
 EARLIER_KITS = {
     "682fdd81378c8f5b716ebbf915069e3e6164d8d043f5874456fa25ea793b4445": 1,
+    "584048a418ce3bae5246ebbe7c9a38091261b0138f79d8797a6c72b54b12bb0d": 2,
 }
 
 #: The kit's ready-made drawings, as Gary names them, and the class that draws each.
@@ -60,10 +61,47 @@ NAMED_DRAWINGS = {
     "skies": "sky", "background": "sky", "skyline": "building", "town": "building",
     "city": "building", "shop": "building", "shops": "building", "coins": "coin",
     "stars": "star", "platforms": "platform", "signs": "sign",
+    "forest": "tree", "woods": "tree", "wood": "tree", "jungle": "tree",
 }
+
+#: Names for a place made of many of one thing: a forest is trees, a town buildings. A
+#: picture of a tree may be a forest's look, and a forest's code is its trees.
+GROUPS = {"forest": "tree", "forests": "tree", "woods": "tree", "wood": "tree",
+          "jungle": "tree", "orchard": "tree", "park": "tree", "town": "building",
+          "city": "building", "village": "house", "street": "road", "traffic": "vehicle"}
 
 #: Shapes, as Gary writes them, with how many numbers each takes.
 SHAPES = {"rect": 4, "circle": 3, "ellipse": 4, "triangle": 4, "line": 4}
+
+#: Plain shapes a model names as if they were ready-made drawings -- "square", "circle".
+#: Measured on the owner's test04 replay: the 4B asked for drawing "square" for the
+#: player and "circle" for the monster, was refused both times, spent a call on each
+#: retry, and the child was then offered a picture of "a real square". The shape is what
+#: it meant, so the shape is what is drawn.
+SHAPE_WORDS = {"square": "rect", "rectangle": "rect", "rect": "rect", "box": "rect",
+               "block": "rect", "cube": "rect", "circle": "circle", "ball": "circle",
+               "dot": "circle", "orb": "circle", "oval": "ellipse", "ellipse": "ellipse",
+               "triangle": "triangle"}
+
+
+def shape_word(word) -> str | None:
+    """The shape a drawing name like "square" or "red circle" means, or None."""
+    key = re.sub(r"[^a-z]", "", str(word or "").lower())
+    for colourless in (key, *(key[len(c):] for c in palette() if key.startswith(c))):
+        if colourless in SHAPE_WORDS:
+            return SHAPE_WORDS[colourless]
+    return None
+
+
+def one_shape(kind: str, size, colour_arg) -> list[dict]:
+    """``shapes`` for one plain shape filling a box of ``size`` -- for shapes_look."""
+    width, height = size or (40, 40)
+    if kind == "circle":
+        shape = {"circle": [width / 2, height / 2, min(width, height) / 2]}
+    else:
+        shape = {kind: [0, 0, width, height]}
+    shape["color"] = colour_arg if colour_arg else "white"
+    return [shape]
 
 #: Named CSS colours the kit's palette does not have, as (red, green, blue). The kit
 #: hands any other name to pygame, which knows these too; converting them here means a
@@ -243,6 +281,10 @@ class Look:
         """The look as the game's code says it."""
         if self.kind == "picture":
             return f"Picture({quoted(self.picture)})"
+        if self.kind == "pictures":
+            # One look per copy (kit version 3): a forest of the child's six trees.
+            listed = ",\n".join(f"    Picture({quoted(path)})" for path in self.series)
+            return f"[\n{listed},\n]"
         if self.kind == "animation":
             if self.series:
                 listed = ", ".join(quoted(path) for path in self.series)
@@ -262,7 +304,7 @@ class Look:
 
     def classes(self) -> set[str]:
         """The kit classes the code for this look uses."""
-        if self.kind == "picture":
+        if self.kind in ("picture", "pictures"):
             return {"Picture"}
         if self.kind == "animation":
             return {"Animation"}
@@ -278,6 +320,8 @@ class Look:
     def describe(self) -> str:
         if self.kind == "picture":
             return f"the picture {self.picture}"
+        if self.kind == "pictures":
+            return f"the pictures {', '.join(self.series)}, one per copy"
         if self.kind == "animation":
             count = len(self.series) or self.frames
             return f"the animation {self.picture} ({count} frames)"
@@ -464,6 +508,14 @@ def shapes_look(shapes, size, at, notes: list[str], constants=()) -> Look | None
             dx, dy = ax, ay
             notes.append("its shapes were given as places on the screen, so Open Nest "
                          "moved them into its own box")
+    if box is not None and not (dx or dy) and (x1 > box[0] or y1 > box[1]) and \
+            x2 - x1 <= box[0] * 1.5 + 2 and y2 - y1 <= box[1] * 1.5 + 2:
+        # Every shape past its own box, at a screen place of its own: measured on the
+        # test04 replay, a 30x30 monster given a circle at (150, 150) grew a 168x170 box
+        # with a dot in its corner. The shapes are the thing; they start at its corner.
+        dx, dy = x1, y1
+        notes.append("its shapes were given as places on the screen, so Open Nest moved "
+                     "them into its own box")
     if box is None:
         box = (max(1, math.ceil(x2 - min(0.0, x1))), max(1, math.ceil(y2 - min(0.0, y1))))
     elif x2 - dx > box[0] + 1 or y2 - dy > box[1] + 1:

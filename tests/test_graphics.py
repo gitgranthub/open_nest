@@ -97,7 +97,7 @@ def test_the_kit_imports_nothing_but_pygame_and_the_standard_library() -> None:
     imported |= {node.module.split(".")[0] for node in ast.walk(tree)
                  if isinstance(node, ast.ImportFrom) and node.module}
     assert imported <= {"pygame", "random", "pathlib"}
-    assert looks.kit_version() == 2
+    assert looks.kit_version() == 3
 
 
 def test_colours_by_name_hex_and_numbers(kit) -> None:
@@ -1353,8 +1353,7 @@ def test_a_silent_game_object_turn_is_described_from_the_results(eagle) -> None:
     results = [("game_object", box.dispatch("game_object", {"name": "sky", "drawing": "sky"})),
                ("game_object", box.dispatch("game_object", {"name": "player",
                                                            "picture": "assets/eagle.png"}))]
-    assert _scene_changes(results) == ("I added the sky (a ready-made sky drawing) and made "
-                                       "the player the picture assets/eagle.png.")
+    assert _scene_changes(results) == "I added the sky; the player is your eagle.png now."
     assert _scene_changes(results + [("edit_file", box.dispatch("edit_file", {
         "path": "src/game.py", "old_text": "PLAYER_SPEED = 5",
         "new_text": "PLAYER_SPEED = 6"}))]) == ""
@@ -1493,7 +1492,9 @@ def test_a_half_done_turn_that_promises_the_rest_is_carried_on_once(eagle) -> No
 
 
 def test_three_cars_said_about_a_scene_with_one_is_corrected(eagle) -> None:
-    """The third 4B walk: three calls named "car", each replacing the last."""
+    """The third 4B walk: calls named "car" at new places. Each used to replace the last;
+    in one message they are one car each now (the test04 replay), and a wrong count is
+    still corrected."""
     from opennest.ai.provider import Reply, ToolCall
 
     car = {"name": "car", "drawing": "vehicle", "moves": "left"}
@@ -1506,7 +1507,7 @@ def test_three_cars_said_about_a_scene_with_one_is_corrected(eagle) -> None:
     ])
     turn = controller.send("Add three cars to the road.")
     sent = [m.content for m in provider.calls[-1] if m.role == "user"]
-    assert any(text.startswith("The game has 1 car, not 3") for text in sent)
+    assert any(text.startswith("The game has 2 cars, not 3") for text in sent)
     assert "count: 3 makes that many" in sent[-1]
     assert turn.text == "There are three cars now."
     entry = scene_source.read(game(eagle)).entries["car"]
@@ -1642,7 +1643,7 @@ def test_on_the_road_is_checked_against_where_the_scene_has_it(eagle) -> None:
     from tests.conftest import ScriptedProvider
 
     call(eagle, name="road", drawing="road", at=[0, 430], size=[640, 50])
-    call(eagle, name="cars", drawing="vehicle", at=[600, 0], size=[40, 20], count=3,
+    call(eagle, name="cars", drawing="vehicle", at=[600, 40], size=[40, 20], count=3,
          moves="left")
     controller = AgentController(eagle, ScriptedProvider([]), Toolbox(eagle))
     said = controller._scene_claims("10 cars moving left across the road.")

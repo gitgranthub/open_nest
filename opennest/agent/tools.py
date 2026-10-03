@@ -15,6 +15,7 @@ Two things here come straight out of Phase 1 (SPIKES.md section 4):
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import difflib
 import json
@@ -191,9 +192,10 @@ SCHEMAS: dict[str, dict] = {
                      "description": "What it is, in a word or two: player, sky, road, "
                                     "buildings, cars, coins. player is the one the arrow "
                                     "keys move."},
-            "picture": {"type": "string",
+            "picture": {"type": ["string", "array"], "items": {"type": "string"},
                         "description": "A picture file in the project to show, like "
-                                       "assets/eagle.png."},
+                                       "assets/eagle.png -- or a list of them, one for each "
+                                       "copy, like the child's tree pictures for a forest."},
             "frames": {"type": "integer",
                        "description": "If the picture holds several animation frames, how "
                                       "many."},
@@ -218,8 +220,8 @@ SCHEMAS: dict[str, dict] = {
                      "description": "[width, height] in pixels."},
             "at": {"type": "array",
                    "description": "[x, y] of its top-left corner in the game window; y grows "
-                                  "downwards. The window's size is in what Open Nest has "
-                                  "checked."},
+                                  "downwards -- or a list of [x, y], one for each copy. The "
+                                  "window's size is in what Open Nest has checked."},
             "on": {"type": "string",
                    "description": "The name of a thing it stands on, like road."},
             "layer": {"type": "string",
@@ -231,9 +233,11 @@ SCHEMAS: dict[str, dict] = {
                       "description": "Which way it keeps moving by itself. It comes back "
                                      "round the other side."},
             "speed": {"type": "number"},
-            "touch": {"type": "string", "enum": ["nothing", "avoid", "collect"],
+            "touch": {"type": "string", "enum": ["nothing", "avoid", "collect", "shoot"],
                       "description": "What touching it does: avoid sends the player back to "
-                                     "the start, collect scores a point."},
+                                     "the start, collect scores a point, shoot makes it a "
+                                     "target -- clicking it (or Space with the player over "
+                                     "it) hits it for a point."},
             "remove": {"type": "boolean", "description": "true takes it out of the scene."},
         },
         ["name"],
@@ -301,6 +305,18 @@ class Toolbox:
         #: that must tell "use my eagle picture" from a picture nobody mentioned
         #: (game_object). Set and cleared by ``AgentController.send``, like ``observer``.
         self.message: tuple[str, tuple[str, ...]] = ("", ())
+
+    @property
+    def message(self) -> tuple[str, tuple[str, ...]]:
+        return self._message
+
+    @message.setter
+    def message(self, value: tuple[str, tuple[str, ...]]) -> None:
+        # A new message starts with nothing added for it yet (``game_object``'s ``added``).
+        self._message = value
+        self.added: set[str] = set()
+        #: ...and what it gave a picture, for "tree" with tree_01 here, tree_02 there.
+        self.pictured: set[str] = set()
 
     def report(self, step: Step) -> None:
         """Tell the observer. Showing progress must never be what breaks a turn."""
@@ -460,6 +476,7 @@ class Toolbox:
         # as one commented line looks created and does nothing.
         content, unescaped = repair_written_text(relative, content)
         _reject_broken_python(relative, content)
+        _reject_tool_calls_as_code(relative, "", content)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         rel = str(path.relative_to(self.project.directory.resolve()))
@@ -527,6 +544,14 @@ class Toolbox:
         else:
             repair = repair_edit(text, old, new)
             if repair is None:
+                called = sorted(name for name in SCHEMAS if f"{name}(" in old)
+                if called:
+                    # Measured on the final test04 replay: the 8B edited "game_object('sky',
+                    # ...)" lines it imagined were in the game. Tools are not in the code.
+                    raise ToolError(
+                        f"{relative!r} has no {called[0]}(...) in it: {called[0]} is one of "
+                        f"your tools, not code in the game. To change how something looks, "
+                        f"call the {called[0]} tool with its name.", reason="not_found")
                 raise ToolError(
                     f"That exact text is not in {relative!r}. Read the file again and "
                     f"copy the line you want to change exactly as it appears.",
@@ -544,6 +569,7 @@ class Toolbox:
                 reason="no_change",
             )
         _reject_broken_python(relative, updated)
+        _reject_tool_calls_as_code(relative, text, updated)
         path.write_text(updated, encoding="utf-8")
         rel = str(path.relative_to(self.project.directory.resolve()))
         return ToolResult(True, f"Changed {rel}." + _counting_note(relative, text, updated),
@@ -578,10 +604,16 @@ class Toolbox:
         """
         from opennest.graphics import game_object
 
-        outcome = game_object.run(self.project, args, message=self.message)
+        outcome = game_object.run(self.project, args, message=self.message,
+                                  added=frozenset(self.added),
+                                  pictured=frozenset(self.pictured))
         body = json.dumps(outcome.result)
         if not outcome.ok:
             return ToolResult(False, body, reason=outcome.reason)
+        if outcome.result.get("action") == "added":
+            self.added.add(str(outcome.result.get("object") or ""))
+        if outcome.result.get("picture"):
+            self.pictured.add(str(outcome.result.get("object") or ""))
         ready = []
         for relative, text in outcome.files.items():
             path = resolve_in_project(self.project.directory, relative, for_write=True)
@@ -931,6 +963,36 @@ def _reject_broken_python(relative: str, content: str) -> None:
     except ValueError as exc:  # e.g. NUL bytes
         raise ToolError(f"That content cannot be saved to {relative}: {exc}",
                         reason="bad_content") from exc
+
+
+def _reject_tool_calls_as_code(relative: str, before: str, after: str) -> None:
+    """A tool written into the game as if it were a function the game could call.
+
+    Measured on the owner's test04 replay: Qwen3 8B put ``game_object(name='sky',
+    color='black')`` -- and a road and trees -- into src/game.py with edit_file. The game
+    crashed with a NameError, three repairs could not save it, and the child was told it
+    had stopped with an error. The tool is called, never written."""
+    if not relative.endswith(".py"):
+        return
+    tools = set(SCHEMAS)
+
+    def calls(text: str) -> set[str]:
+        try:
+            tree = ast.parse(text)
+        except (SyntaxError, ValueError):
+            return set()
+        defined = {node.name for node in ast.walk(tree)
+                   if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        return {node.func.id for node in ast.walk(tree) if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name) and node.func.id in tools} - defined
+
+    written = calls(after) - calls(before)
+    if written:
+        name = sorted(written)[0]
+        raise ToolError(
+            f"{name} is one of your tools, not something {relative} can call -- the game "
+            f"would stop with a NameError. Call the {name} tool itself, with those "
+            f"arguments, one thing per call. Nothing was saved.", reason="tool_as_code")
 
 
 def _counting_note(relative: str, before: str, after: str) -> str:

@@ -4599,3 +4599,204 @@ Cloud, provider-reported, every turn: Luna 412k input / 19.5k output tokens over
 (the full pass) plus 206k / 8.0k over 31 (the confirming run); Sonnet 370k / 13.1k over 60.
 Plus two probes of ~15 tokens each, and one memory summary per project closed. At the
 catalogue's $2 per million input tokens, Sonnet's input was about $0.74.
+
+## 30. The owner's test04, replayed -- what was Open Nest's, and what Gary is told
+
+The owner's first in-person test after the stress pass (2026-10-02, `test04`, a Game
+project, the local 4B): "Hi Gary", "What should I do first? any ideas for me?", then "Let's
+make this a game in the woods at night. A first person shooter. We have to shoot monsters
+hiding behind trees. Make this game", then their own `blue_monster.png` and six tree
+pictures, added between messages, and three more messages about using them. The game that
+came out was a blue sky, a green road, one brown tree drifting left, the monster hanging in
+the sky and the orange starter square; the replies denied work that had been done ("I did
+not do it. It is not in the game.") and handed it back ("Ask for help to add one.").
+
+The owner's ruling on what to do about it: fix what is Open Nest's fault -- "it would hurt
+any model" -- and expect more of Open Nest than a deterministic workflow: the 4B can
+understand that someone wants a real game, and Gary can answer better, follow context and
+understand the child from loose chatting. Replay with the 4B and 8B only; if those work,
+Luna and Sonnet will.
+
+`benchmarks/owner_test04/replay.py` is the owner's thread message for message -- typos
+kept, the pictures added where they were added -- through the real Workbench, wired as
+MainWindow wires it. It records, besides the chat and the files, every message the turn
+added to Gary's history *before* the history was settled: his drafts, every call and
+result, and every correction Open Nest sent him -- which is what traced each bad reply to
+what produced it. The pictures are the owner's, in `assets/test_builds/` (not in git).
+
+### 30A. What the replays traced (before)
+
+The archive held no tool calls -- a thread is written at rollover -- so the owner's game
+was read from its checkpoints, and the replays did the rest. `before_4b`, `before_8b`:
+
+- **Open Nest's checks corrected true sentences, and the corrections did the damage.**
+  "Now the player is in the woods" about three trees: "The game has no woods". "I added
+  the monster (the picture assets/blue_monster.png)": "assets/blue_monster.png has not
+  changed -- no edit to it went in". "The monster at (100, 300) stays still": "You have
+  not seen assets/blue_monster.png ..." -- the child had called it "the monster image" two
+  messages before, and the scene had a monster. "I see the code draws them": the same.
+  "The list of tree images is correct": "The game has no correct". "Replace the `shapes`
+  or `drawing`": "The game has no drawing". Told to "Answer <their request> again", both
+  models said the child's message back word for word, as Gary's. Told "say plainly that
+  you have not changed anything", the 4B said the tree pictures it had added the turn
+  before "were not added to the game". **The owner's "I did not see its content. I did not
+  use it" was this correction, verbatim.**
+- **The layer drew what nobody meant.** A picture kept a box that was not its shape (the
+  monster's shapes' 140x470, so a square picture centred in a tall box hung in the sky).
+  Three calls for `tree` at three places were one tree. "square" and "circle" were refused
+  as drawings (two calls spent, and the child offered a picture of "a real square").
+  `trees`, count 5, size [640, 480] drew five trees each the size of the window. The 4B
+  gave the trees `blue_monster.png` -- five window-sized monsters -- and later called the
+  monster "tree"; it made the player `blue_monster.png` while the scene had its monster.
+  Six tree pictures had no way to be one forest. A road "at [0, 0]" ran along the top;
+  trees at [0, 0], or with no place and no ground, hung along the top or the middle. A
+  tree picture not added yet (`assets/tree.png`) was refused, and there were no trees.
+  Nothing could shoot: the 4B's own try was Space adding a yellow dot every frame, forever.
+- **Open Nest's own words.** "Here is where I got to" with nothing after it; "added the
+  tree (a ready-made tree drawing), changed how the tree looks and changed how the tree
+  looks"; "Say it again and I'll take another look".
+- **The reply reaching the child.** "You can now make the forest we walk through", "Fix
+  the player's movement to walk forward only", "Ask for a road layer if needed" -- the job
+  handed back; "The monster at (100, 300) stays still" in every 4B reply; the 8B writing
+  `game_object(name='sky', ...)` into src/game.py with edit_file (a NameError, three
+  failed repairs).
+- **Adding pictures.** Six questions and six identical messages for six trees, and under
+  cocoa the kind dropdown narrower than its own labels ("Something to look a").
+- **Getting started.** "Hi. Ready." and "Run the game. Watch the orange square move".
+
+### 30B. What changed
+
+Each in the shared layer; nothing for one provider, nothing for one request.
+
+**The layer** (`graphics/`): a picture's box is the picture's shape, and a picture replacing
+a drawing gets a picture's own size; a screen-sized size for one thing, or a row too wide
+for the screen, becomes each one's size; a second call for a thing this message added, at
+a new place, is another of it (`Toolbox.added`); "square", "circle", "triangle"... are
+drawn as that shape; a picture named for another thing is not used for this one (unless
+the child gives it: "use the monster picture for the enemies"), a new thing given the
+picture the child just named ("the monster image") is that thing, and the player does not
+take another scene thing's picture; a forest may wear tree pictures; a picture not in the
+project is the thing's ready-made drawing until there is one; a band at the top goes along
+the bottom; a standing thing on the top edge stands on the ground, and a standing row with
+no ground on the screen's bottom; **a list of pictures, or a numbered picture with a count,
+is one look per copy** -- kit version 3 (`scene.add(name, [Picture(...), ...], count=6)`,
+v2's SHA-256 in `EARLIER_KITS`, `tests/fixtures/scene_kit_v2.txt`; a hand-changed old kit
+gets one picture, never a list it cannot draw); **`touch: shoot`** -- clicking it, or Space
+with the player over it, hits it for a point and it goes round again, written in the event
+loop, found again by `source.read`, and a thing to shoot may hide behind the scenery;
+the score is light on a dark sky.
+
+**The checks** (`agent/`): woods, forest, jungle are trees; genre words, time of day,
+"correct", "drawing", "shapes", "pictures" are not things; a picture or sound named in a
+reply is used, not edited; the child's words count from the whole conversation, and a
+scene thing's name is the game's; a picture's full name is a name once the child has used
+it ("the blue monster image" after "the monster image"; "the red dragon image" for their
+spaceship is still caught, §10); a filename word counts only in a sentence about that
+picture ("the sky is dark blue" is about the sky); "I see the code" is not a claim about a
+picture; after a request a correction says "say again, in your own words, what you did --
+do not repeat their message", never "Answer <request> again"; "you changed nothing" also
+says what the game already has.
+
+**The words** (`controller._tidy`, `replies.py`): a reply that is the child's message said
+back is replaced by what happened; in a request, sentences that hand the building back
+become one offer ("Want me to make the forest we walk through?"), in an answer only "ask
+for help" goes, never in "build it and teach me", never a recipe's own text; in a game,
+places in pixels and speeds in pixels per frame come out of the sentence, which is kept
+where it still reads; the base prompt's own example sentence, said as a whole reply with
+nothing found, is replaced by what happened; Open Nest's turn summary says each thing once
+("I added the sky and 3 trees; the monster is your blue_monster.png now."); out of calls
+says what was made and offers "keep going"; Open Nest's own fallbacks offer instead of
+"say it again"; an edit that writes one of Gary's tools into the game is refused
+(`tool_as_code`).
+
+**Adding pictures** (`ui/workbench.py`, `assets/manager.py`): one question for files of
+one kind added together, one message, the limitation once, and in a game how to ask
+("To put them in the game, say “use the tree pictures for the trees”"); the dropdown is as
+wide as its words under cocoa (checked by grabbing it there). Gary is told a numbered set
+is one set to give together, and that a picture's name is what the child calls it -- the
+"a file's name is not a description of its contents" line, which the 4B turned into "I
+used it only as a reference for the name and path", is gone.
+
+**What Gary is told** -- and where, which turned out to be the measurement that mattered:
+
+- **The child's requests, in their words, every turn** (`WISHES_HEADING`, up to six).
+- **A hello is answered like a question** (words, no tools), and a hello or "what should I
+  do?" on a game still its starter gets, beside the message, three ideas of his own and
+  the sentence to ask with; the second time, help choosing, not the ideas again.
+- **A whole-game request** ("game" and eight words, or a genre) gets, beside the message:
+  work out what the player does, what they try to do and what gets in the way, build it
+  now with game_object (with touch shoot, avoid, collect) and edit_file, and if it needs
+  3D or first person, the closest 2D version, said in one sentence.
+- **"It's not a good game"** on a question: what would make it play better, and an offer.
+- In the Games prompt, only one line: what touching does is game_object too.
+
+**Where it is said** (§30C) is why the whole-game guidance is beside the message and not
+in the Games prompt: there it cost the 4B its first move on ordinary requests.
+
+### 30C. The measurements
+
+**Reply filters, before they stayed** (the §29 rule: a check that corrects a true
+sentence is a bug): the hand-back, pixel and echo filters run over every reply of every
+earlier walk -- 639 unique replies in `benchmarks/{stress,owner_pass,graphics}/results`.
+Echo: no hits. Pixels, first version: it dropped "Two red cars are now in the game, moving
+left at 2 pixels per frame" -- rebuilt to take the numbers out of the sentence, sizes left
+alone ("I made the player 64 pixels wide" is what was asked). Hand-back in answers: it
+would have taken Luna's "Ask me to build the simple website, and I'll set up the starting
+files" -- how to ask, which is right -- so an answer loses only "ask for help".
+
+**Where the guidance goes** (the real 4B, temperature 0, first move only, the
+tool_choice.py prompt and pictures). With "THEIR IDEA IS A REAL GAME" in the Games prompt,
+the 4B acted on 2 of 8 plain requests ("can my player be blue insted of orange", "add a
+timer that counts down from 60") and narrated changes it had not made; without that
+section, 5 of 8; the new base-prompt line made no difference (2 of 8 either way). On 12
+requests, HEAD's prompt and schema 10/12, each change alone 8-10, the final prompt 10/12.
+Then the full set, on the final prompt and schema
+(`benchmarks/graphics/results/tool_choice_3.json`, five tools): **64 of 94 acceptable
+first moves, against 62 before** (`tool_choice_2`). 17 requests given no tool (23 before:
+fewer changes narrated instead of made), 14 looks requests taken by game_object (12), 2
+questions given a tool (2) -- and 11 code requests sent to game_object first (6): "add
+collision", "Call my game Space Rocks", which game_object refuses as how the game plays
+and points at edit_file. Eleven requests better, nine worse. Of the nine, three are the
+player's look ("can my player be blue insted of orange", "make my guy a circle not a
+square", "Make the player bigger": edit_file before, no tool now -- the claim check then
+asks for the call, at one more provider call), four are how the game plays ("add score",
+"add collision", a second player, the rocks game) sent to game_object or to no tool, one
+is a title, and one a question given a tool.
+
+**The replays**, four rounds each model (`results/{before,after1,after2,after3,final}_*`):
+| round | what was in | Qwen3 4B | Qwen3 8B |
+|---|---|---|---|
+| before | as committed | five window-sized monsters as the trees, the orange square; corrected into "I did not see the picture... I did not change any file" | day sky, one tree sunk under the road, the monster in the air; the child's message said back as Gary's; "You can now make the forest" |
+| after1 | the layer and the first checks; the idea section in the Games prompt | the six trees as one list; the monster a target; but the road along the top and the trees above it, off the screen | the six trees scrolling left; a day sky; "What's next?" |
+| after2 | more checks; the reply filters | "I'll build a 2D side-view version instead, since first person in 2D is not possible"; a night sky; the prompt's own "dragon a fire breath" copied into three replies | game_object written into src/game.py: a NameError, three failed repairs (round stopped) |
+| after3 | the tool-as-code guard; picture owners; standing things | "a 2D side-view version... not first person"; the monster a target behind a tree; the six trees | refused the tool in the code, then called it; ran out of calls, and the reply said what was made |
+| final | whole-game guidance beside the message; the idea section out of the prompt | "a 2D first-person shooter in the woods at night": night sky, trees along the ground, a monster target, the controls said right; blue_monster.png the monster the moment it came; the six trees one forest | night sky, road, four trees; blue_monster.png the monster at once, a target; six one-picture calls left one tree (fixed: one per call) |
+| final2 | the scene in "you changed nothing"; "not happy" guidance; one tree per picture call | the same game; turn 4 still "the tree pictures were not added" -- fixed after, checked as one turn on the real 4B: "Trees are already in place with six copies" | six one-picture calls a six-tree forest; "You are not making a good game": "we need to make the trees scroll as the player moves forward. Would you like me to add that?" |
+
+Every round's chat, drafts, calls, corrections and files are in
+`benchmarks/owner_test04/results/<round>_<model>.json` (the 8B's stopped `after2` left
+none); the frames, which show the owner's own pictures, and the printed logs stay on the
+machine that ran them (ignored).
+Both models end the final rounds with a night forest of the child's six trees, the child's
+monster as the thing to shoot, and a score -- where the owner's game had one tree and a
+monster in the sky.
+
+**Model-only, recorded rather than chased**: the 8B builds the scene and leaves the
+monsters and shooting to later messages; both models say "the monster hides behind the
+trees" of a monster in front of them (layers are not checked against "behind"); the
+orange starter square stays as the player in a first-person game; the 4B ends replies with
+a list of three next steps; the 8B asks for an `assets/player.png` nobody has, and edits
+`game_object(...)` lines it imagines are in the code (refused, and now explained).
+
+### 30D. Rules this pass adds
+
+- **Validate a reply filter on the corpus before it ships**, as §29 did for checks: what it
+  would change in 639 earlier replies is in its docstring.
+- **Guidance for one kind of request goes beside that request.** The same words, always on,
+  cost the 4B its first move on everything else (§30C). The prompt's always-on sections
+  are measured with `benchmarks/graphics/tool_choice.py`.
+- **Examples get copied.** The 4B said "Want me to give the dragon a fire breath you can
+  aim?" and "I found a problem. I'm fixing it." -- sample sentences from the prompts --
+  as its own replies. A new example in a prompt is a sentence the child may read.
+- **A correction must not erase what is true.** Every correction about a change now says
+  what the game already has.

@@ -1,9 +1,9 @@
 # Handoff — start here
 
-## Where it stands (2026-09-30)
+## Where it stands (2026-10-03)
 
 **Phase 13 is finished and pushed on `phase-13-live-preview`** (stacked on the Phase 12
-branch, nothing merged to `main`). Five pieces, in order:
+branch, nothing merged to `main`). Six pieces, in order:
 
 | | what | where |
 |---|---|---|
@@ -14,6 +14,30 @@ branch, nothing merged to `main`). Five pieces, in order:
 | **13C** | **the game graphics and scene layer**: a child's picture becomes the player; a scene -- sky, road, buildings, cars to dodge, coins to collect -- built from Gary's plain choices through one tool, `game_object`, drawn by `src/scene.py`, a small pygame kit in the project; look kept separate from movement and collisions; the playtest records what the scene drew | PHASE_13_HANDOFF §9, SPIKES §28 |
 | **13C finished** | the same building blocks for everyone: the Fast Path's add-a-thing recipes give every look through `game_object` (no inline pygame, no named drawings added); a Blank project that has become a game is offered `game_object` (measured first); Gary can change anything in the scene -- look, colour, size, place, motion, layer, touch; a made-up drawing name is answered with how to compose it; clicked through the real app under cocoa, 45/45 | PHASE_13_HANDOFF §9.11, SPIKES §28H-N |
 | **stress pass** | Website, Research, Arduino, Pi and Blank driven with the local 4B and 8B, Luna and -- for the first time -- Sonnet; the touch bug fixed (`scene.touched`, once per touch; kit v2); sixteen shared-layer fixes for what the walks found, none provider-specific | PHASE_13_HANDOFF §10, SPIKES §29 |
+| **test04 pass** | the owner's in-person test (a night-forest shooter, their own monster and six tree pictures) replayed message for message with the 4B and 8B, four rounds each: Open Nest's own false corrections, layer defects and fallback words fixed; one look per copy (kit v3) and `touch: shoot`; one import question and message per batch; the child's requests kept in front of Gary; greetings, "what should I do?", whole-game requests and "not a good game" answered from guidance said beside the message | PHASE_13_HANDOFF §11, SPIKES §30 |
+
+**The test04 pass in one paragraph** (SPIKES §30). The owner asked the local 4B for "a
+game in the woods at night. A first person shooter. We have to shoot monsters hiding
+behind trees", then gave it their own pictures, and got a blue sky, one drifting tree and a
+monster hanging in the sky, with replies that denied real work. Replayed through the real
+Workbench with every draft and correction recorded, half of it was Open Nest's: checks that
+corrected true sentences ("the woods" about trees, a picture named in a sentence, "the
+monster" two messages after the child said it) and corrections that then had Gary say the
+child's message back or deny work -- the owner's "I did not see its content. I did not use
+it" was one, verbatim; a layer that drew pictures in boxes not their shape, replaced one
+tree with the next, refused "square", drew window-sized trees, put the monster's picture on
+the trees and the player, had no way to make one forest of six pictures, nothing to shoot
+with, and trees along the top of the window; and Open Nest's own "Here is where I got to"
+with nothing after it. All fixed in the shared layer, each reply filter run over the 639
+replies of the earlier walks before it stayed. What Gary is told changed too -- the
+child's requests in their words every turn, and for a hello, a "what should I do?", a
+whole-game request or "this isn't good", guidance beside that message. **Where** turned
+out to be the measurement: in the Games prompt the whole-game words took the 4B from acting
+on 5 of 8 plain requests to 2 of 8; beside a whole-game request they are what made it
+build "a 2D first-person shooter in the woods at night". On the final replays both
+models end with a night forest of the child's own six trees, the child's monster as the
+thing to shoot (`touch: shoot`, new), and a score; on 94 requests the 4B's first moves are
+64 acceptable (62 before).
 
 **The stress pass in one paragraph** (SPIKES §29). The same three kinds of message -- a
 change, a question about the project, a question about Open Nest -- through every non-game
@@ -33,8 +57,9 @@ and unchanged v1 kits are brought up to date. Luna and Sonnet behaved alike and 
 Sonnet needed nothing of its own. The keys the owner left in `.env` are in the Keychain,
 the file is gone, and no key material is in any file, log, result or commit.
 
-**1622 tests pass, ruff is clean** (1572 after 13C, 1525 when 13C was paused, 1430 before
-13C). The Phase 12 app walk is 41/41 under cocoa after the stress pass too
+**1685 tests pass, ruff is clean** (1622 after the stress pass, 1572 after 13C, 1430
+before 13C). The Phase 12 app walk is 41/41 under cocoa after the test04 pass
+(`benchmarks/owner_test04/results/app_walk_test04.txt`), as after the stress pass
 (`benchmarks/stress/results/app_walk_stress.txt`). The
 Phase 12 app walk 41/41 through MainWindow under cocoa, its dodging game now built with
 `game_object`. The 13C acceptance walks -- the work order's eagle sequence through the
@@ -84,19 +109,21 @@ name and all, into the chat.
 
 **What is next:**
 
-1. **A person clicks it on a real screen.** The driver did it through the real window
-   under cocoa (45/45, SPIKES §28I), but Qt-activated: macOS will not activate a
-   background process. Run Game, play, click the chat and back, Tab out; Pop out, play,
-   Tab to Put back, close the window. And one owner demo across project types.
+1. **The owner re-runs test04 on this build** -- the same thread, or a new one -- after
+   the test04 pass (SPIKES §30). Luna and Sonnet were not re-run: the owner's ruling was
+   that if the 4B and 8B work, they will. Then the rest of the in-person click-through:
+   Run Game, play, click the chat and back, Tab out; Pop out, play, Tab to Put back, close
+   the window; and one owner demo across project types.
 2. **The picture how-to is built (SPIKES §28O); the background cut-out is next.** When a
    thing cannot be drawn as asked, Open Nest adds how to make its picture (PNG, see-through,
    a size from the game, + Add to Project; tools by kind only, "ask a grown-up" -- the
    owner's ruling), and says when a picture has a solid background. Next: take a plain
    background away for the child -- `Picture(path, see_through=True)` in the kit (the
    corner colour's connected area made transparent with `pygame.mask`, so a white eye is
-   kept), `VERSION = 3` -- the bringing-up-to-date is built now (SPIKES §29B): add v2's
-   SHA-256 to `looks.EARLIER_KITS` -- and a `see_through` argument on `game_object` -- a
-   description change, so re-run `benchmarks/graphics/tool_choice.py` before it ships.
+   kept), `VERSION = 4` (v3, one look per copy, is the test04 pass's) -- add v3's SHA-256
+   to `looks.EARLIER_KITS` and a v3 fixture -- and a `see_through` argument on
+   `game_object` -- a description change, so re-run `benchmarks/graphics/tool_choice.py`
+   before it ships.
 3. **Phase 14 -- Publish Version**, reshaped by the owner (PHASE_13_HANDOFF §6,
    PHASE_12_HANDOFF §7). Not started. The sunglasses wait for it.
 4. **Hardening items, each separate and none the graphics layer's** (SPIKES §28N): the

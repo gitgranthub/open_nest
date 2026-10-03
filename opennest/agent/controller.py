@@ -46,16 +46,21 @@ from opennest.agent.replies import (
     RUN_CORRECTION,
     SIGHT_CORRECTION,
     UNDERWAY_START,
+    as_offer,
     child_nouns,
     colours_said,
+    echoes,
     files_said_wrongly,
+    handed_back,
     hardware_claims,
     hardware_correction,
     instructs_edit,
+    is_greeting,
     is_question,
     looped,
     presentable,
     promises,
+    without_coordinates,
 )
 from opennest.agent.tools import Step, Toolbox, ToolResult, normalise_tool_name, schemas_for
 from opennest.ai import provider as provider_module
@@ -216,6 +221,16 @@ _FIRST_STEPS: dict[str, tuple[str, ...]] = {
 }
 
 #: What Gary is told when he changed something and ended by saying what he will do next.
+#: Telling them to ask for help -- Gary is the help -- dropped even from an answer. Only
+#: that: "Ask me to build the simple website" (Luna) is how to ask, which is right.
+_ASK_AGAIN = re.compile(r"\bask (?:me |someone |a grown-up )?for help\b", re.IGNORECASE)
+
+#: Instead of "Answer <their message> again" after a request: measured on the test04
+#: replays, both models then said the child's message back word for word, as Gary's.
+_SAY_IT_AGAIN = ("Say again, in your own words, what you really did for them this turn -- "
+                 "from the tool results above -- and what is still to do. Do not repeat "
+                 "their message.")
+
 CARRY_ON = ("You said you would do more, and then stopped. Do it now with your tools, then "
             "say only what you made. If there is nothing more to do, say what you made.")
 
@@ -262,7 +277,11 @@ _PAGE_FORMS = {
 #: How a game's code says a thing a child names by what it is made of. Measured on the 13C
 #: walk: "the eagle flies over the town" about a scene with a sky, a road and no building.
 _SCENE_FORMS = {"town": ("building", "house"), "city": ("building",),
-                "village": ("house", "building"), "street": ("road",)}
+                "village": ("house", "building"), "street": ("road",),
+                # Measured on the owner's test04 replay: "the woods" about three trees was
+                # corrected as "The game has no woods", and the 8B's true reply was lost.
+                "wood": ("tree",), "woods": ("tree",), "forest": ("tree",),
+                "jungle": ("tree",), "orchard": ("tree",), "park": ("tree",)}
 
 #: What a Blank project can become by itself, from the child's own words: only what its
 #: one Run button (``python src/main.py``) can really run. The kit's entry file becomes
@@ -403,6 +422,9 @@ class Turn:
     #: A Blank project asked for something it cannot do (a web page, a sketch), and told
     #: which project type can -- nothing built, no model call.
     routed: bool = False
+    #: The whole reply is a recipe's own words, which Open Nest wrote (``_tidy`` leaves
+    #: those alone: they are not Gary handing anything back).
+    by_recipe: bool = False
 
 
 def scene_prompt() -> str:
@@ -424,6 +446,7 @@ def build_system_prompt(
     toolbox: Toolbox | None = None,
     notes: Sequence[str] = (),
     asked: Sequence[str] = (),
+    wishes: Sequence[str] = (),
 ) -> str:
     """The new-thread bootstrap of section 15A: base + profile + style + state + memory.
 
@@ -450,11 +473,17 @@ def build_system_prompt(
              project_state(project, last_run, toolbox=toolbox, notes=notes, asked=asked)]
     if memory:
         parts.append(memory)
+    if wishes:
+        parts.append(_wishes_block(wishes))
     if asset_context:
         parts.append(asset_context)
     if guidance:
         parts.append(guidance)
     return "\n\n".join(parts)
+
+
+def _wishes_block(wishes: Sequence[str]) -> str:
+    return WISHES_HEADING + "\n" + "\n".join(f"- \u201c{wish}\u201d" for wish in wishes)
 
 
 #: What Gary is told when the message is a question (``AgentController._answering``).
@@ -463,21 +492,85 @@ ANSWER_RULES = (
     "Answer that question first, in a few short sentences, from what Open Nest has "
     "checked below and from the screen described below -- those are true now, and they "
     "beat anything said earlier. Asked how to play, give the controls Open Nest read from "
-    "the code and how to start the game. Asked what to do now, say what they can do on "
-    "this screen next -- try the game, or the plan's next step if one is waiting. Asked "
-    "where something is or what a button does, say where it is on the screen below. "
-    "Describe only what the files really have; if "
+    "the code and how to start the game. Asked where something is or what a button does, "
+    "say where it is on the screen below. Describe only what the files really have; if "
     "something they asked about is not there, say so plainly. Nothing changes on a "
     "question: if they might want a change, ask whether they want it -- never say you "
-    "are doing it now."
+    "are doing it now.\n"
+    "Asked what to do, or for ideas -- or just greeted -- be the partner who gets them "
+    "going. If a plan's next step is waiting, offer that. Otherwise, and above all while "
+    "the project is still its starter, give two or three ideas they could build here, "
+    "each in a few words, and show them how to ask: one sentence about what they want -- "
+    "who they are, what they try to do, what gets in their way. Say they can add their own "
+    "pictures with \u201c+ Add to Project\u201d. A hello gets a plain hello back first, no "
+    "praise.\n"
+    "If they say the game is not good, do not apologise or describe the code: say in one "
+    "or two sentences what would make it play better, and ask if you should make that."
 )
+
+#: Said beside a hello or "what should I do?" while nothing has been built yet.
+GETTING_STARTED = (
+    "(Open Nest: they are just getting started.{hello} Then give three short ideas of your "
+    "own for a game they could make here, a few words each, and show them how to ask for "
+    "one -- one sentence saying who they play, what they try to do and what gets in the "
+    "way. Say they can add their own pictures with \u201c+ Add to Project\u201d. Do not "
+    "describe the code or the square.)")
+#: ...and once the ideas have been given: help them choose, do not say them again.
+STARTED_AGAIN = (
+    "(Open Nest: you have already given them ideas. Do not repeat them or say hello again: "
+    "help them choose -- ask which one they like, or what game they have in mind -- and "
+    "show the sentence to ask with, like \u201ca game where I ride a horse and jump the "
+    "fences\u201d.)")
+
+#: Said beside a request for a whole game -- only then. Measured (tool_choice probe, the
+#: real 4B): in the Games prompt on every turn, the same words took plain requests
+#: ("make the player blue") from 5 of 8 acted on to 2 of 8, the rest narrated; on the
+#: test04 replay they were what made it say "I'll build a 2D side-view version" and build
+#: the night woods, the monster to shoot and the trees.
+WHOLE_GAME = (
+    "(Open Nest: this asks for a whole game. Work out what the player does, what they try "
+    "to do and what gets in the way -- then build it now with your tools: the scene with "
+    "game_object, one call per thing, with touch shoot, avoid or collect for what touching "
+    "does, and edit_file for other rules. If it needs 3D or first person, build the "
+    "closest 2D version and say so in one sentence.)")
+
+#: A message that asks for a whole game: "make a game where...", a kind of game.
+_GENRES = re.compile(r"\b(?:shooter|platformer|racer|racing game|runner|maze|dodger|"
+                     r"adventure|rpg|tower defen[cs]e|space invaders|pac-?man|mario)\b",
+                     re.IGNORECASE)
+
+#: Said beside a message that says the game is not good. The rule is in ANSWER_RULES;
+#: the final test04 replay's 4B answered "You are not making a good game" with the trees'
+#: positions and nothing else.
+NOT_GOOD = (
+    "(Open Nest: they are not happy with the game. Do not apologise or describe the code. "
+    "Say in one or two sentences what would make it play better -- the part of what they "
+    "asked for that is still missing -- and ask if you should make it.)")
+_UNHAPPY = re.compile(r"\bnot (?:making |a |very )*(?:good|fun)\b|\bbad game\b|\bboring\b|"
+                      r"\bsucks\b|\bterrible\b|\bnot what i (?:want|asked)", re.IGNORECASE)
+
+#: "What should I do first?", "any ideas?", "where do I start?" -- asking for a way in.
+_WAY_IN = re.compile(
+    r"\b(?:what (?:should|can|do|could) (?:i|we) (?:do|make|build|try)|any ideas|ideas? for|"
+    r"some ideas|where (?:do|should) (?:i|we) (?:start|begin)|how do (?:i|we) (?:start|begin)|"
+    r"what (?:can|could) (?:you|we) (?:make|build|do)|what now|help me start|"
+    r"what(?:'s| is) first|get(?:ting)? started)\b", re.IGNORECASE)
+
+#: The child's own requests this conversation, for Gary every turn: what the game is
+#: meant to be. Measured on the owner's test04: by the third message the 4B had lost
+#: "a game in the woods at night ... shoot monsters hiding behind trees" under its own
+#: tool results, and made one tree drift left -- its own earlier suggestion.
+WISHES_HEADING = (
+    "WHAT THEY HAVE ASKED FOR, IN THEIR OWN WORDS (oldest first)\n"
+    "Together this is the game they want. Every change should move it closer to that, "
+    "and use what they told you -- the pictures they added, what each is for.")
 
 
 def build_answer_prompt(project: Project, *, build_style: str = "build",
                         last_run: RunResult | None = None, memory: str = "",
                         asset_context: str = "", guidance: str = "",
                         toolbox: Toolbox | None = None, notes: Sequence[str] = (),
-                        asked: Sequence[str] = ()) -> str:
+                        asked: Sequence[str] = (), wishes: Sequence[str] = ()) -> str:
     """The system prompt for answering a question: no tools, no building instructions.
 
     Measured on the owner-test walk with the ordinary prompt: "how do I undo that?" was
@@ -495,7 +588,8 @@ def build_answer_prompt(project: Project, *, build_style: str = "build",
     screen = evidence.guide(project.profile, live=plays_in_panel(project))
     parts = [base, kind, style, ANSWER_RULES, screen,
              project_state(project, last_run, toolbox=toolbox, notes=notes, asked=asked)]
-    parts += [part for part in (memory, asset_context, guidance) if part]
+    parts += [part for part in (memory, _wishes_block(wishes) if wishes else "",
+                                asset_context, guidance) if part]
     return "\n\n".join(parts)
 
 
@@ -686,6 +780,7 @@ class AgentController:
                 toolbox=self.toolbox,
                 notes=self._notes(),
                 asked=sorted(getattr(self, "_asked_for", ())),
+                wishes=getattr(self, "_wishes", ()),
             ))
         ]
 
@@ -753,6 +848,7 @@ class AgentController:
                 toolbox=self.toolbox,
                 notes=self._notes(),
                 asked=sorted(getattr(self, "_asked_for", ())),
+                wishes=getattr(self, "_wishes", ()),
             ),
         )
 
@@ -843,6 +939,7 @@ class AgentController:
 
         self.history.append(Message(role="user", content=text))
         self._asked_for |= child_nouns(text)
+        self._child_said = [*getattr(self, "_child_said", []), text][-40:]
         turn = Turn(opening=opening, plan_step=step)
         challenged = False
         corrected = False
@@ -875,6 +972,10 @@ class AgentController:
         # In both labelled sets every question-shaped message is gold "other", so no
         # recipe route is lost; "what are the controls?" no longer rewrites the controls.
         answering = step is None and is_question(text)
+        if not answering and step is None and len(text.split()) >= 3 and not (
+                _CARRY_ON.match(text.strip()) or _YES.match(text.strip())):
+            # What the game is meant to be, in their words, kept in front of Gary.
+            self._wishes = [*getattr(self, "_wishes", []), text.strip()[:300]][-6:]
         # ...except a question about a data project's data: "What changed the most?" is
         # answered by an analysis recipe that computes it, and measured on the parity
         # walk, answered without one it became "Nothing changed". Every question-shaped
@@ -885,6 +986,7 @@ class AgentController:
         if self.fastpath is not None and (not answering or analysis):
             outcome = self._fast_path(turn, text, previous, attachments, on_text)
         if outcome == "handled":
+            turn.by_recipe = True
             return self._finish_turn(turn)
         if outcome == "rest":
             answering = False
@@ -905,6 +1007,32 @@ class AgentController:
                     f"{text}\n\n({checked.splitlines()[0].split(' -- ')[0]}:\n"
                     + "\n".join(checked.splitlines()[1:]) + ")"))
                 self._asked_text = text
+            if self._getting_started(text):
+                again = getattr(self, "_ideas_given", False)
+                self._ideas_given = True
+                # Plain words: "friendly" drew "Great to see you starting." (the final
+                # 4B replay), and the brand guide rules out opening with praise.
+                hello = " Say hello back in a few plain words, no praise." \
+                    if is_greeting(text) else ""
+                # Measured on the owner's test04 and its replays: "Hi Gary" got "Hi.
+                # Ready." and "What should I do first? any ideas?" got "Run the game.
+                # Watch the orange square move" -- true, and no way in. The rule is in the
+                # answer prompt; beside the message is where a small model follows it.
+                steer = STARTED_AGAIN if again else GETTING_STARTED.format(hello=hello)
+                self.history[-1] = Message(role="user", content=(
+                    f"{self.history[-1].content}\n\n{steer}"))
+                self._asked_text = text
+            elif _UNHAPPY.search(text):
+                self.history[-1] = Message(role="user", content=(
+                    f"{self.history[-1].content}\n\n{NOT_GOOD}"))
+                self._asked_text = text
+        if not answering and step is None and plays_in_panel(self.project) and (
+                _GENRES.search(text) or (_NAMES_A_GAME.search(text)
+                                         and len(text.split()) >= 8)):
+            # Beside the message, for this turn only; the settled history keeps their words.
+            self.history[-1] = Message(role="user", content=(
+                f"{self.history[-1].content}\n\n{WHOLE_GAME}"))
+            self._asked_text = text
         try:
             turn = self._exchange(turn, text, on_text, challenged, corrected)
         except BudgetExhausted:
@@ -1589,10 +1717,13 @@ class AgentController:
         ``_finish_turn`` exactly as a successful turn's would be.
         """
         turn.hit_call_limit = True
+        # Measured on the owner's test04: "Here is where I got to", and then nothing --
+        # what had been made was never said. It is said now, from the tool results.
+        done = self._describe_what_happened(turn)
         turn.text = (
             "That turned into more steps than I can do at once. "
-            "Here is where I got to -- tell me what to try next, or ask for something "
-            "smaller."
+            + (f"So far: {done} " if done else "Nothing has changed yet. ")
+            + "Say \u201ckeep going\u201d and I'll carry on from here."
         )
         if self._budget.stopped:
             # Not out of calls: the project was closed while he worked, and the turn must
@@ -1655,10 +1786,17 @@ class AgentController:
                     if not challenged:
                         challenged = True
                         self._metered.kind = CORRECTION
+                        there = self._already_there() if claim not in ("run", "result") \
+                            and not turn.answered else ""
                         self.history.append(Message(role="user", content=(
                             RUN_CORRECTION if claim == "run" else
                             ANSWER_CORRECTION if turn.answered else
                             RESULT_CORRECTION if claim == "result" else
+                            # A game that already has what was claimed: the facts first.
+                            # Led by "You did not change any file", the 4B said the tree
+                            # pictures it had added the turn before "were not added".
+                            f"Nothing changed in this turn's calls.{there} If not, make "
+                            f"the change now with game_object or edit_file." if there else
                             "You did not actually change any file. Call edit_file now "
                             "with the exact text to replace"
                             + (" -- or game_object, for how something looks --"
@@ -1798,8 +1936,8 @@ class AgentController:
                     self.history.append(Message(role="user", content=(
                         "The child pressed Undo after your last change, so what that reply "
                         "described is not in the files any more. Do not say it again. "
-                        f"Answer \u201c{text}\u201d from what Open Nest has checked about the "
-                        "files as they are now.")))
+                        + (f"Answer \u201c{text}\u201d from what Open Nest has checked about "
+                           "the files as they are now." if turn.answered else _SAY_IT_AGAIN))))
                     continue
                 unseen = self._hardware_claims(turn.text)
                 if unseen and wired:
@@ -1842,9 +1980,10 @@ class AgentController:
                     filed = True
                     self._metered.kind = CORRECTION
                     self.history.append(Message(role="user", content=(
-                        f"That is not what the files say: {'; '.join(wrong)}. Answer "
-                        f"\u201c{text}\u201d again, and say only what really happened -- the "
-                        f"project's files are listed in what Open Nest has checked.")))
+                        f"That is not what the files say: {'; '.join(wrong)}. "
+                        + (f"Answer \u201c{text}\u201d again, and say only what really happened "
+                           f"-- the project's files are listed in what Open Nest has checked."
+                           if turn.answered else _SAY_IT_AGAIN))))
                     continue
                 if not carried and self._promised_more(turn):
                     # "The sky is now blue. I'll add the road now." -- and the turn ended,
@@ -1900,6 +2039,7 @@ class AgentController:
             # An answer that was only a call, which a question does not run: what the
             # project has is still an answer, and silence is not.
             turn.text = self._as_it_is_text()
+        offer = self._tidy(turn)
         if not turn.plan_note and "?" not in turn.text and promises(turn.text):
             # "I'll add the eagle now." in an answer, which changes nothing, or "I'll fix
             # that now." as the last word of a turn that has ended (the owner-test walk).
@@ -1910,12 +2050,105 @@ class AgentController:
             turn.plan_note = (f"Want me to start on step {index + 1}, \u201c"
                               f"{plan.steps[index].text}\u201d?" if index is not None
                               else "Want me to go ahead?")
+        elif not turn.plan_note and offer:
+            turn.plan_note = offer
         elif not turn.plan_note and "?" not in turn.text and turn.answered and \
                 instructs_edit(turn.text):
             # An answer telling them to change the code by hand: Gary can make that change,
             # so it is offered (the stress pass, SPIKES.md section 29).
             turn.plan_note = "Want me to make that change for you?"
         return turn
+
+    def _already_there(self) -> str:
+        """What the game already has, said with a "you changed nothing" correction.
+
+        Measured on the test04 replay: the trees had worn the child's six pictures since
+        the turn before, the 4B said "I replaced the tree drawing with the 6 tree pictures"
+        again, and corrected, told the child "The tree pictures were not added to the
+        game". Nothing changing now does not undo what is there."""
+        if not plays_in_panel(self.project):
+            return ""
+        try:
+            about = evidence.describe_game(self.project)
+            # What each thing looks like, too: told only "Other things in the game: sky,
+            # tree, monster", the 4B decided the game had "a single tree" and that the six
+            # tree pictures "were not added" (the final test04 replay).
+            from opennest.fastpath.kinds import games
+            from opennest.graphics import source as scene_source
+
+            code = self.project.entrypoint_path.read_text(encoding="utf-8")
+            things = scene_source.describe(scene_source.read(code),
+                                           games.facts_of(code).get("player"))
+        except Exception:  # noqa: BLE001 - a description must never break a turn
+            about, things = "", []
+        if not things:
+            # Nothing has been put in the scene: there is nothing a claim could already be
+            # true of, and the measured correction stands (Phase 12.1).
+            return ""
+        listed = "; ".join(things)
+        return (" What the game already has is still there, made before -- do not say it "
+                f"is missing: {about}" + (f" Its scene: {listed}." if listed else "")
+                + " If what they asked for is already so, tell them it already is, and how "
+                  "it looks now.")
+
+    def _getting_started(self, text: str) -> bool:
+        """A hello or "what should I do?" -- while the game is still its starter."""
+        if not (is_greeting(text) or _WAY_IN.search(text or "")):
+            return False
+        path = self.project.entrypoint_path
+        if not path.is_file():
+            return True
+        try:
+            source = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return False
+        return evidence.unchanged_starter(self.project, source) is not None
+
+    def _tidy(self, turn: Turn) -> str:
+        """The reply as a child should read it -- and an offer, or "".
+
+        Three things the owner's test04 and its replays (4B and 8B) put on screen, none of
+        them a model's own fault alone and none of them for a child:
+
+        - **Their own message said back.** Told to answer it again, both models began the
+          reply with the child's words, as Gary's. What happened is said instead.
+        - **The job handed back.** "You can now make the forest", "Fix the player's
+          movement", "Ask for help to add one" -- on what the child asked Gary to make.
+          Those sentences go, and the first thing to build among them is offered: "Want me
+          to fix the player's movement?"
+        - **Pixels.** "The monster at (100, 300) stays still" in every 4B reply. In a game,
+          a sentence placing things in numbers goes, unless it is all there is.
+        """
+        text = turn.text or ""
+        if turn.by_recipe or turn.routed:
+            return ""
+        asked = getattr(self, "_last_request", None) or ""
+        if text and echoes(text, asked):
+            text = self._what_it_has_now(turn) if not turn.answered else self._as_it_is_text()
+        if re.fullmatch(r"\s*I found a problem\.\s*I'm fixing it\.\s*", text or "") and \
+                not turn.repair_attempts and all(
+                    test.verdict == playtest.PASSED for test in turn.playtests):
+            # The base prompt's own example, said as the whole reply after a change that
+            # worked, and to a question (the test04 replay, 8B, three times): nothing was
+            # found and nothing is being fixed. Say what was done, or what is there.
+            text = self._describe_what_happened(turn) or self._as_it_is_text()
+        if plays_in_panel(self.project):
+            text = without_coordinates(text)
+        offer = ""
+        # Build it and teach me: telling them how to change it themselves is the point.
+        # And an answer's ideas are ideas: "Add a red circle..." to "any ideas?" is right.
+        handed = handed_back(text) if self.build_style != "teach" else []
+        if turn.answered:
+            handed = [sentence for sentence in handed if _ASK_AGAIN.search(sentence)]
+        if handed:
+            offer = next((found for found in map(as_offer, handed) if found), "")
+            kept = [sentence for sentence in re.split(r"(?<=[.!?])\s+|\n+", text)
+                    if sentence.strip() and sentence.strip() not in handed]
+            text = "\n".join(sentence.strip() for sentence in kept)
+            if not text.strip():
+                text = self._describe_what_happened(turn) or self._as_it_is_text()
+        turn.text = text
+        return offer
 
     @staticmethod
     def _changed_anything(turn: Turn) -> bool:
@@ -2043,7 +2276,28 @@ class AgentController:
         both fine.
         """
         unread = assets.unread_assets(self.project, getattr(self.provider, "info", None))
-        return assets.invented_description(text, said, unread)
+        if not unread:
+            return None
+        # The child's words are theirs whenever they said them, and a thing the game
+        # already has is the game's: measured on the owner's test04 and its 4B replay,
+        # "the monster" -- what the child had called blue_monster.png two messages before,
+        # and a thing in the scene -- was taken for a description of the picture on every
+        # turn after, and Gary was made to say "I did not see its content. I did not use
+        # it" instead of what he had done.
+        known = " ".join((said, *getattr(self, "_child_said", ()), *self._scene_names()))
+        return assets.invented_description(text, known, unread)
+
+    def _scene_names(self) -> list[str]:
+        """The names of the things in the game's scene, as words."""
+        if not plays_in_panel(self.project) or not self.project.entrypoint_path.is_file():
+            return []
+        from opennest.graphics import source as scene_source
+
+        try:
+            code = self.project.entrypoint_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return []
+        return [name.replace("_", " ") for name in scene_source.read(code).entries]
 
     def _claim_in(self, turn: Turn, text: str) -> str:
         """"change", "result", or "" -- what kind of claim of a change nobody made.
@@ -2594,15 +2848,17 @@ class AgentController:
             rest = " and ".join(f"\u201c{part}\u201d"
                                 for part in (turn.fastpath or {}).get("remaining", ()))
             return f"I haven't done the rest yet{f' ({rest})' if rest else ''}."
+        # Offered, not handed back: "Say it again" made the child the retry loop (the
+        # owner's test04 replays, both models).
         if refused & {"edit_file", "write_file"}:
             return (
                 "I haven't changed that yet. My edit didn't match the file cleanly, so "
-                "I left it alone. Say it again and I'll take another look."
+                "I left it alone. Want me to try it another way?"
             )
         if refused:
             return (
                 "I haven't changed that yet. What I tried didn't work. "
-                "Tell me again what you want different."
+                "Want me to try it another way?"
             )
         first = "I haven't changed anything yet."
         if too_big:
@@ -2898,8 +3154,14 @@ _COUNTED = re.compile(r"\b(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|
 def _picture_word(reason: str, arguments: dict, name: str) -> str:
     """What a picture would be of, from a game_object refusal -- or "" when it is not one a
     picture would answer."""
+    from opennest.graphics import looks  # lazily: the graphics layer is optional here
+
     if reason == "no_such_drawing":
         word = str(arguments.get("drawing") or "")
+        if looks.shape_word(word):
+            # "square" is a shape, not a thing a picture is of: the owner's test04 was
+            # offered "a real square" for its monster. The thing is what it is of.
+            word = _singular(name)
     elif reason == "no_picture":
         word = Path(str(arguments.get("picture") or "")).stem
     elif reason == "picture_not_asked":
@@ -2920,15 +3182,20 @@ def _singular(noun: str) -> str:
 
 
 def _scene_changes(results) -> str:
-    """What game_object calls made this turn, from their results -- or "".
+    """What game_object calls made this turn, from their results, in plain words -- or "".
 
     Only when every change in Gary's share came from game_object: its result is the
     machine-readable account of what was done (``opennest.graphics.game_object``), so it
     can be said as it is. Anything else changed as well is said the general way.
+
+    Each thing once, as it ended up. Measured on the owner's test04 replay: three calls
+    for one tree were said as "added the tree (a ready-made tree drawing), changed how the
+    tree looks and changed how the tree looks".
     """
     import json
 
-    said, other = [], False
+    things: dict[str, dict] = {}
+    other = False
     for name, result in results:
         if not result.changed_files:
             continue
@@ -2939,22 +3206,65 @@ def _scene_changes(results) -> str:
             record = json.loads(result.content)
         except (TypeError, ValueError):
             return ""
-        thing, look = record.get("object"), record.get("look")
+        thing = record.get("object")
         if not thing:
             return ""
-        if record.get("action") == "removed":
-            said.append(f"took the {thing} out of the scene")
-        elif thing == "player" and look:
-            said.append(f"made the player {look}")
-        elif record.get("action") == "added" and look:
-            said.append(f"added the {thing} ({look})")
-        else:
-            said.append(f"changed how the {thing} look" + ("s" if not thing.endswith("s")
-                                                           else ""))
-    if not said or other:
+        seen = things.setdefault(thing, {"added": False, "removed": False})
+        action = record.get("action")
+        seen["removed"] = action == "removed"
+        seen["added"] = seen["added"] or action == "added"
+        for key in ("look", "picture", "count"):
+            if record.get(key):
+                seen[key] = record[key]
+    if not things or other:
         return ""
-    listed = ", ".join(said[:-1]) + (" and " if len(said) > 1 else "") + said[-1]
-    return f"I {listed}."
+    added, changed, removed = [], [], []
+    for thing, seen in things.items():
+        words = thing.replace("_", " ")
+        count = seen.get("count")
+        picture = seen.get("picture")
+        if seen["removed"]:
+            removed.append(f"the {words}")
+        elif thing == "player":
+            changed.append(f"the player is {_look_phrase(seen.get('look'), picture)} now")
+        elif seen["added"]:
+            plural = words if words.endswith("s") else f"{words}s"
+            what = f"{count} {plural}" if isinstance(count, int) and count > 1 else \
+                f"the {words}"
+            if picture:
+                what += f" ({_look_phrase(seen.get('look'), picture)})"
+            added.append(what)
+        else:
+            changed.append(f"the {words} {'are' if words.endswith('s') else 'is'} "
+                           f"{_look_phrase(seen.get('look'), picture)} now" if picture
+                           else f"I changed the {words}")
+    parts = []
+    if added:
+        parts.append("I added " + _listed(added))
+    parts += changed
+    if removed:
+        parts.append("I took " + _listed(removed) + " out")
+    sentence = "; ".join(parts)
+    return sentence[0].upper() + sentence[1:] + "."
+
+
+def _look_phrase(look, picture) -> str:
+    """"your blue_monster.png", "a vehicle drawing", "drawn with shapes"."""
+    look = str(look or "")
+    if look.startswith("the pictures "):
+        return "your pictures, a different one each"
+    if picture:
+        return f"your {Path(str(picture)).name}"
+    match = re.match(r"a ready-made (\w+) drawing", look)
+    if match:
+        return f"a {match.group(1)} drawing"
+    if look.startswith("a drawing of"):
+        return "drawn with shapes"
+    return look or "drawn differently"
+
+
+def _listed(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
 
 
 def stream_reply(controller: AgentController, text: str) -> Iterator[str]:

@@ -37,7 +37,9 @@ PICTURES, DRAWINGS AND THE SCENE
   does. Open Nest writes the pygame code and draws it in layers. One call for each thing.
 - A side-view scene: a sky behind everything, a road or ground along the bottom,
   buildings and trees standing on it, cars on the road, the player in front.
-- How the game PLAYS -- keys, jumping, timers, lives, score, game over -- is edit_file.
+- What touching a thing does is game_object too: touch avoid (dodge it), collect (pick it
+  up for a point) or shoot (click it, or Space with the player over it, for a point).
+- How the game PLAYS -- keys, jumping, timers, lives, game over -- is edit_file.
 - You cannot make picture files. Use the project's own pictures, or drawings.
 
 Good things to suggest next: a score, a second enemy, a title screen, a sound, a harder

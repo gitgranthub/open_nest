@@ -15,9 +15,6 @@ How a game uses it:
                      moves=(-3, 0))
     scene.add("player", Picture("assets/eagle.png", size=(72, 72)), rect=player,
               layer="player")
-    trees = scene.add("trees", [Picture("assets/tree_01.png"),   # a list of looks: each
-                                Picture("assets/tree_02.png")],  # copy takes the next one
-                      size=(90, 120), on="road", count=4)
 
     while running:
         ...                                    # your own movement and rules
@@ -45,8 +42,8 @@ from pathlib import Path
 import pygame
 
 #: Scene files are versioned so Open Nest can tell its own copy from one you changed.
-#: 2 added ``Scene.touched``; 3 lets one thing have a list of looks, one per copy.
-VERSION = 3
+#: 2 added ``Scene.touched``.
+VERSION = 2
 
 #: Layers, drawn back to front. Things in the same layer are drawn in the order added.
 LAYERS = ("background", "scenery", "things", "player", "effects", "ui")
@@ -685,16 +682,10 @@ class Scene:
           it stands on, ``count`` of them spread along a row, ``moves`` = (x, y) each
           frame, and ``vary`` to make copies different sizes (0.2 is a fifth either way).
 
-        ``look`` can be a list of looks -- ``[Picture("assets/tree_01.png"),
-        Picture("assets/tree_02.png")]`` -- and then each copy takes the next one, so a
-        row of trees is not one tree over and over.
-
         Returns the thing -- or a list of them when there are several.
         """
         if layer not in LAYERS:
             raise SceneError(f"{layer!r} is not a layer; the layers are {', '.join(LAYERS)}")
-        if isinstance(look, (list, tuple)) and not look:
-            raise SceneError(f"{name!r} was given an empty list of looks")
         if rect is not None or rects is not None:
             items = [rect] if rect is not None else rects
             self.entries[name] = {"look": look, "layer": layer, "items": items,
@@ -710,7 +701,7 @@ class Scene:
 
     def _make(self, name, look, size, at, on, layer, count, moves, edges, vary, hitbox):
         area = self.screen.get_rect()
-        base = tuple(size) if size else tuple(_pick(look, 0).natural_size() or (40, 40))
+        base = tuple(size) if size else tuple(look.natural_size() or (40, 40))
         spots = [tuple(spot) for spot in at] if at and isinstance(at[0], (list, tuple)) \
             else None
         count = len(spots) if spots else max(1, count)
@@ -733,11 +724,10 @@ class Scene:
                     x = round(x + index * slot + (slot - drawn[0]) / 2)
                 y += base[1] - drawn[1]            # copies of different sizes share a bottom
             box = pygame.Rect(x, y, *drawn)
-            own = _pick(look, index)
-            solid = hitbox or _hitbox(own, drawn)
+            solid = hitbox or _hitbox(look, drawn)
             body = pygame.Rect(0, 0, *solid)
             body.center = box.center
-            thing = Thing(name, own, drawn, body, layer, moves, edges)
+            thing = Thing(name, look, drawn, body, layer, moves, edges)
             # What it stands on is looked up when the scene is first drawn, so the order
             # things were added in never matters.
             thing.on = on
@@ -758,8 +748,8 @@ class Scene:
         if name not in self.entries:
             raise SceneError(f"there is nothing called {name!r} in the scene to stand on -- "
                              f"add it to the scene, or take away on={name!r}")
-        tops = [self._drawn_area(self.entries[name], item, index).top
-                for index, item in enumerate(self.entries[name]["items"])]
+        tops = [self._drawn_area(self.entries[name], item).top
+                for item in self.entries[name]["items"]]
         return min(tops)
 
     def get(self, name):
@@ -842,20 +832,20 @@ class Scene:
                 if entry["layer"] != layer:
                     continue
                 visible = 0
-                for index, item in enumerate(entry["items"]):
-                    drawn = self._drawn_area(entry, item, index)
-                    look = item.look if entry["own"] else _pick(entry["look"], index)
-                    look.draw(screen, drawn, drawn.size)
+                for item in entry["items"]:
+                    drawn = self._drawn_area(entry, item)
+                    size = drawn.size
+                    entry["look"].draw(screen, drawn, size)
                     visible += drawn.colliderect(area)
                 seen = self.shown.setdefault(name, {"frames": 0, "on_screen": 0})
                 seen["frames"] += 1
                 seen["on_screen"] = max(seen["on_screen"], visible)
 
-    def _drawn_area(self, entry, item, index=0):
+    def _drawn_area(self, entry, item):
         if entry["own"]:
             return item.drawn_rect()
         box = entry["size"] or (item.width * entry["scale"], item.height * entry["scale"])
-        shape = _pick(entry["look"], index).natural_size()
+        shape = entry["look"].natural_size()
         width, height = _fit_size(shape, box) if shape else box
         area = pygame.Rect(0, 0, max(1, round(width)), max(1, round(height)))
         area.center = item.center
@@ -870,23 +860,13 @@ class Scene:
                 if entry["layer"] != layer:
                     continue
                 seen = self.shown.get(name, {"frames": 0, "on_screen": 0})
-                looks = entry["look"] if isinstance(entry["look"], (list, tuple)) else \
-                    [entry["look"]]
-                found.append({"name": name, "layer": layer,
-                              "look": ", ".join(look.describe() for look in looks),
+                found.append({"name": name, "layer": layer, "look": entry["look"].describe(),
                               "count": len(entry["items"]), "frames": seen["frames"],
                               "on_screen": seen["on_screen"]})
         return found
 
 
 # --------------------------------------------------------------------------- helpers
-
-
-def _pick(look, index):
-    """The look copy number ``index`` is drawn with: the look, or the next in a list."""
-    if isinstance(look, (list, tuple)):
-        return look[index % len(look)]
-    return look
 
 
 def _first(value):

@@ -243,6 +243,12 @@ def context_block(
         "These are real files in the project. Use them from these paths.",
     ]
     lines.extend(f"- {asset.path} -- {asset.summary}" for asset in assets)
+    sets = _numbered_sets([a.path for a in assets if a.kind == kinds.IMAGE])
+    if sets:
+        # Measured on the owner's test04 replay: six tree pictures, "make the forest", and
+        # the 8B used the first one for one tree.
+        lines.append("Numbered pictures of one kind -- give each set to game_object together, "
+                     "as a list: " + "; ".join(f"{first} to {last}" for first, last in sets))
 
     attached_paths = [asset.path for asset in attached]
     if attached_paths:
@@ -258,11 +264,13 @@ def context_block(
         lines.append("NOBODY HAS LOOKED INSIDE THESE FILES")
         lines.extend(f"  {asset.path}" for asset in unreadable)
         lines.append(
-            "You have not seen what is in these. Never describe one and never guess: a "
-            "file's name is not a description of its contents. If they tell you what one "
-            "is, believe them and use it. If it matters and they have not said, ask. "
-            "What you do know is listed above -- the kind of file, its size, and where "
-            "it is -- and that is enough to use them from those paths."
+            "You have not seen what is in these. Never describe what one looks like, and "
+            "never guess at what it shows. Its name is what the child calls it, so use it for "
+            "that: a picture named dragon.png is for their dragon -- no need to say you have "
+            "not seen it. If they tell you what one is, believe them and use it. If it "
+            "matters and they have not said, ask. What you do know is listed above -- the "
+            "kind of file, its size, and where it is -- and that is enough to use them from "
+            "those paths."
         )
     return "\n".join(lines)
 
@@ -335,22 +343,59 @@ def invented_description(
     # stem with its separators intact. Deliberately NOT the de-hyphenated form -- for
     # red-dragon-with-wings.png that is the prose "red dragon with wings", which is the
     # invention itself, not a reference to the file.
+    said_words = set(re.findall(r"[a-z]+", said.lower()))
     cleaned = reply
     for asset in unread:
         for literal in (asset.path, asset.name, Path(asset.path).stem):
             if literal:
                 cleaned = re.sub(re.escape(literal), " ", cleaned, flags=re.I)
+        # ...and its name said as a name, once the child has called it by that name: "the
+        # blue monster image" after "I added the monster image" is blue_monster.png called
+        # what it is called. Measured on the test04 replays: each such sentence drew a
+        # correction, and the child was then told "I do not know what the image shows"
+        # instead of what had been made. A name the child never used is still caught --
+        # "the red dragon image" for what they called their spaceship (SPIKES.md section
+        # 10) -- and so is "the monster is blue", which describes.
+        words = _name_words(asset)
+        if words & said_words:
+            listed = "|".join(re.escape(word) for word in sorted(words, key=len, reverse=True))
+            cleaned = re.sub(rf"\b(?:(?:{listed})[\s_-]+){{1,4}}(?:image|picture|pic|photo|"
+                             rf"png|file|sprite|drawing)s?\b", " ", cleaned, flags=re.I)
 
     if _CLAIMS_SIGHT.search(cleaned):
-        return unread[0].path
+        # Only about a picture: "I see the code draws them once" is about the code, and
+        # drew a picture correction on the test04 replay (the screen's own correction
+        # still catches it). The picture it is about, when the reply names one.
+        named = [asset for asset in unread
+                 if any(re.search(rf"\b{re.escape(word)}", cleaned, re.I)
+                        for word in _name_words(asset))]
+        if named or _PICTURE_NOUN.search(cleaned):
+            return (named or unread)[0].path
 
-    said_words = set(re.findall(r"[a-z]+", said.lower()))
-    lowered = cleaned.lower()
     for asset in unread:
-        for word in _name_words(asset):
-            if word not in said_words and re.search(rf"\b{re.escape(word)}\b", lowered):
+        words = _name_words(asset)
+        if words & said_words:
+            # The child calls this picture by its name ("the monster image" for
+            # blue_monster.png), so its name is their label for it: "the blue monster" is
+            # what they called it, not what Gary saw. Measured on the test04 replays: each
+            # such sentence drew a correction and the child read "I did not see the
+            # picture itself. I used its file path as given." A name the child never used
+            # is still caught -- "the red dragon" for what they called their spaceship.
+            continue
+        for sentence in re.split(r"(?<=[.!?])\s+|\n+", cleaned.lower()):
+            used = {word for word in words if re.search(rf"\b{re.escape(word)}\b", sentence)}
+            # A word of a longer name counts in a sentence about that picture -- one that
+            # talks about a picture, or uses two of its words together ("the blue monster").
+            # Measured on the test04 replay: "The sky is dark blue" was taken for a
+            # description of blue_monster.png. A one-word name ("dragon") counts alone.
+            about = len(words) == 1 or len(used) > 1 or _PICTURE_NOUN.search(sentence)
+            if about and used - said_words:
                 return asset.path
     return None
+
+
+#: A reply talking about a picture at all.
+_PICTURE_NOUN = re.compile(r"\b(?:image|picture|png|photo|sprite)s?\b", re.IGNORECASE)
 
 
 def _name_words(asset: Asset) -> set[str]:
@@ -403,3 +448,91 @@ def import_message(
         lines.append("")
         lines.append(f"{capable.name} can read it. You can choose it for this project.")
     return "\n".join(lines)
+
+
+def import_messages(
+    imported: Sequence[Asset],
+    model: ModelInfo | None = None,
+    alternatives: Sequence[ModelInfo] = (),
+    *,
+    things: Sequence[str] = (),
+    game: bool = False,
+) -> str:
+    """What to say after importing several files at once -- once, not once per file.
+
+    Measured on the owner's test04: six tree pictures added together were six messages,
+    each the same three lines. One says it, with the limitation said once, and -- for
+    pictures -- what to say so Gary uses them: ``things`` are the names of what the game
+    already has, so "blue_monster.png" next to a monster becomes "use the monster picture
+    for the monster", which is how a child learns to ask. Only in a ``game``.
+    """
+    if len(imported) == 1 and not game:
+        return import_message(imported[0], model, alternatives)
+    names = [asset.name for asset in imported]
+    listed = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+    lines = [f"{listed} {'is' if len(names) == 1 else 'are'} in your project."]
+    pictures = [asset for asset in imported if asset.kind == kinds.IMAGE]
+    unseen = [asset for asset in pictures if not can_interpret(asset, model)]
+    hint = _use_hint(pictures, things) if game else ""
+    if unseen:
+        who = model.name if model else "This AI"
+        one = len(unseen) == 1
+        lines += ["", f"{who} cannot see pictures, so it will not know what "
+                      f"{'this one shows' if one else 'they show'}. It does know "
+                      f"{'its name and size' if one else 'their names and sizes'}, so it can "
+                      f"still use {'it' if one else 'them'}"
+                      + ("." if hint else f" -- tell it what {'it is' if one else 'they are'} "
+                                          f"for.")]
+    if hint:
+        lines += ["", hint]
+    others = [asset for asset in imported if asset.kind != kinds.IMAGE
+              and not can_interpret(asset, model)]
+    if others:
+        lines += ["", f"Open Nest cannot read what is inside "
+                      f"{', '.join(asset.name for asset in others)}, so Gary will not know "
+                      f"what {'it says' if len(others) == 1 else 'they say'}."]
+    if alternatives and (unseen or others):
+        lines += ["", f"{alternatives[0].name} can read them. You can choose it for this "
+                      f"project."]
+    return "\n".join(lines)
+
+
+def _numbered_sets(paths: Sequence[str]) -> list[tuple[str, str]]:
+    """(first, last) of each run of numbered pictures -- tree_01.png to tree_06.png."""
+    runs: dict[tuple[str, str], list[tuple[int, str]]] = {}
+    for path in paths:
+        match = re.match(r"^(.*?)(\d+)(\.\w+)$", path)
+        if match:
+            runs.setdefault((match.group(1), match.group(3)), []).append(
+                (int(match.group(2)), path))
+    return [(min(run)[1], max(run)[1]) for run in runs.values() if len(run) > 1]
+
+
+def _use_hint(pictures: Sequence[Asset], things: Sequence[str]) -> str:
+    """How to ask for the pictures to be used: by the thing in the game their name says,
+    or by what they are for."""
+    if not pictures:
+        return ""
+    groups: dict[str, list[Asset]] = {}
+    for asset in pictures:
+        stem = re.sub(r"[\d_\-\s]+$", "", Path(asset.path).stem.lower()) or \
+            Path(asset.path).stem.lower()
+        groups.setdefault(stem, []).append(asset)
+    have = {thing.lower().replace("_", " ") for thing in things}
+    said = []
+    for stem, group in groups.items():
+        words = [w for w in re.split(r"[^a-z]+", stem) if len(w) > 2 and
+                 w not in _EMPTY_NAME_WORDS]
+        if not words:
+            continue
+        noun = words[-1]
+        match = next((thing for thing in sorted(have) for word in words
+                      if word == thing or f"{word}s" == thing or word == f"{thing}s"), "")
+        many = len(group) > 1
+        target = match or (f"{noun}s" if many and not noun.endswith("s") else noun)
+        said.append(f"\u201cuse the {noun} {'pictures' if many else 'picture'} for the "
+                    f"{target}\u201d")
+    if not said:
+        return ""
+    return (f"To put {'it' if len(pictures) == 1 else 'them'} in the game, say "
+            + " or ".join(said[:2]) + ".")

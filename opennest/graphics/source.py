@@ -141,7 +141,7 @@ def read(source: str) -> GameScene:
         found.entries[name.value] = Entry(
             name=name.value, first=node.lineno - 1, last=node.end_lineno - 1,
             target=target, look=ast.get_source_segment(source, look) if look else "",
-            look_class=_dotted(look.func) if isinstance(look, ast.Call) else "",
+            look_class=_look_class(look),
             keywords=keywords, wraps=wraps, literals=literals)
     loop = main_loop(tree)
     if loop is not None:
@@ -158,7 +158,48 @@ def read(source: str) -> GameScene:
                 if first > 0 and lines[first - 1].strip().startswith(RULE_MARK):
                     first -= 1
                 found.rules[touched] = (first, stmt.end_lineno - 1)
+        events = event_loop(tree)
+        for stmt in events.body if events is not None else ():
+            # A shooting rule Open Nest wrote: "clicking the monster hits it" (``touch:
+            # shoot``) -- in the event loop, since a click is an event.
+            first = stmt.lineno - 1
+            shot = _shot_name(stmt, var)
+            if shot is not None and first > 0 and \
+                    lines[first - 1].strip().startswith(RULE_MARK):
+                found.rules[shot] = (first - 1, stmt.end_lineno - 1)
     return found
+
+
+def event_loop(tree: ast.Module | None) -> ast.For | None:
+    """The game loop's ``for event in pygame.event.get():``, or None."""
+    loop = main_loop(tree) if tree is not None else None
+    for stmt in loop.body if loop is not None else ():
+        if isinstance(stmt, ast.For) and isinstance(stmt.iter, ast.Call) and \
+                _dotted(stmt.iter.func) == "pygame.event.get" and \
+                isinstance(stmt.target, ast.Name):
+            return stmt
+    return None
+
+
+def _shot_name(stmt: ast.stmt, var: str) -> str | None:
+    """The name in an ``if <a click>: ... for x in scene.get("monster"):`` -- or None."""
+    if not isinstance(stmt, ast.If) or "MOUSEBUTTONDOWN" not in ast.unparse(stmt.test):
+        return None
+    for node in ast.walk(stmt):
+        if isinstance(node, ast.For) and isinstance(node.iter, ast.Call) and \
+                _dotted(node.iter.func) == f"{var}.get" and len(node.iter.args) == 1 and \
+                isinstance(node.iter.args[0], ast.Constant) and \
+                isinstance(node.iter.args[0].value, str):
+            return node.iter.args[0].value
+    return None
+
+
+def _look_class(look: ast.AST | None) -> str:
+    """``Picture``, ``Vehicle``... -- for a list of looks (kit version 3, one per copy),
+    the class they all are, or the first one's."""
+    if isinstance(look, (ast.List, ast.Tuple)) and look.elts:
+        look = look.elts[0]
+    return _dotted(look.func) if isinstance(look, ast.Call) else ""
 
 
 def _touched_name(stmt: ast.stmt, var: str) -> str | None:
@@ -479,6 +520,9 @@ def look_words(entry: Entry) -> str:
     """"the picture assets/eagle.png", "a vehicle drawing", "a drawing of 4 shapes"."""
     cls = entry.look_class
     quoted_text = re.findall(r"""["']([^"']+)["']""", entry.look)
+    if cls == "Picture" and entry.look.lstrip().startswith("[") and len(quoted_text) > 1:
+        # A list of looks, one per copy (kit version 3): every picture in it.
+        return f"the pictures {', '.join(quoted_text)}, one per copy"
     if cls in ("Picture", "Animation"):
         path = quoted_text[0] if quoted_text else "a file"
         return f"the {_LOOK_WORDS[cls]} {path}"
@@ -531,12 +575,13 @@ def relation(scene: GameScene, name: str) -> str:
 
 
 def touch_rule(scene: GameScene, name: str) -> str:
-    """"avoid", "collect", or "" -- what touching a thing in the scene does, from the
-    rule Open Nest wrote for it or the game's own collision code for its list."""
+    """"avoid", "collect", "shoot" or "" -- what touching a thing in the scene does, from
+    the rule Open Nest wrote for it or the game's own collision code for its list."""
     rule = scene.rules.get(name)
     if rule is not None:
         text = "\n".join(scene.source.split("\n")[rule[0]:rule[1] + 1])
-        return "collect" if "score" in text else "avoid"
+        return "shoot" if "MOUSEBUTTONDOWN" in text else "collect" if "score" in text \
+            else "avoid"
     entry = scene.entries.get(name)
     items = entry.wraps if entry is not None else None
     target = entry.target if entry is not None else None
@@ -585,7 +630,8 @@ def describe(scene: GameScene, player: str | None = None) -> list[str]:
         rule = scene.rules.get(entry.name)
         if rule is not None:
             text = "\n".join(scene.source.split("\n")[rule[0]:rule[1] + 1])
-            parts.append("touching one scores a point" if "score" in text else
+            parts.append("clicking one hits it for a point" if "MOUSEBUTTONDOWN" in text
+                         else "touching one scores a point" if "score" in text else
                          "touching one sends the player back to the start")
         parts.append(f"layer {entry.layer}")
         lines.append(", ".join(parts))

@@ -100,13 +100,18 @@ class Outcome:
 
 
 def run(project, arguments: dict, *, pictures: list[str] | None = None,
-        kit: str | None = None, message: tuple[str, tuple[str, ...]] = ("", ())) -> Outcome:
+        kit: str | None = None, message: tuple[str, tuple[str, ...]] = ("", ()),
+        added: frozenset[str] = frozenset(),
+        pictured: frozenset[str] = frozenset()) -> Outcome:
     """Work out the change ``arguments`` ask for. Never raises for Gary's mistakes.
 
     ``message`` is the child's words this turn and the pictures attached to them -- what a
-    picture may be used for is decided from those, never from what it might show."""
+    picture may be used for is decided from those, never from what it might show.
+    ``added`` is what earlier calls for this same message put in the scene, by name: a
+    second call for one of those, somewhere else, is another of it (``_another``);
+    ``pictured``, what this message gave a picture to, the same for a new picture."""
     try:
-        return _run(project, arguments or {}, pictures, kit, message)
+        return _run(project, arguments or {}, pictures, kit, message, added, pictured)
     except (Refused, LookError) as exc:
         return Outcome(False, {"ok": False, "object": str((arguments or {}).get("name", "")),
                                "reason": exc.reason, "message": str(exc),
@@ -117,7 +122,8 @@ def run(project, arguments: dict, *, pictures: list[str] | None = None,
 # ----------------------------------------------------------------------------- the work
 
 
-def _run(project, args: dict, pictures, kit_text, message=("", ())) -> Outcome:
+def _run(project, args: dict, pictures, kit_text, message=("", ()),
+         added: frozenset[str] = frozenset(), pictured: frozenset[str] = frozenset()) -> Outcome:
     from opennest.fastpath.kinds import games  # the parser that finds the game's loop
 
     name = _clean_name(args.get("name"))
@@ -128,6 +134,9 @@ def _run(project, args: dict, pictures, kit_text, message=("", ())) -> Outcome:
         what = ("the window's title is set with pygame.display.set_caption" if name in (
             "title", "caption") else f"a {name.replace('_', ' ')} is how the game plays "
             f"-- counting, keys, rules, sound")
+        if name in ("shooting", "attack"):
+            what += ("; to make things that can be shot, give those things touch: shoot "
+                     "(game_object with their name)")
         raise Refused(f"game_object only puts things to see in the scene and changes how "
                       f"they look, and {what}, so make it with edit_file. (A sign with words "
                       f"on it is a drawing: name it sign.) Nothing was changed.", "not_a_look")
@@ -165,7 +174,13 @@ def _run(project, args: dict, pictures, kit_text, message=("", ())) -> Outcome:
         text = _adopt(text, facts, scene)
         facts = games.facts_of(text, entry)
         scene = source.read(text)
-    work = _Work(project, text, facts, scene, args, name, pictures, notes, message)
+    work = _Work(project, text, facts, scene, args, name, pictures, notes, message, added)
+    work.pictured = pictured
+    if kit_now == "ours":
+        # A kit changed by hand is never replaced, so it is drawn with what it can do: one
+        # look per copy arrived in version 3.
+        present = (project.directory / KIT_PATH).read_text(encoding="utf-8")
+        work.lists = (looks.kit_version(present) or 0) >= 3
     text, result = work.apply()
     if needs_scene:
         text = _imports(text, source.read(text))
@@ -387,10 +402,17 @@ class _Work:
     """One call's change, against a game that already has its scene."""
 
     def __init__(self, project, text, facts, scene, args, name, pictures, notes,
-                 message=("", ())):
+                 message=("", ()), added=frozenset()):
         self.project, self.text, self.facts, self.scene = project, text, facts, scene
         self.args, self.name, self.pictures, self.notes = args, name, pictures, notes
         self.said, self.attached = message
+        self.added = added
+        #: How many there are now, when this call was another of one this message added.
+        self.another = 0
+        #: Whether the project's kit can draw a list of looks, one per copy (version 3).
+        self.lists = True
+        #: What earlier calls for this message gave a picture to.
+        self.pictured: frozenset[str] = frozenset()
         self.lines = text.split("\n")
         self.width, self.height = _screen_size(facts)
         self.var = scene.variable
@@ -411,6 +433,7 @@ class _Work:
             return self._player(player)
         entry = self._existing_entry()
         if entry is not None:
+            self._another(entry)
             return self._change_entry(entry)
         listed = self._game_list()
         if listed is not None:
@@ -437,6 +460,65 @@ class _Work:
                 return entry
         return None
 
+    def _another(self, entry: source.Entry) -> None:
+        """A second call for something this message already added, at another place, is
+        another of it -- not the first one moved there.
+
+        Measured on the owner's test04 replay: Qwen3 8B planted a forest as three calls,
+        ``tree`` at x 100, 200 and 300; each replaced the last, and the game had one tree
+        while the reply said "I added the trees". Its corners become a list -- one each.
+        Only for this message's own additions, given only a new place and nothing that
+        changes the look, so asking to move a thing that was already there still moves it.
+        """
+        args = self.args
+        spot = _pair(args.get("at"))
+        if (entry.name not in self.added and entry.name not in self.pictured) or \
+                spot is None or args.get("remove") or \
+                isinstance(entry.literals.get("count"), int) and entry.literals["count"] > 1:
+            return
+        current = entry.literals.get("at")
+        spots = [tuple(s) for s in current] if isinstance(current, list) else \
+            [tuple(current)] if isinstance(current, tuple) and len(current) == 2 else []
+        if not spots or tuple(spot) in spots:
+            return
+        if entry.name in self.pictured and isinstance(args.get("picture"), str) and \
+                entry.look_class == "Picture" and self.lists:
+            # One picture per call, each at its own place: measured on the final test04
+            # replay, the 8B planted the forest as six calls named "tree", tree_01.png at
+            # x 100 to tree_06.png at x 600, and each replaced the last -- one tree. It is
+            # one tree per picture, each at its place.
+            paths = re.findall(r"""Picture\(\s*["']([^"']+)["']""", entry.look)
+            if len(paths) != len(spots):
+                return
+            new = self._one_picture(args["picture"])
+            if new.kind != "picture":
+                return
+            spots.append(tuple(spot))
+            self.args = {**args, "picture": [*paths, new.picture],
+                         "at": [list(s) for s in spots]}
+            if "on" in entry.literals and not args.get("on"):
+                self.args["on"] = entry.literals["on"]
+            self.another = len(spots)
+            self.notes.append(f"this message had already given {entry.name} a picture, so "
+                              f"this is another one with {new.picture} at the new place: "
+                              f"{len(spots)} now, each its own picture")
+            return
+        if entry.name not in self.added:
+            return
+        look = self.look(required=False)
+        if look is not None and look.code() != entry.look:
+            return
+        size = _pair(args.get("size"))
+        if size and entry.literals.get("size") not in (None, size):
+            return
+        spots.append(tuple(spot))
+        self.args = {**args, "at": [list(s) for s in spots]}
+        if "on" in entry.literals and not args.get("on"):
+            self.args["on"] = entry.literals["on"]
+        self.another = len(spots)
+        self.notes.append(f"this message had already added {entry.name}, so this is another "
+                          f"one at the new place: {len(spots)} now, one at each place")
+
     def _game_list(self):
         """A list of rects the game already has under this name: (list, prefix or None)."""
         things = self.facts.get("things") or {}
@@ -462,6 +544,15 @@ class _Work:
         unknown = None
         if isinstance(drawing, str) and drawing.strip().lower() in looks.DRAWINGS:
             drawing = drawing.strip().lower()
+        elif drawing and looks.shape_word(drawing) and not args.get("shapes"):
+            # "square", "a red circle": the plain shape is what was meant (test04 replay).
+            kind = looks.shape_word(drawing)
+            self.notes.append(f"there is no ready-made {drawing!r} drawing, so it is drawn as "
+                              f"one plain {kind if kind != 'rect' else 'rectangle'}")
+            colour_arg = args.get("color", args.get("colour"))
+            return looks.shapes_look(looks.one_shape(kind, _pair(args.get("size")), colour_arg),
+                                     _pair(args.get("size")), None, self.notes,
+                                     self.colour_constants)
         elif drawing:
             meant = looks.infer_drawing(str(drawing))
             if meant:
@@ -514,6 +605,39 @@ class _Work:
                       "no_look")
 
     def _picture_look(self, asked) -> Look:
+        """A picture's look -- or, for a list of pictures, or a numbered one given a count
+        (tree_01.png, count 6), one picture per copy (kit version 3)."""
+        if isinstance(asked, (list, tuple)):
+            given = [str(item) for item in asked if isinstance(item, str) and item.strip()]
+            if not given:
+                raise LookError("picture needs the name of a picture in the project. Nothing "
+                                "was changed.", "no_picture")
+            checked = [self._one_picture(item) for item in given[:12]]
+            if len(checked) == 1 or any(look.kind != "picture" for look in checked):
+                return checked[0]
+            series = tuple(dict.fromkeys(look.picture for look in checked))
+            if len(series) == 1 or not self.lists:
+                if len(series) > 1:
+                    self.notes.append(f"this project's src/scene.py was changed by hand and "
+                                      f"draws one picture for all of them, so it is "
+                                      f"{series[0]}")
+                return checked[0]
+            return Look("pictures", picture=series[0], series=series, box=checked[0].box)
+        look = self._one_picture(asked)
+        count = self.args.get("count")
+        if look.kind == "picture" and not self._targets_player and isinstance(
+                count, (int, float)) and count > 1:
+            series = looks.numbered_series(look.picture, self.pictures) if self.lists else ()
+            if series and all(_header(self.project.directory / path) for path in series):
+                # Measured on the owner's test04 replay: six tree pictures in Assets, "make
+                # the forest", and the 8B used tree_01.png for one tree. A row of them is
+                # all of them, in turn -- and said, so the reply can say so.
+                self.notes.append(f"the numbered pictures {', '.join(series)} are used one "
+                                  f"per copy, in turn")
+                return Look("pictures", picture=series[0], series=series, box=look.box)
+        return look
+
+    def _one_picture(self, asked) -> Look:
         found = looks.find_picture(str(asked), self.pictures)
         if found is None:
             named = str(asked).strip().lstrip("./")
@@ -524,6 +648,16 @@ class _Work:
                                 f"so the game could not show it. Nothing was changed.",
                                 "not_a_picture")
             listed = ", ".join(self.pictures) if self.pictures else "none"
+            drawing = looks.infer_drawing(self.name)
+            if drawing and not self._targets_player:
+                # Measured on the test04 replay: "trees" with assets/tree.png, a picture the
+                # child had not added yet, was refused -- and the game had no trees at all.
+                self.notes.append(f"there is no picture {asked!r} in the project (its "
+                                  f"pictures: {listed}), so it is drawn as the ready-made "
+                                  f"{drawing} drawing until there is one")
+                fill = self.args.get("color", self.args.get("colour"))
+                return Look("drawing", drawing=drawing,
+                            fill=looks.colour(fill, self.notes) if fill else None)
             raise LookError(f"There is no picture {asked!r} in the project. Its pictures: "
                             f"{listed}. Nothing was changed.", "no_picture")
         header = _header(self.project.directory / found)
@@ -537,15 +671,38 @@ class _Work:
             # name has a ready-made drawing, that is used instead, and said -- measured, a
             # refusal left the 4B promising a car it then never drew.
             stem = Path(found).stem
+            if self.owner and self.owner not in self.scene.entries and \
+                    self.name not in self.scene.entries and not self._targets_player and \
+                    re.search(rf"\b{re.escape(self.owner)}s?\s+(?:image|picture|pic|photo|"
+                              rf"sprite)s?\b", (self.said or "").lower()):
+                # A new thing, given the picture of something the game has not got yet,
+                # that the child has just talked about as a picture: measured on the test04
+                # replay, "I added the monster image now" and the 4B
+                # called a new "tree" with blue_monster.png -- its own reply said "The blue
+                # monster is now visible". The picture says what it was meant to be.
+                self.notes.append(f"{found} is the {self.owner}'s picture, so this is the "
+                                  f"{self.owner}, not a {self.name.replace('_', ' ')}")
+                self.name = self.owner
+                return self._one_picture(asked)
             drawing = looks.infer_drawing(self.name)
+            whose = (f" -- its name says it is the {self.owner}: game_object with name "
+                     f"{self.owner!r} and this picture puts it on the {self.owner}"
+                     if self.owner else "")
             if drawing:
                 self.notes.append(f"{found} is the child's picture they call {stem!r}, not "
                                   f"a {self.name.replace('_', ' ')}, so it is drawn as a "
-                                  f"ready-made {drawing} drawing instead")
+                                  f"ready-made {drawing} drawing instead{whose}")
                 fill = self.args.get("color", self.args.get("colour"))
                 return Look("drawing", drawing=drawing,
                             fill=looks.colour(fill, self.notes) if fill else None,
                             text=str(self.args.get("text", "") or "")[:30])
+            if self.owner:
+                thing = self.name.replace("_", " ")
+                raise LookError(f"{found} is the child's picture of the {self.owner} -- its "
+                                f"name says so -- not of the {thing}. Use it for the "
+                                f"{self.owner} (game_object with name {self.owner!r}), and "
+                                f"draw the {thing} another way. Nothing was changed.",
+                                "picture_not_asked")
             raise LookError(f"{found} is the child's picture they call {stem!r}, and nothing "
                             f"they said makes it the {self.name.replace('_', ' ')}. Draw the "
                             f"{self.name.replace('_', ' ')} with a ready-made drawing or shapes "
@@ -575,12 +732,34 @@ class _Work:
     def _picture_asked_for(self, picture: str) -> bool:
         """Whether a picture may be this thing's look: the player's, one attached to this
         message, one whose name is the thing's, or one the child's words name."""
-        if self._targets_player or picture in self.attached:
+        if picture in self.attached:
             return True
         words = {w for w in re.split(r"[^a-z0-9]+", Path(picture).stem.lower()) if len(w) > 2}
+        if self._targets_player:
+            # Any picture may be the player ("use my eagle picture as the player") -- but
+            # not one named for another thing the game already has, unless they say so.
+            # Measured on the test04 replay: "I added the monster image now ... the player
+            # must be walking forward ... the monster will hide", and the 4B made the
+            # player blue_monster.png while the scene had its monster.
+            owner = self._picture_owner(words)
+            if owner and set(_forms(owner)) & set(self.scene.entries) and \
+                    not self._said_for(words):
+                self.owner = owner
+                return False
+            return True
         name = {w for form in _forms(self.name) for w in form.split("_")}
+        # "forest" is made of trees, "town" of buildings: a tree picture is a forest's.
+        name |= {w for w in list(name) for w in _forms(looks.GROUPS.get(w, ""))}
         if words & name:
             return True
+        owner = self._picture_owner(words)
+        if owner and not self._said_for(words):
+            # Measured on the owner's test04 replay: "I added the monster image now ... the
+            # monster will hide behind the trees" -- and the 4B gave the trees
+            # blue_monster.png. Its name says whose it is; only the child's own "use the
+            # monster picture for the trees" makes it another thing's.
+            self.owner = owner
+            return False
         # The child's words tie a picture to something only when they talk about a
         # picture: "use my eagle picture for the enemies", or "this picture" with one to
         # mean. "fly an eagle ... avoid cars" names the eagle, not the cars' picture.
@@ -590,6 +769,37 @@ class _Work:
         return bool(words & said) or len(self.pictures) == 1
 
     _targets_player = False
+    #: The thing a refused picture's own name says it is for -- "monster" -- or "".
+    owner = ""
+    #: Asked to stand on a ground the scene has not got: it stands on the screen's bottom
+    #: (the final test04 replay: trees "on": "ground" in a game with no ground floated).
+    no_ground = False
+
+    def _picture_owner(self, words: set[str]) -> str:
+        """Another thing a picture's name names -- one in the scene, or one the child
+        talked about this message -- or ""."""
+        said = set(re.findall(r"[a-z0-9]+", (self.said or "").lower()))
+        mine = set(_forms(self.name)) | set(_forms(looks.GROUPS.get(self.name, "")))
+        for word in sorted(words):
+            if word in looks.palette() or word in mine:
+                continue
+            forms = set(_forms(word))
+            if forms & mine:
+                continue
+            if forms & set(self.scene.entries) or forms & said:
+                return word
+        return ""
+
+    def _said_for(self, words: set[str]) -> bool:
+        """Whether the child's words give this picture to this thing: "use my eagle picture
+        for the enemies", "make the monster picture the trees"."""
+        said = (self.said or "").lower()
+        names = "|".join(re.escape(form.replace("_", " ")) for form in _forms(self.name))
+        for word in words:
+            if re.search(rf"\b{re.escape(word)}\b[^.!?]{{0,40}}\b(?:for|as|on|into|be|be the)"
+                         rf"\b[^.!?]{{0,20}}\b(?:{names})\b", said):
+                return True
+        return False
 
     # -- the player ----------------------------------------------------------------
 
@@ -607,6 +817,10 @@ class _Work:
                               f"moves with the keys the game reads -- edit_file changes those")
         current = self.scene.entries.get("player")
         look = self.look(required=current is None)
+        if look is not None and look.kind == "pictures":
+            # One player, one picture: the first of the list.
+            self.notes.append(f"the player is one thing, so it wears {look.picture}")
+            look = Look("picture", picture=look.picture, box=look.box)
         tree = self.scene.tree
         edit = source.Edit(self.text)
         recoloured = None
@@ -747,7 +961,10 @@ class _Work:
             edit.replace(entry.first, entry.last, statement)
         self._rule(edit, entry.name)
         text = edit.text()
-        return text, self._report("changed", look, entry, keywords)
+        result = self._report("added" if self.another else "changed", look, entry, keywords)
+        if self.another:
+            result["count"] = self.another
+        return text, result
 
     def _remove(self, entry: source.Entry, edit) -> tuple[str, dict]:
         if entry.wraps:
@@ -1168,7 +1385,8 @@ class _Work:
                 f"{', '.join(over[:6])}: things in the {layer} layer are drawn in the order "
                 f"they were added, so this one is in front of them wherever they overlap"
                 + (f" -- layer {behind} puts it behind them" if behind else ""))
-        if look.kind in ("picture", "animation") and "player" not in self.scene.entries \
+        if look.kind in ("picture", "pictures", "animation") and \
+                "player" not in self.scene.entries \
                 and self.facts.get("player"):
             result["player"] = ("the player -- the one the arrow keys move -- still looks the "
                                 "way it did; this is a new thing that does not move with the "
@@ -1186,6 +1404,11 @@ class _Work:
         return edit.text(), result
 
     def _default_layer(self, look: Look) -> str:
+        drawing = look.drawing if look.kind == "drawing" else \
+            looks.infer_drawing(self.name) if look.kind in ("picture", "pictures") else ""
+        if drawing and look.kind != "drawing" and not self._in_front():
+            # The child's tree pictures are scenery, as the tree drawing is.
+            look = Look("drawing", drawing=drawing)
         if look.kind == "drawing":
             if look.drawing in ("sky", "cloud"):
                 return "background"
@@ -1220,6 +1443,8 @@ class _Work:
 
     def _in_front(self) -> bool:
         """A thing the player can touch, or a vehicle that moves by itself."""
+        # (A thing to shoot may hide behind the scenery -- the owner's test04: "monsters
+        # hiding behind trees" -- so only a thing the player bumps into is pulled forward.)
         touch = self.args.get("touch") in ("avoid", "collect")
         entry = self.scene.entries.get(self.name)
         vehicle = self.args.get("drawing") == "vehicle" or (
@@ -1248,31 +1473,60 @@ class _Work:
                 self.notes.append(f"a {drawing} goes all the way across the screen")
             keywords.append(("size", f"({self.width}, {height})"))
             spot = _pair(args.get("at"))
+            if spot and spot[1] < self.height // 3:
+                # A road along the top of the window: measured on the test04 replay, the 4B
+                # gave every thing at [0, 0], meaning nowhere in particular, and then said
+                # "the road is a green strip at the bottom".
+                self.notes.append(f"a {drawing} goes along the bottom, where things stand on "
+                                  f"it")
+                spot = None
             y = spot[1] if spot else self.height - height
             keywords.append(("at", f"(0, {max(0, min(self.height - 8, y))})"))
             return keywords
         if not size:
             size = _READY_SIZES.get(drawing) or _natural(look, self.width, self.height)
+        else:
+            size = self._sensible(size, look, drawing)
         size = (max(4, min(self.width, size[0])), max(4, min(self.height, size[1])))
+        size = self._picture_shaped(size, look)
         keywords.append(("size", f"({size[0]}, {size[1]})"))
         spots = args.get("at")
         on = self._on_target()
+        standing = drawing in STANDING or (look.kind in ("picture", "pictures") and
+                                           looks.infer_drawing(self.name) in STANDING)
         if isinstance(spots, (list, tuple)) and spots and all(
                 _pair(s) for s in spots) and isinstance(spots[0], (list, tuple)):
             places = [_clamp_spot(_pair(s), size, self.width, self.height) for s in spots][:60]
             keywords.append(("at", "[" + ", ".join(f"({x}, {y})" for x, y in places) + "]"))
         else:
             spot = _pair(spots)
-            if spot:
+            if spot and standing and on is None and (spot[1] <= 0 or self.no_ground) and \
+                    drawing != "sign":
+                # Measured on the test04 replays: both models gave trees "at": [0, 0],
+                # meaning nowhere in particular -- and the trees stood along the top of
+                # the window. A thing that stands stands on the ground, or the screen's
+                # bottom when there is no ground.
+                on = self._ground()
+                y = spot[1] if on else self.height - size[1]
+                self.notes.append(f"it stands, so it is on the {on}" if on else
+                                  "it stands, so it is along the bottom of the screen")
+                spot = (spot[0], y)
                 x, y = _clamp_spot(spot, size, self.width, self.height)
                 keywords.append(("at", f"({x}, {y})"))
-                if on is None and drawing in STANDING:
+            elif spot:
+                x, y = _clamp_spot(spot, size, self.width, self.height)
+                keywords.append(("at", f"({x}, {y})"))
+                if on is None and standing:
                     on = self._snap(y + size[1])
             elif drawing == "cloud":
                 keywords.append(("at", f"(0, {self.height // 12})"))
             elif not on:
                 count = args.get("count")
-                if isinstance(count, (int, float)) and count > 1:
+                if standing:
+                    # Trees or buildings with no ground to stand on stand on the bottom of
+                    # the screen, not across its middle (the 8B's forest, test04 replay).
+                    keywords.append(("at", f"(0, {self.height - size[1]})"))
+                elif isinstance(count, (int, float)) and count > 1:
                     keywords.append(("at", f"(0, {(self.height - size[1]) // 2})"))
         if on:
             keywords.append(("on", quoted(on)))
@@ -1283,9 +1537,52 @@ class _Work:
                 isinstance(spots, (list, tuple)) and spots and isinstance(spots[0],
                                                                           (list, tuple))):
             keywords.append(("count", str(max(2, min(60, round(count))))))
-            if drawing in ("building", "house", "tree", "cloud"):
+            if (drawing or (looks.infer_drawing(self.name) if look.kind in (
+                    "picture", "pictures") else "")) in ("building", "house", "tree", "cloud"):
                 keywords.append(("vary", "0.25"))
         return keywords
+
+    def _sensible(self, size: tuple[int, int], look: Look, drawing: str) -> tuple[int, int]:
+        """A size Gary gave, unless it is the whole screen for one thing or a row too wide
+        for the screen -- then the size each one should be, said in the notes.
+
+        Measured on the owner's test04 replay: "trees", count 5, size [640, 480] -- the
+        4B gave the screen's size as the area to fill -- drew five trees each as big as
+        the window, and nothing else in the game could be seen. A sky or a band is the
+        whole width by rule and never comes here."""
+        name = self.name.replace("_", " ")
+        if size[0] >= self.width * 0.9 and size[1] >= self.height * 0.6:
+            own = _READY_SIZES.get(drawing) or _natural(look, self.width, self.height)
+            self.notes.append(f"{size[0]}x{size[1]} is the whole screen -- {name} that big "
+                              f"would cover everything -- so each is {own[0]}x{own[1]}")
+            return own
+        count = self.args.get("count")
+        if isinstance(count, (int, float)) and count > 1 and size[0] * count > self.width * 1.3:
+            scale = self.width / (size[0] * count)
+            own = (max(8, round(size[0] * scale)), max(8, round(size[1] * scale)))
+            self.notes.append(f"{round(count)} of them {size[0]} wide would not fit across "
+                              f"the screen, so each is {own[0]}x{own[1]}")
+            return own
+        return size
+
+    def _picture_shaped(self, size: tuple[int, int], look: Look | None) -> tuple[int, int]:
+        """A picture's box, the shape of the picture: the biggest that fits in ``size``.
+
+        Measured on the owner's test04: the monster kept a 140x470 box from the shapes
+        it had been, its nearly square picture was drawn in the middle of that box, and
+        the box stood on the road -- so the monster hung in the sky, and what bumped into
+        things was a tall invisible column. What is seen is what stands and what touches."""
+        if look is None or look.kind not in ("picture", "pictures") or not look.box:
+            return size
+        width, height = look.box
+        scale = min(size[0] / max(1, width), size[1] / max(1, height))
+        shaped = (max(4, round(width * scale)), max(4, round(height * scale)))
+        if abs(shaped[0] - size[0]) > 2 or abs(shaped[1] - size[1]) > 2:
+            self.notes.append(f"the picture is {width}x{height}, so its box is "
+                              f"{shaped[0]}x{shaped[1]}, the picture's own shape -- what "
+                              f"stands and what is touched is what is seen")
+            return shaped
+        return size
 
     #: How far above a road a standing thing's bottom can be and still be meant to be
     #: on it. Both models put cars 40-80 pixels above the road they asked for (SPIKES.md
@@ -1293,17 +1590,29 @@ class _Work:
     SNAP = 90
 
     def _snap(self, bottom: int) -> str | None:
-        """The road or ground a standing thing placed just above -- or on -- belongs on."""
+        """The road or ground a standing thing placed just above -- or on, or sunk into --
+        belongs on."""
         for entry in self.scene.entries.values():
             spot, span = entry.literals.get("at"), entry.literals.get("size")
             if entry.look_class not in ("Road", "Ground") or not (
                     isinstance(spot, tuple) and isinstance(span, tuple)):
                 continue
-            # Just above it, on it, or a little past its lower edge (the final 4B walk's
-            # tree stood 10 pixels below a 20-pixel road).
-            if spot[1] - self.SNAP <= bottom <= spot[1] + span[1] + 30:
+            # Just above it, on it, or past its lower edge -- the final 4B walk's tree stood
+            # 10 pixels below a 20-pixel road, and the test04 replay's 8B planted a tree's
+            # top on the road, its trunk below the bottom of the screen.
+            if spot[1] - self.SNAP <= bottom:
                 self.notes.append(f"it was put just above the {entry.name}, so it stands on "
                                   f"the {entry.name}")
+                return entry.name
+        return None
+
+    def _ground(self) -> str | None:
+        """The road or ground in the scene, if there is one."""
+        for ground in ("road", "ground", "street", "grass"):
+            if ground in self.scene.entries and ground != self.name:
+                return ground
+        for entry in self.scene.entries.values():
+            if entry.look_class in ("Road", "Ground") and entry.name != self.name:
                 return entry.name
         return None
 
@@ -1315,8 +1624,14 @@ class _Work:
             for candidate in _forms(_clean_name(asked)):
                 if candidate in self.scene.entries and candidate != self.name:
                     return candidate
+            ground = self._ground()
+            if ground and _clean_name(asked) in ("ground", "road", "grass", "floor", "street"):
+                self.notes.append(f"there is no {asked}, so it stands on the {ground}")
+                return ground
             self.notes.append(f"there is nothing called {asked!r} in the scene to stand on, "
                               f"so it was placed without it")
+            self.no_ground = _clean_name(asked) in ("ground", "road", "grass", "floor",
+                                                    "street")
             return None
         drawing = self.args.get("drawing") or looks.infer_drawing(self.name)
         if drawing in STANDING and not self.args.get("at"):
@@ -1364,8 +1679,31 @@ class _Work:
                 # just above a road, where it stands on the road again (``_snap``).
                 if "on" in fresh:
                     merged.append((key, fresh[key]))
+            elif key == "at" and "count" in given and isinstance(entry.literals.get("at"), list):
+                # One corner each made as many as there were corners; a count asked for now
+                # is a row of that many instead.
+                continue
             elif key in current:
                 merged.append((key, current[key]))
+        if look is not None and look.kind in ("picture", "pictures") and "size" not in given:
+            # A new picture keeps a picture's box only as the room it has, shaped to the
+            # new picture. A box a drawing had says nothing about a picture -- the owner's
+            # test04 monster kept its shapes' 140x470 and hung in the sky; a thin drawn
+            # tree's 20x100 made a tree picture 20x27 -- so a picture replacing a drawing
+            # is drawn at a picture's own size.
+            for index, (key, code) in enumerate(merged):
+                if key != "size":
+                    continue
+                kept = _pair(_value(code)) if not isinstance(_value(code), str) else None
+                if not kept:
+                    continue
+                if entry.look_class == "Picture":
+                    shaped = self._picture_shaped(self._sensible(kept, look, ""), look)
+                else:
+                    shaped = _natural(look, self.width, self.height)
+                    self.notes.append(f"it was a drawing before, so the picture is drawn at "
+                                      f"its own size, {shaped[0]}x{shaped[1]}")
+                merged[index] = ("size", f"({shaped[0]}, {shaped[1]})")
         if args.get("moves") == "still":
             motion = []
         elif args.get("moves") not in (None, ""):
@@ -1380,9 +1718,12 @@ class _Work:
 
     def _rule(self, edit, name: str, *, items: str | None = None) -> None:
         touch = self.args.get("touch")
-        if touch not in ("avoid", "collect", "nothing"):
+        if touch not in ("avoid", "collect", "nothing", "shoot"):
             return
         player = self.facts.get("player")
+        if touch == "shoot":
+            self._shot(edit, name, player, items)
+            return
         if player is None:
             self.notes.append("there is no player the arrow keys move, so nothing happens "
                               "when it is touched")
@@ -1421,6 +1762,51 @@ class _Work:
             self._score(edit)
         edit.insert(at, block)
 
+    def _shot(self, edit, name: str, player: str | None, items: str | None) -> None:
+        """``touch: shoot`` -- clicking it, or Space with the player over it, hits it: a
+        point, and it goes round again.
+
+        Measured on the owner's test04 and both replays: asked for "a first person
+        shooter -- we have to shoot monsters hiding behind trees", no model shot anything.
+        The 4B's own try in the owner's game was Space adding a yellow dot every frame,
+        forever, hitting nothing. Shooting is a rule, like avoid and collect, so the scene
+        gives it: a click is an event, so it goes in the event loop, once per click."""
+        if items:
+            self.notes.append(f"{items} are the game's own code, so clicking them was left to "
+                              f"it -- edit_file changes that")
+            return
+        existing = self.scene.rules.get(name)
+        if existing:
+            edit.drop(*existing)
+        events = source.event_loop(self.scene.tree)
+        if events is None:
+            self.notes.append("the game has no event loop to hear a click in, so nothing "
+                              "happens when it is clicked")
+            return
+        event = events.target.id
+        indent = " " * events.body[0].col_offset
+        one = _singular(name)
+        if one in source.names_used(self.scene.tree) or not one.isidentifier():
+            one = "hit"
+        clicked = f"{event}.type == pygame.MOUSEBUTTONDOWN"
+        if player:
+            how = f"clicking {name.replace('_', ' ')} -- or Space with the player over it --"
+            test = (f"{clicked} or ({event}.type == pygame.KEYDOWN and {event}.key == "
+                    f"pygame.K_SPACE)")
+            aim = f"{event}.pos if {clicked} else {player}.center"
+        else:
+            how, test, aim = f"clicking {name.replace('_', ' ')}", clicked, f"{event}.pos"
+        block = [f"{indent}{source.RULE_MARK}{how} hits it: a point, and it goes round again.",
+                 f"{indent}if {test}:",
+                 f"{indent}    aim = {aim}",
+                 f"{indent}    for {one} in {self.var}.get({quoted(name)}):",
+                 f"{indent}        if {one}.drawn_rect().collidepoint(aim):",
+                 f"{indent}            score += 1",
+                 f"{indent}            {one}.respawn()",
+                 f"{indent}            break"]
+        edit.insert(events.end_lineno, block)
+        self._score(edit)
+
     def _already_touched(self, items: str) -> bool:
         loop = source.main_loop(self.scene.tree)
         player = self.facts.get("player")
@@ -1439,7 +1825,14 @@ class _Work:
         facts = self.facts
         if facts.has("score"):
             return
+        # Dark words on a light sky, light ones on a dark one -- a night sky is a sky too
+        # (the test04 shooting gallery's score was dark grey on navy).
         light = any(e.look_class in ("Sky",) for e in self.scene.entries.values())
+        background = (facts.get("constants") or {}).get(facts.get("background") or "")
+        shade = getattr(background, "value", None)
+        if isinstance(shade, tuple) and len(shade) == 3 and all(isinstance(v, int)
+                                                                for v in shade):
+            light = 0.299 * shade[0] + 0.587 * shade[1] + 0.114 * shade[2] > 128
         colour = "(35, 38, 45)" if light else "(240, 240, 240)"
         if facts.has("constants_end"):
             edit.insert(facts.get("constants_end") + 1, [f"SCORE_COLOUR = {colour}"])
@@ -1512,6 +1905,9 @@ class _Work:
             result["touch"] = "touching it sends the player back to the start"
         elif touch == "collect":
             result["touch"] = "touching one scores a point, and it goes round again"
+        elif touch == "shoot":
+            result["touch"] = ("clicking one -- or Space with the player over it -- hits it: "
+                               "a point, and it goes round again")
         elif entry is None or self.name not in self.scene.rules:
             result["touch"] = "nothing happens when it is touched"
         if "moves" not in values:
@@ -1648,8 +2044,8 @@ def _natural(look: Look, width: int, height: int) -> tuple[int, int]:
     """A picture's own size, no bigger than a quarter of the screen; a drawing's box."""
     if look.box:
         w, h = look.box
-        limit = min(width, height) // 4 if look.kind in ("picture", "animation") else \
-            max(width, height)
+        pictured = look.kind in ("picture", "pictures", "animation")
+        limit = min(width, height) // 4 if pictured else max(width, height)
         scale = min(1.0, limit / max(w, h))
         return (max(4, round(w * scale)), max(4, round(h * scale)))
     return (64, 64)

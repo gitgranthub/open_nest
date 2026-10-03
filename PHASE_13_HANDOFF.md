@@ -724,3 +724,63 @@ none changed a file -- the last five on the final code with nothing flagged (SPI
 - **A check that corrects a true sentence is a bug.** Every new reply check was run over
   every reply of every walk before it stayed (§29C); keep its fixtures in
   `tests/test_stress_pass.py` when you touch it.
+
+## 11. The owner's test04 -- Open Nest's half, and what Gary is told
+
+The owner's first in-person test after the stress pass (2026-10-02): a Game project with
+the local 4B, a night-forest shooter asked for in one sentence, then their own monster
+picture and six tree pictures. The game was a blue sky, a green road, one tree drifting
+left and the monster hanging in the sky; the replies denied real work and handed the rest
+back. The owner's order: fix what is Open Nest's fault, expect more than a deterministic
+workflow -- the 4B can understand that someone wants a real game -- and make Gary answer,
+follow context and understand loose chatting better. Replay with the 4B and 8B; if those
+work, Luna and Sonnet will. SPIKES §30 has every trace and number;
+`benchmarks/owner_test04/` has the driver and the four rounds of each model.
+
+**What was Open Nest's** (SPIKES §30A): checks that corrected true sentences ("the woods",
+a picture named in a sentence, "the monster" two messages after the child said it,
+"correct", "drawing") and corrections that then had Gary say the child's message back or
+deny work done -- the owner's "I did not see its content. I did not use it" was one of
+them, verbatim; a layer that drew pictures in boxes not their shape, replaced one tree
+with the next, refused "square", drew five window-sized trees, put the monster's picture
+on the trees and the player, had no way to make one forest of six pictures, nothing to
+shoot with, and roads and trees along the top; Open Nest's own "Here is where I got to"
+with nothing after it; six import dialogs and messages for six pictures, and a dropdown too
+narrow to read under cocoa; "Hi. Ready."
+
+**What changed**, all shared, none provider-specific (SPIKES §30B):
+
+| | |
+|---|---|
+| the layer | picture boxes keep the picture's shape; sensible sizes; another of a thing this message added; shape words drawn as shapes; pictures kept for the thing their name says (and given when the child says so); a list of pictures, or a numbered one with a count, one per copy -- **kit version 3**; **`touch: shoot`**; standing things on the ground or the screen's bottom; a missing tree picture drawn as a tree |
+| the checks | woods are trees; genre, time of day, "correct", "drawing" are not things; a picture named is used, not edited; the child's words from the whole conversation; a filename word only about that picture; corrections after a request never quote it; "you changed nothing" says what is there |
+| the words | the child's message said back is replaced; the job handed back becomes one offer; pixels out of the sentence; the prompt's example sentence is not a reply; each thing said once; out of calls says what was made; a tool written into the game is refused |
+| adding pictures | one question and one message per batch, with how to ask ("use the tree pictures for the trees"); the dropdown wide enough under cocoa; a numbered set told as one set |
+| what Gary is told | the child's requests in their words, every turn; a hello and "what should I do?" on a fresh game get ideas and the sentence to ask with, beside the message; a whole-game request gets "work out what the player does... the closest 2D version", beside the message; "not a good game" gets what would make it better |
+
+**The measurement that decided where guidance goes** (SPIKES §30C): the same whole-game
+words in the Games prompt took the 4B from acting on 5 of 8 plain requests to 2 of 8 -- it
+narrated changes instead -- while beside a whole-game request they were what made it build
+the 2D version. So guidance for one kind of request is said beside that request, and the
+always-on prompts change by two lines.
+
+**Verified**: 1685 tests (1622 before; `tests/test_owner_test04.py` is this pass's, with
+`tests/fixtures/scene_kit_v2.txt`), ruff clean; the full tool-choice benchmark 64 of 94
+acceptable first moves (62 before, `benchmarks/graphics/results/tool_choice_3.json`); the
+Phase 12 app walk under cocoa 41/41 with the same recipe routes and replies
+(`benchmarks/owner_test04/results/app_walk_test04.txt`); and the owner's thread replayed
+with the 4B and 8B, six rounds of each (SPIKES §30C): both end with a night forest of the
+child's six trees, the child's monster as the thing to shoot, and a score.
+
+**Rules this pass adds:**
+
+- **A reply filter is validated on the corpus before it ships**, as a check is: the 639
+  replies of the earlier walks (SPIKES §30C), and what it would change is in its
+  docstring.
+- **Guidance for one kind of request goes beside that request**, not in an always-on
+  prompt; the always-on prompts are measured with `benchmarks/graphics/tool_choice.py`.
+- **Examples in prompts get copied as replies** by the 4B ("...the dragon a fire breath you
+  can aim?", "I found a problem. I'm fixing it."). Write one only if a child may read it.
+- **A kit change is still a version bump, a hash and a fixture**: v3 added one look per
+  copy; `tests/fixtures/scene_kit_v2.txt` is v2, and a hand-changed old kit is given what
+  it can draw.

@@ -69,7 +69,14 @@ _NOT_THINGS = frozenset((
     # ... and where a scene is: "the deep sea", "in space". Measured on the 13C worlds
     # walk (SPIKES.md section 28M): "the deep sea" made "deep" a thing, and Gary was
     # corrected into telling the child "The deep is not in the game".
-    "sea", "ocean", "water", "space", "night", "day",
+    "sea", "ocean", "water", "space", "night", "day", "morning", "evening", "sunset",
+    "dusk", "dawn",
+    # ... and what kind of game it is. "A first person shooter" (the owner's test04) is a
+    # genre, not a thing the code would name.
+    "shooter", "person", "platformer", "runner", "adventure", "puzzle", "racer", "racing",
+    # ... and how a thing is drawn, said about the code: "replace the `shapes` or `drawing`
+    # with the pictures" -- "The game has no drawing" followed (the test04 replay, 8B).
+    "shapes", "drawing", "drawings", "picture", "pictures", "image", "images", "photo",
     # ... and the website itself. Measured on the stress pass (SPIKES.md section 29):
     # "Make me a website about dinosaurs" made "website" a thing, and Sonnet's true answer
     # "Did you click Preview Website again?" was corrected, because a page titled
@@ -99,6 +106,9 @@ _DESCRIBING = frozenset((
     "beautiful", "sunny", "cloudy", "busy", "quiet", "tall", "wide", "round", "soft",
     "flat", "cartoon", "realistic", "whole",
     "deep", "snowy", "starry", "rainy", "stormy", "spooky", "magical", "sandy", "grassy",
+    # "the correct pictures I added" (the owner's test04): which ones, not a thing.
+    "correct", "right", "wrong", "proper", "actual", "good", "bad", "best", "same", "exact",
+    "first", "last", "next", "main", "own",
 ))
 #: "add buildings", "put coins along the road": a plural straight after one of these is a
 #: thing asked for, with no "the" (Phase 13C's walk: "buildings" was never read).
@@ -185,6 +195,126 @@ def instructs_edit(text: str) -> bool:
     return bool(INSTRUCTS_EDIT.search(text or ""))
 
 
+#: Handing the building back: telling the child to make what they asked Gary to make, or
+#: to ask again for what Gary is there to do. Measured on the owner's test04 and its
+#: replays (4B and 8B): "You can now make the forest we walk through.", "Fix the player's
+#: movement to walk forward only.", "Ask for help to add one.", "To use it, you must
+#: replace the shapes...". Gary is the help. Run over every reply of the earlier walks
+#: (639): in answers, "Ask me to build the simple website" is how to ask, so an answer
+#: loses only "ask for help" (``AgentController._tidy``).
+_HANDS_BACK = re.compile(
+    r"^\s*(?:\d+[.)]\s*|[-*]\s*)?(?:next:\s*)?(?:fix|add|make|change|set|put|replace|draw|"
+    r"create|build)\s+(?:the|a|an|it|them|your|some|each|more|one)\b|"
+    r"\byou can (?:now |also |then )?(?:make|add|build|create|draw|put|replace)\b|"
+    r"\bask (?:me |again )?(?:for|to)\b|\bask for help\b|"
+    r"\byou (?:must|need to|have to|should|will need to) (?:replace|add|make|change|fix|draw|"
+    r"put|create|build)\b", re.IGNORECASE)
+#: ...but not how to play: "Move the player with the arrow keys" is the child's to do.
+_PLAYING = re.compile(r"\b(?:arrow|keys?|mouse|click|press|space ?bar|play|playing)\b",
+                      re.IGNORECASE)
+_SENTENCES = re.compile(r"(?<=[.!?])\s+|\n+")
+
+
+#: ...nor a picture to make: only the child can make one (Gary cannot make picture files),
+#: so "Make a PNG with a see-through background" is theirs, and true.
+_THEIRS = re.compile(r"\b(?:png|pictures?|images?|photos?|see-through|transparent|drawing "
+                     r"app|grown-up|add to project)\b", re.IGNORECASE)
+
+
+def handed_back(text: str) -> list[str]:
+    """The sentences of a reply that hand the building back to the child."""
+    return [sentence.strip() for sentence in _SENTENCES.split(text or "")
+            if sentence.strip() and _HANDS_BACK.search(sentence)
+            and not _PLAYING.search(sentence) and not _THEIRS.search(sentence)
+            and "?" not in sentence]
+
+
+def as_offer(sentence: str) -> str:
+    """"Fix the player's movement." -> "Want me to fix the player's movement?" -- or ""
+    when the sentence is not a thing to build ("Ask for help to add one")."""
+    asked = re.search(r"\bask me to (.+?)[.!]*$", sentence, re.IGNORECASE)
+    if asked and len(asked.group(1)) <= 100:
+        # "-- ask me to change the writing colour too" is an offer already.
+        return f"Want me to {asked.group(1).strip()}?"
+    words = re.sub(r"^\s*(?:\d+[.)]\s*|[-*]\s*)?(?:next:\s*)?", "", sentence).strip()
+    words = re.sub(r"^(?:to use it, )?you (?:can (?:now |also |then )?|must |need to |have to |"
+                   r"should |will need to )", "", words, flags=re.IGNORECASE)
+    if not re.match(r"(?:fix|add|make|change|set|put|replace|draw|create|build)\b", words,
+                    re.IGNORECASE) or len(words) > 110:
+        return ""
+    words = words.rstrip(" .!")
+    return f"Want me to {words[0].lower()}{words[1:]}?"
+
+
+#: A place on the screen in numbers -- "at (100, 300)", "[0, 400]". Nothing a child needs:
+#: the 4B told the child where things were in pixels in every reply of the test04 replay.
+_COORDINATES = re.compile(r"[(\[]\s*-?\d+\s*,\s*-?\d+\s*[)\]]")
+
+
+_PAIR = r"[(\[]\s*-?\d+\s*,\s*-?\d+\s*[)\]]"
+#: "at (100, 300)" -- and any more places listed after it -- inside a sentence about
+#: something else.
+_PLACED_AT = re.compile(r"\s*\b(?:at|to|from|near|by|around)\s+" + _PAIR +
+                        r"(?:\s*,\s*(?:and\s+)?" + _PAIR + r")*(?:\s*,?\s*and\s+" + _PAIR + r")?")
+#: Speeds in pixels: "at 2 pixels per frame". (A size -- "64 pixels wide" -- is what a
+#: child asked for when they asked for bigger, so it stays.)
+_PIXEL_PHRASE = re.compile(r"\s*,?\s*\b(?:at\s+)?\d+\s*(?:pixels?|px)\s+(?:per|a|each)\s+"
+                           r"frame\b", re.IGNORECASE)
+#: What is left hanging once its numbers have gone: "placed", "starting".
+_DANGLING = re.compile(r"\s*\b(?:placed|positioned|located|drawn|sized|starting)"
+                       r"(?:\s+respectively)?\s*(?=[,.;!?]|$)", re.IGNORECASE)
+#: ...and a sentence that no longer reads: "Three red cars are now."
+_UNFINISHED = re.compile(r"^(?:it|it's|they|they're|this|that)\s*,|"
+                         r"\b(?:is|are|at|and|the|a|now|to|from|by|of|starts?)\s*[.!?]?$|"
+                         r"\b(?:is|are)\s+(?:and|with|,)|"
+                         r"\b(?:to|at|by|of|from)\s+(?:in|on|and|the end)\b",
+                         re.IGNORECASE)
+
+
+def without_coordinates(text: str) -> str:
+    """The reply without places in pixels: "The monster at (100, 300) stays still" is
+    "The monster stays still"; a sentence that was only numbers goes -- unless that is all
+    the reply says.
+
+    Run over every reply of the earlier walks (639) before it stayed: what it takes out is
+    the numbers, and the sentence they were in is kept wherever it still reads --
+    "Two red cars are now in the game, moving left at 2 pixels per frame" keeps its cars.
+    """
+    sentences = [s for s in _SENTENCES.split(text or "") if s.strip()]
+    kept, changed = [], False
+    for sentence in sentences:
+        if not (_COORDINATES.search(sentence) or _PIXEL_PHRASE.search(sentence)):
+            kept.append(sentence.strip())
+            continue
+        changed = True
+        cleaned = _DANGLING.sub("", _PIXEL_PHRASE.sub("", _PLACED_AT.sub("", sentence)))
+        cleaned = re.sub(r"\s*[,:;]\s*(?=[,:;.!?]|$)", "", cleaned)
+        cleaned = re.sub(r"\s+(?=[.!?,])", "", re.sub(r"\s{2,}", " ", cleaned)).strip()
+        if _COORDINATES.search(cleaned) or len(cleaned.split()) < 3 or \
+                _UNFINISHED.search(cleaned):
+            continue
+        kept.append(cleaned)
+    if not changed or not kept:
+        return text
+    return "\n".join(kept)
+
+
+def echoes(reply: str, said: str) -> bool:
+    """Whether a reply is the child's own message said back -- Gary speaking their words.
+
+    Measured on the test04 replays, both models: told by a correction to "Answer <their
+    message> again", the reply began with their message word for word ("I added tree
+    images now... this should allow you to make the forest we walk through.")."""
+    def words(text: str) -> list[str]:
+        return re.findall(r"[a-z']+", (text or "").lower())
+    theirs = words(said)
+    if len(theirs) < 5:
+        return False
+    mine = words(reply)[:len(theirs) + 3]
+    same = sum(1 for a, b in zip(theirs, mine) if a == b)
+    return same >= 0.8 * len(theirs)
+
+
 #: Saying what real hardware did. Nothing in Open Nest can see a board or a Pi: Compile
 #: checks the code, Test on Mac runs it with pretend pins, and after Send to Board only
 #: the child can say what the light does. Measured on the stress pass (SPIKES.md section
@@ -244,6 +374,8 @@ def colours_said(text: str, known) -> dict[str, str]:
 #: A file named in a reply: a path with an extension a project's files have.
 _PATH = re.compile(r"(?<![\w/.:-])((?:[\w.-]+/)*[\w-]+\.(?:png|jpe?g|gif|svg|csv|py|html?|css|js|"
                    r"ino|md|txt|json))(?![\w/])", re.IGNORECASE)
+#: Files a reply can name only as used -- Gary cannot write a picture or a sound.
+_MEDIA = re.compile(r"\.(?:png|jpe?g|gif|webp|bmp|wav|mp3|ogg)$", re.IGNORECASE)
 #: ...said to have been changed: "I added code in ...", "This change was made in ...".
 _CHANGED_IT = re.compile(
     r"\b(?:i|i've|i have)\s+(?:just\s+)?(?:added|changed|edited|updated|wrote|made|modified|"
@@ -281,6 +413,12 @@ def files_said_wrongly(text: str, files, recent, *, unchanged: bool = True) -> l
                 continue                        # a library's name -- Chart.js -- not a file
             if path not in have and f"src/{path}" not in have and name not in names:
                 found.append(f"there is no {path} in this project")
+            elif _MEDIA.search(path):
+                # A picture or sound is used, never edited: "I added the monster (the
+                # picture assets/blue_monster.png)" is about the monster. Measured on the
+                # test04 replay -- the 8B's true reply was corrected for it, and it then
+                # said the child's own message back.
+                continue
             elif unchanged and _CHANGED_IT.search(sentence) and name not in touched:
                 found.append(f"{path} has not changed -- no edit to it went in")
     return list(dict.fromkeys(found))
@@ -349,11 +487,24 @@ _ASKING = re.compile(
     r"should|will it|was|were|can i|could i|wat|hw)\b", re.IGNORECASE)
 _ASKING_FOR = re.compile(r"^\s*(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:make|add|"
                          r"build|create|put|give|change|turn|do|write|set)\b", re.IGNORECASE)
+#: Just a hello. Answered like a question -- with words, no tools -- since nothing is
+#: being asked for. Measured on the owner's test04: "Hi Gary" went to the building
+#: prompt, and got "Hi. Ready."
+_GREETING = re.compile(
+    r"^\s*(?:hi|hello|hey|hiya|howdy|yo|good (?:morning|afternoon|evening))\b"
+    r"(?:[\s,!.]+(?:gary|there|again|friend|buddy))*[\s,!.]*$", re.IGNORECASE)
+
+
+def is_greeting(text: str) -> bool:
+    return bool(_GREETING.match(text or ""))
+
+
 def is_question(text: str) -> bool:
-    """Whether a message is asking something rather than asking for something."""
+    """Whether a message is asking something rather than asking for something -- or is
+    only a hello."""
     if _ASKING_FOR.match(text):
         return False
-    return "?" in text or bool(_ASKING.match(text))
+    return "?" in text or bool(_ASKING.match(text)) or is_greeting(text)
 
 
 def presentable(text: str) -> str:

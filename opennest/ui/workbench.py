@@ -862,42 +862,79 @@ class Workbench(QWidget):
             self._add([Path(name) for name in names], attach=False)
 
     def _add(self, paths: list[Path], *, attach: bool) -> None:
-        """Import each file, asking what it is, and say plainly what the AI can do with it."""
+        """Import the files, asking what they are, and say plainly what the AI can do with
+        them -- once for files of the same kind added together, not once per file.
+
+        Measured on the owner's test04: six tree pictures were six questions and six
+        messages of the same three lines each."""
+        groups: dict[str, list[Path]] = {}
         for source in paths:
-            role = self._ask_what_it_is(source)
+            guess = kinds.default_role(kinds.classify(source.name, _first_bytes(source)))
+            groups.setdefault(guess, []).append(source)
+        imported = []
+        for sources in groups.values():
+            role = self._ask_what_it_is(sources[0]) if len(sources) == 1 else \
+                self._ask_what_it_is(sources[0], count=len(sources))
             if role is None:
                 continue
-            try:
-                asset = assets.import_file(self.project, source, role=role)
-            except assets.AssetError as exc:
-                QMessageBox.warning(self, "Open Nest", str(exc))
-                continue
-
+            for source in sources:
+                try:
+                    asset = assets.import_file(self.project, source, role=role)
+                except assets.AssetError as exc:
+                    QMessageBox.warning(self, "Open Nest", str(exc))
+                    continue
+                imported.append(asset)
+                if attach:
+                    self._pending.append(asset)
+        if imported:
             # Gary, not Open Nest: brand guide section 22's "Asset Import" is one of its
             # worked Gary examples ("Got it. spaceship.png is now part of the project.").
-            # What he says is unchanged -- import_message still states only what is
-            # actually known about the file (HANDOFF section 6A).
-            self._say(ASSISTANT_NAME, assets.import_message(
-                asset, self._model_info(), self._models_that_could_read(asset)
-            ))
-            if attach:
-                self._pending.append(asset)
+            # What he says states only what is actually known about the files (HANDOFF
+            # section 6A) -- and, in a game, how to ask for them to be used.
+            self._say(ASSISTANT_NAME, assets.import_messages(
+                imported, self._model_info(), self._models_that_could_read(imported[0]),
+                things=self._scene_things(), game=plays_in_panel(self.project)))
 
         self.refresh_files()
         self.controller.refresh_state()
         self._show_pending()
 
-    def _ask_what_it_is(self, source: Path) -> str | None:
-        """Section 12: the application classifies, and the child can change the answer."""
+    def _scene_things(self) -> list[str]:
+        """What the game's scene has, by name, for the import message's hint."""
+        if not plays_in_panel(self.project) or not self.project.entrypoint_path.is_file():
+            return []
+        from opennest.graphics import source as scene_source
+
+        try:
+            code = self.project.entrypoint_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return []
+        return [name for name in scene_source.read(code).entries if name != "player"]
+
+    def _ask_what_it_is(self, source: Path, count: int = 1) -> str | None:
+        """Section 12: the application classifies, and the child can change the answer.
+        ``count``: this many files of the same kind were added together, asked once."""
         guess = kinds.default_role(kinds.classify(source.name, _first_bytes(source)))
         labels = [kinds.ROLE_LABELS[role] for role in kinds.ROLES]
-        chosen, accepted = QInputDialog.getItem(
-            self, "Add to Project", f"What is {source.name}?",
-            labels, kinds.ROLES.index(guess), False,
-        )
-        if not accepted:
+        dialog = QInputDialog(self)
+        dialog.setWindowTitle("Add to Project")
+        dialog.setLabelText(f"What is {source.name}?" if count == 1 else
+                            f"What are these {count} files, like {source.name}?")
+        dialog.setComboBoxItems(labels)
+        dialog.setComboBoxEditable(False)
+        dialog.setTextValue(labels[kinds.ROLES.index(guess)])
+        combo = dialog.findChild(QComboBox)
+        if combo is not None:
+            # On macOS the list that drops down is narrower than its own words once the
+            # check mark takes its column -- "Something to look at" was cut off and "Use
+            # it in the project" ran into the edge (the owner's test04, seen under cocoa).
+            combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+            view = combo.view()
+            view.setMinimumWidth(view.sizeHintForColumn(0) + 56)
+        if dialog.exec() != QInputDialog.DialogCode.Accepted:
             return None
-        return kinds.ROLES[labels.index(chosen)]
+        chosen = dialog.textValue()
+        return kinds.ROLES[labels.index(chosen)] if chosen in labels else guess
 
     def _model_info(self):
         return getattr(self.controller.provider, "info", None)
