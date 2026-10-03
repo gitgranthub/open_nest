@@ -44,7 +44,8 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from opennest.agent.controller import AgentController  # noqa: E402
 from opennest.agent.tools import Toolbox  # noqa: E402
-from opennest.ai.router import build_provider  # noqa: E402
+from opennest.ai.router import build_provider, default_model_id, get_entry  # noqa: E402
+from opennest.assets import manager as assets  # noqa: E402
 from opennest.fastpath.kinds import games  # noqa: E402
 from opennest.fastpath.router import FastPathRouter  # noqa: E402
 from opennest.graphics import source as scene_source  # noqa: E402
@@ -133,7 +134,10 @@ def run_step(project, controller, bench, app, step, out_dir: Path, index: int) -
             paths.append(staging / name)
         bench._ask_what_it_is = lambda source, count=1: "asset"
         bench._add(paths, attach=False)
+        # A model that can see looks at them first, on a worker (SPIKES.md section 32).
+        wait_idle(app, bench, 300)
         record["kind"] = "asset"
+        record["seen"] = {a.path: a.seen for a in assets.list_assets(project) if a.seen}
     elif step == RUN:
         bench._run()
         wait_idle(app, bench, 60)
@@ -204,11 +208,12 @@ def run_step(project, controller, bench, app, step, out_dir: Path, index: int) -
 
 def main() -> int:
     label = sys.argv[1] if len(sys.argv) > 1 else "replay"
-    model = sys.argv[2] if len(sys.argv) > 2 else "qwen3-4b-instruct"
+    # The model that ships (Gary Fast since SPIKES.md section 32); every round before
+    # vision_vl4b was Qwen3 4B, named explicitly.
+    model = sys.argv[2] if len(sys.argv) > 2 else default_model_id()
     script = THREADS[sys.argv[3] if len(sys.argv) > 3 else "test04"]
     app = QApplication([])
-    provider = build_provider(model, allow_cloud=model not in (
-        "qwen3-4b-instruct", "qwen3-8b"))
+    provider = build_provider(model, allow_cloud=not get_entry(model).info.is_local)
     provider.load()
     out_dir = HERE / "results" / label
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -232,7 +237,7 @@ def main() -> int:
         out.append(record)
         print(f"\n--- {record['step']}  ({record['seconds']} s)", flush=True)
         for key in ("route", "recipe", "result", "plan", "provider_calls", "hit_call_limit",
-                    "changed", "gave_up", "game_running", "frame", "still", "leaks"):
+                    "changed", "gave_up", "game_running", "frame", "still", "leaks", "seen"):
             if record.get(key) not in (None, [], "", False):
                 print(f"    {key}: {record[key]}", flush=True)
         for entry in record.get("history", []):

@@ -1,0 +1,22 @@
+# The local vision engine. Apple silicon only. Installed with --no-deps.
+#
+# mlx-vlm is what lets a local model see a child's picture (SPIKES.md section 32): it
+# loads Qwen3-VL with its vision half and puts the picture's pixels in front of it.
+# mlx-lm alone reads only the language half -- and that model, asked about a picture it
+# was never shown, said "You've got a picture of me, Gary, in a suit, holding a coffee
+# cup", which is the whole reason the asset layer's honesty checks exist.
+#
+# --no-deps, deliberately. mlx-vlm 0.7.4 declares a web server (fastapi, starlette,
+# uvicorn, websockets, python-multipart), an audio stack (mlx-audio, miniaudio,
+# sounddevice, scipy), OpenCV and llguidance -- about 250 MB, and a microphone library on
+# a child's Mac, for features Open Nest never calls. Measured: loading Qwen3-VL, showing
+# it a picture, generating and scoring import none of them. What it does import --
+# mlx, transformers, huggingface_hub, Pillow, numpy, jinja2, tqdm, requests -- is
+# installed by macos-apple-silicon.txt, base.txt and projects.txt, so its floors are
+# stated there instead. bootstrap/environment.py knows to pass --no-deps for this file.
+#
+# Measured with mlx 0.32.2, mlx-lm 0.31.3, transformers 5.17.0. Bumping the pin is a
+# deliberate edit: re-run the vision probe in SPIKES.md section 32 and the tool-choice
+# benchmark afterwards.
+
+mlx-vlm==0.7.4

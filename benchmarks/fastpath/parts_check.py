@@ -23,7 +23,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[1]))
 
 from opennest.agent.tools import Toolbox  # noqa: E402
-from opennest.ai.router import build_provider  # noqa: E402
+from opennest.ai.router import build_provider, default_model_id  # noqa: E402
 from opennest.fastpath.router import FastPathRouter, split_parts  # noqa: E402
 from opennest.projects.manager import create_project  # noqa: E402
 
@@ -31,7 +31,7 @@ DATA = {"labels.json": "plants.csv", "labels_heldout.json": "weather.csv"}
 
 
 def main() -> int:
-    provider = build_provider("qwen3-4b-instruct")
+    provider = build_provider(default_model_id())
     provider.load()
     router = FastPathRouter()
     out = []

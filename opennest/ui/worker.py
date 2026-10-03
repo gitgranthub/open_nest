@@ -52,6 +52,29 @@ class AgentWorker(QObject):
             self.finished.emit(turn)
 
 
+class LookWorker(QObject):
+    """Looks at pictures just added to the project, off the UI thread.
+
+    Each is a real model call -- the picture's pixels shown to a vision model, what it
+    shows recorded (``assets.look``) -- about a second apiece on the 4B, so six trees on
+    the GUI thread would be a frozen window. Never raises: a picture that could not be
+    looked at simply stays unseen, which the asset layer already says honestly.
+    """
+
+    finished = Signal(object)  # list[Asset]: the pictures now seen
+
+    def __init__(self, controller: AgentController) -> None:
+        super().__init__()
+        self.controller = controller
+
+    def run(self) -> None:
+        try:
+            seen = self.controller.look_at_pictures()
+        except Exception:  # noqa: BLE001 - looking is never worth a crash
+            seen = []
+        self.finished.emit(seen)
+
+
 class RunWorker(QObject):
     """Starts the child's game off the UI thread -- the Run Game button, Phase 13.
 

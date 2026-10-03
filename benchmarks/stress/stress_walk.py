@@ -46,7 +46,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from opennest.agent.controller import AgentController  # noqa: E402
 from opennest.agent.tools import Toolbox  # noqa: E402
-from opennest.ai.router import build_provider  # noqa: E402
+from opennest.ai.router import build_provider, default_model_id, get_entry  # noqa: E402
 from opennest.assets import manager as assets  # noqa: E402
 from opennest.fastpath.router import FastPathRouter  # noqa: E402
 from opennest.memory.manager import MemoryManager  # noqa: E402
@@ -55,7 +55,6 @@ from opennest.ui.workbench import MARK_ROLE, Workbench  # noqa: E402
 from opennest.versioning.checkpoint import VersionHistory  # noqa: E402
 
 INPUTS = HERE / "inputs"
-LOCAL = ("qwen3-4b-instruct", "qwen3-8b")
 RUN, UNDO, CLICK = "<run>", "<undo>", "<click a changed file>"
 
 
@@ -153,10 +152,10 @@ def snapshot(project) -> dict[str, str]:
 
 def main() -> int:
     label = sys.argv[1] if len(sys.argv) > 1 else "stress"
-    model = sys.argv[2] if len(sys.argv) > 2 else "qwen3-4b-instruct"
+    model = sys.argv[2] if len(sys.argv) > 2 else default_model_id()
     only = set(sys.argv[3:])
     app = QApplication([])
-    provider = build_provider(model, allow_cloud=model not in LOCAL)
+    provider = build_provider(model, allow_cloud=not get_entry(model).info.is_local)
     provider.load()
     # Every reply the model gave, before any correction replaced it: the settled history
     # keeps only what the child was told, so this is the one place the raw words survive.

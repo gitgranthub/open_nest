@@ -188,6 +188,10 @@ def suggestion(entries, machine: MachineProfile, installed_ids=()):
         (entry, assess(entry, machine, installed=entry.info.id in already))
         for entry in entries
         if not entry.info.requires_internet
+        # A replaced model is not suggested, even when it is on the Mac: the suggestion
+        # is what Open Nest would choose now. A parent who chose it keeps it (the wizard
+        # puts their own choice first, and the app starts the model setup recorded).
+        and getattr(entry, "offered_for_install", True)
     ]
     usable = [
         (entry, verdict) for entry, verdict in candidates

@@ -63,7 +63,6 @@ from opennest.agent.replies import (
     without_coordinates,
 )
 from opennest.agent.tools import Step, Toolbox, ToolResult, normalise_tool_name, schemas_for
-from opennest.ai import provider as provider_module
 from opennest.ai.provider import (
     Message,
     ModelProvider,
@@ -72,6 +71,8 @@ from opennest.ai.provider import (
     ToolCall,
     TruncatedReply,
 )
+from opennest.assets import kinds as asset_kinds
+from opennest.assets import look
 from opennest.assets import manager as assets
 from opennest.execution import playtest
 from opennest.execution.python_runner import RunResult
@@ -761,6 +762,11 @@ class AgentController:
         #: and stays in the listing, but "this picture" only means something for the
         #: message it arrived with.
         self._attached: tuple[assets.Asset, ...] = ()
+        #: The pictures attached to this message that were sent to the model as pixels.
+        self._shown: tuple[str, ...] = ()
+        #: Pictures already tried this session, so one that cannot be looked at (it will
+        #: not open) costs one call, not one before every turn.
+        self._tried_looking: set[str] = set()
         #: Set by :meth:`stop`: the project is closing, so a turn ends at its next call.
         self._stopping = False
         self.history: list[Message] = []
@@ -902,10 +908,56 @@ class AgentController:
         self.toolbox.observer = on_progress
         self.toolbox.message = (text, tuple(a.path for a in attachments))
         try:
+            # Before the turn, and outside its call budget: a picture is looked at once,
+            # for the picture, not for this message (``assets.look``).
+            seen = self.look_at_pictures()
+            if seen:
+                attachments = tuple(next((a for a in seen if a.path == attached.path),
+                                         attached) for attached in attachments)
             return self._send(text, attachments, on_text)
         finally:
             self.toolbox.observer = None
             self.toolbox.message = ("", ())
+
+    def look_at_pictures(self, limit: int = 8) -> list[assets.Asset]:
+        """Look at each picture in the project nothing has looked at yet, when Gary can
+        see -- once per picture, ever; what was seen goes into every later prompt.
+
+        Called by the Workbench straight after an import, so the child hears what Gary
+        saw, and before every turn, for a picture that came in any other way. Each is one
+        short local call, never from a turn's budget (``assets.look``), at most ``limit``
+        at a time; the rest wait for the next message. Returns the pictures now seen.
+        """
+        if not look.can_look(self.provider):
+            return []
+        def tried(asset) -> str:
+            # By content: a picture replaced under the same name is a new one to look at.
+            try:
+                return f"{asset.path}:{look.digest(self.project.directory / asset.path)}"
+            except OSError:
+                return asset.path
+
+        waiting = [asset for asset in look.unlooked(self.project,
+                                                    assets.list_assets(self.project))
+                   if tried(asset) not in self._tried_looking][:limit]
+        done: list[str] = []
+        for asset in waiting:
+            if self._stopping:
+                break
+            self._tried_looking.add(tried(asset))
+            if self.toolbox.observer is not None:
+                self.toolbox.observer(Step("thinking", f"looking at {asset.name}",
+                                           path=asset.path))
+            try:
+                saw = look.look(self.project, self.provider, asset.path)
+            except ProviderError:
+                break
+            if saw:
+                done.append(asset.path)
+        if not done:
+            return []
+        self.refresh_state()
+        return [asset for asset in assets.list_assets(self.project) if asset.path in done]
 
     def _send(self, text: str, attachments: Sequence[assets.Asset],
               on_text: Callable[[str], None] | None) -> Turn:
@@ -950,7 +1002,15 @@ class AgentController:
         # true of an attachment, which must not linger onto the next message.
         self.refresh_state()
 
-        self.history.append(Message(role="user", content=text))
+        # A picture attached to this message travels with it as pixels, to a model that
+        # really receives them: "what is this?" is answered by looking. Only this turn --
+        # the history keeps the words (``_settle_history``), and what was seen is in the
+        # prompt as a sentence from then on.
+        self._shown = tuple(
+            str(self.project.directory / asset.path) for asset in attachments
+            if asset.kind == asset_kinds.IMAGE) if getattr(
+                self.provider, "sees_images", False) else ()
+        self.history.append(Message(role="user", content=text, images=self._shown))
         self._asked_for |= child_nouns(text)
         self._child_said = [*getattr(self, "_child_said", []), text][-40:]
         turn = Turn(opening=opening, plan_step=step)
@@ -1016,7 +1076,7 @@ class AgentController:
             checked = evidence.checked_block(self.project, self.toolbox, self._notes(),
                                              sorted(self._asked_for))
             if checked:
-                self.history[-1] = Message(role="user", content=(
+                self.history[-1] = replace(self.history[-1], content=(
                     f"{text}\n\n({checked.splitlines()[0].split(' -- ')[0]}:\n"
                     + "\n".join(checked.splitlines()[1:]) + ")"))
                 self._asked_text = text
@@ -1032,11 +1092,11 @@ class AgentController:
                 # Watch the orange square move" -- true, and no way in. The rule is in the
                 # answer prompt; beside the message is where a small model follows it.
                 steer = STARTED_AGAIN if again else GETTING_STARTED.format(hello=hello)
-                self.history[-1] = Message(role="user", content=(
+                self.history[-1] = replace(self.history[-1], content=(
                     f"{self.history[-1].content}\n\n{steer}"))
                 self._asked_text = text
             elif _UNHAPPY.search(text):
-                self.history[-1] = Message(role="user", content=(
+                self.history[-1] = replace(self.history[-1], content=(
                     f"{self.history[-1].content}\n\n{NOT_GOOD}"))
                 self._asked_text = text
         if not answering and step is None and plays_in_panel(self.project):
@@ -1047,7 +1107,7 @@ class AgentController:
                     not self._has_maze():
                 notes.append(TOP_DOWN)
             if notes:
-                self.history[-1] = Message(role="user", content="\n\n".join(
+                self.history[-1] = replace(self.history[-1], content="\n\n".join(
                     [self.history[-1].content, *notes]))
                 self._asked_text = text
         try:
@@ -1210,6 +1270,8 @@ class AgentController:
             turn[0] = Message(role="user", content=asked)   # the child's words, as said
             self._asked_text = None
         kept = turn[:1]
+        if kept and kept[0].images:
+            kept[0] = Message(role=kept[0].role, content=kept[0].content)
         for message in turn[1:]:
             if message.role == "tool":
                 kept.append(message)
@@ -2420,7 +2482,11 @@ class AgentController:
         if is_question(text) or self._changed_anything(turn):
             return False
         lowered = (turn.text or "").lower()
-        if "?" in lowered:
+        # A question back is a fair end -- but not "What do you want next?" after "I'll
+        # replace the trees with your pictures" and no call (the Gary Smart test04
+        # replay, twice; on the 782 replies of the kept walks it is only those two).
+        questions = re.findall(r"[^.?!\n]*\?", lowered)
+        if questions and not all(_NEXT_QUESTION.search(q) for q in questions):
             return False
         return promises(lowered) or instructs_edit(turn.text)
 
@@ -2761,13 +2827,27 @@ class AgentController:
     def _claimed_to_see(self, text: str) -> bool:
         """"I see", "I can see" -- when nothing has shown Gary anything to see.
 
-        An attached picture a model can really read is the one exception, and none can
-        yet: no provider sends image bytes (``provider.IMAGE_INPUT_IMPLEMENTED``).
+        A picture attached to this message and really shown to the model as pixels is
+        the one exception (``_shown``): there, "I can see a blue monster" is true.
         """
-        if provider_module.IMAGE_INPUT_IMPLEMENTED and self._attached:
+        if getattr(self, "_shown", ()):
             return False
         lowered = (text or "").lower()
-        return any(phrase in lowered for phrase in CLAIMED_SIGHT)
+        if not any(phrase in lowered for phrase in CLAIMED_SIGHT):
+            return False
+        # ...and a sentence about a picture a model really looked at ("I can see your
+        # monster picture has purple spots") is not about the screen: it was seen, at
+        # import (``assets.look``). Narrow on purpose -- the sentence has to be about a
+        # picture, so "I see the monster is missing" is still a claim about the game.
+        seen = [asset for asset in assets.list_assets(self.project) if asset.seen]
+        for sentence in re.split(r"(?<=[.!?])\s+|\n+", lowered):
+            if not any(phrase in sentence for phrase in CLAIMED_SIGHT):
+                continue
+            about_a_picture = seen and (_PICTURE_WORD.search(sentence) or any(
+                asset.name.lower() in sentence for asset in seen))
+            if not about_a_picture:
+                return True
+        return False
 
     def _what_it_has_now(self, turn: Turn) -> str:
         """What this turn did and what the game has, in Open Nest's words."""
@@ -3161,6 +3241,14 @@ class AgentController:
 #: Words a sentence uses when it says something was changed.
 _CHANGE_WORDS = frozenset(("changed", "change", "now", "made", "turned", "updated", "set",
                            "gave", "painted", "coloured", "colored", "switched"))
+
+
+#: "What do you want next?" -- a question that asks nothing about the request.
+_NEXT_QUESTION = re.compile(r"\b(?:what (?:do you want|would you like)(?: (?:me )?to do)? "
+                            r"next|anything else|what(?:'s| is)? next)\s*\?")
+
+#: A sentence about a picture, for ``_claimed_to_see``.
+_PICTURE_WORD = re.compile(r"\b(?:picture|image|photo|drawing|png)s?\b")
 
 
 def _call_words(tool: str, arguments: dict) -> set[str]:

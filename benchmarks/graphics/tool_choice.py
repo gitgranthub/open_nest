@@ -1,7 +1,15 @@
 """Does a fifth Games tool cost Gary his choice of tool? Four tools against five.
 
     OPENNEST_HOME=$PWD/.opennest-sandbox HF_HUB_OFFLINE=1 .venv/bin/python \
-        benchmarks/graphics/tool_choice.py [label]
+        benchmarks/graphics/tool_choice.py [label] [--model=<id>] [--conditions=five]
+
+``--conditions=five`` measures only the current prompt and tools (a model comparison
+needs nothing else), at the 700-token cap ``five`` re-runs used -- the cap the committed
+results (``tool_choice_3``, ``tool_choice_4``) were measured at.
+``--model`` is the catalogue id (default: the catalogue's default model, which is Gary
+Fast since SPIKES.md section 32 -- every result before ``tool_choice_vl4b`` was Qwen3 4B). A model that can see is shown the eagle picture first, as the
+product does at import (``assets.look``), so its prompt says what the picture shows
+instead of "NOBODY HAS LOOKED" -- SPIKES.md section 32.
 
 SPIKES.md section 4 measured selection falling as the tool set grew -- and the tool that
 did the damage was ``list_project_files``, a lookup the model reached for instead of
@@ -40,6 +48,7 @@ from opennest.agent.controller import build_system_prompt  # noqa: E402
 from opennest.agent.tools import SCHEMAS, Toolbox  # noqa: E402
 from opennest.ai.provider import Message, Settings  # noqa: E402
 from opennest.ai.router import build_provider  # noqa: E402
+from opennest.assets import look  # noqa: E402
 from opennest.assets import manager as assets  # noqa: E402
 from opennest.projects.manager import create_project  # noqa: E402
 
@@ -137,6 +146,13 @@ def first_move(reply) -> str:
 
 
 def main() -> int:
+    from opennest.ai.router import default_model_id
+
+    model = next((arg.split("=", 1)[1] for arg in sys.argv if arg.startswith("--model=")),
+                 default_model_id())
+    wanted = next((arg.split("=", 1)[1].split(",") for arg in sys.argv
+                   if arg.startswith("--conditions=")), ["four", "five"])
+    sys.argv = [arg for arg in sys.argv if not arg.startswith(("--model=", "--conditions="))]
     label = sys.argv[1] if len(sys.argv) > 1 else "tool_choice"
     #: "five" re-runs only the five-tool condition -- after a change to game_object's
     #: description -- and keeps the four-tool answers from an earlier run, named second.
@@ -152,10 +168,13 @@ def main() -> int:
     picture = root / "eagle.png"
     shutil.copy(REPO / "assets/open_nest_asset_delivery/03_eagle_animation/frames_128/"
                 "eagle_01.png", picture)
-    assets.import_file(project, picture)
+    eagle = assets.import_file(project, picture)
     toolbox = Toolbox(project)
-    provider = build_provider("qwen3-4b-instruct")
+    provider = build_provider(model)
     provider.load()
+    saw = look.look(project, provider, eagle.path)
+    print(f"model {model}; sees pictures: {provider.sees_images}; the eagle: {saw!r}",
+          flush=True)
     old_games = subprocess.run(["git", "-C", str(REPO), "show", "7df1694:opennest/prompts/"
                                 "games.txt"], capture_output=True, text=True,
                                check=True).stdout.strip()
@@ -170,6 +189,7 @@ def main() -> int:
         "five": (five, [SCHEMAS[n] for n in ("read_file", "edit_file", "write_file",
                                              "run_project", "game_object")]),
     }
+    conditions = {name: value for name, value in conditions.items() if name in wanted}
     out = []
     for text, accept, gold in requests():
         row = {"request": text, "gold": gold, "accept": sorted(accept)}
@@ -182,8 +202,8 @@ def main() -> int:
             messages = [Message(role="system", content=system),
                         Message(role="user", content=text)]
             for _ in provider.chat(messages, tools=tools,
-                                   settings=settings if only_five else Settings(
-                                       temperature=0.0)):
+                                   settings=settings if only_five or "four" not in
+                                   wanted else Settings(temperature=0.0)):
                 pass
             reply = provider.finish()
             move = first_move(reply)
@@ -192,9 +212,8 @@ def main() -> int:
             row[f"{name}_args"] = reply.tool_calls[0].arguments if reply.tool_calls else None
             row[f"{name}_s"] = round(time.monotonic() - started, 1)
         out.append(row)
-        print(f"{'ok ' if row['four_ok'] else 'BAD'} {row['four']:12} | "
-              f"{'ok ' if row['five_ok'] else 'BAD'} {row['five']:12} | {text[:70]}",
-              flush=True)
+        print(" | ".join(f"{'ok ' if row[f'{name}_ok'] else 'BAD'} {row[name]:12}"
+                         for name in conditions) + f" | {text[:70]}", flush=True)
     summary = {}
     for name in conditions:
         summary[name] = {
@@ -210,7 +229,7 @@ def main() -> int:
         }
     print(json.dumps(summary, indent=1))
     (HERE / "results" / f"{label}.json").write_text(json.dumps(
-        {"summary": summary, "rows": out}, indent=1))
+        {"model": model, "eagle_seen": saw, "summary": summary, "rows": out}, indent=1))
     return 0
 
 

@@ -20,7 +20,8 @@ from opennest.models.catalog import ModelEntry, load
 #: can -- the router remains the place you ask "which models, and give me a provider for
 #: one", and the catalogue is now the place that answers the first half.
 __all__ = [
-    "ModelEntry", "load_catalogue", "default_model_id", "get_entry", "local_models",
+    "ModelEntry", "load_catalogue", "default_model_id", "startup_model_id", "get_entry",
+    "local_models",
     "cloud_models", "is_available", "models_that_can_read", "unmet_requirements",
     "models_for_project", "why_unavailable", "build_provider",
 ]
@@ -43,6 +44,42 @@ def default_model_id(config_path: Path | None = None) -> str:
     a Mac nobody has looked at yet, and this release was tested with this answer.
     """
     return load(config_path).default_local_model
+
+
+def startup_model_id(preferred: str = "") -> str:
+    """The local model the application starts with: the one setup installed and chose,
+    when it still can be, else :func:`default_model_id`.
+
+    Until the vision models arrived the app always started the default, whatever a
+    parent picked in setup -- choosing Qwen3 8B there still gave a child the 4B. That
+    was invisible while the default was the model nearly everyone had; with Gary Fast
+    as the default it would have told every existing installation its model was not
+    installed. A preference for a cloud model, or one no longer in the catalogue or no
+    longer on this Mac, falls back rather than failing -- and is never a cloud model.
+
+    **A replaced model gives way to its replacement once that is here** (the owner's
+    ruling when the vision models measured better, SPIKES.md section 32): a family set
+    up with Qwen3 4B gets Gary Fast as soon as Gary Fast is on the Mac, and keeps Qwen3
+    4B, working, until then -- never a model that is not installed. Not silent: the
+    model picker names the model that is answering.
+    """
+    default = default_model_id()
+    if preferred:
+        try:
+            entry = get_entry(preferred)
+        except ProviderError:
+            entry = None
+        if entry is not None and entry.info.is_local and _installed(entry):
+            if entry.offered_for_install:
+                return entry.info.id
+            try:
+                replacement = get_entry(default)
+            except ProviderError:
+                replacement = None
+            if replacement is not None and _installed(replacement):
+                return default
+            return entry.info.id
+    return default
 
 
 def get_entry(model_id: str) -> ModelEntry:
@@ -98,35 +135,46 @@ def models_that_can_read(
     allow_cloud: bool = False,
     credentials=None,
 ) -> tuple[ModelEntry, ...]:
-    """Models able to interpret an attachment of this kind.
+    """Models able to interpret an attachment of this kind, usable now.
 
     Section 13 requires that when the selected model cannot interpret an attachment, the
     application says so and offers one that can. This is a lookup against
-    ``models.json`` rather than a list written in code, which is section 3's rule and
-    also the point: a local vision model added to the catalogue starts being offered
-    without a line of Python changing, and the same is true of OpenAI and Anthropic once
-    a key is configured and ``allow_cloud`` is on.
+    ``models.json`` rather than a list written in code, which is section 3's rule: a
+    local vision model in the catalogue is offered without a line of Python changing.
 
-    With cloud off, this returns nothing for an image -- all four local entries are
-    ``supports_images: false`` -- so the child is told the limitation and not sent after
-    a model they cannot use. With cloud on *and a key saved*, Claude and OpenAI appear
-    here on their own, which is what makes Phase 6 light up the offer with no change to
-    the asset layer. A key that is not saved keeps the model out of the list for the
-    same reason: an offer the child cannot act on is worse than an honest limitation.
+    **For a picture, "can read" means Open Nest can show it the pixels**
+    (``provider.can_send_images``) -- today a local vision model, never a cloud one,
+    whose ``supports_images`` is true and whose provider sends none. Offering a switch
+    that would not help is the same lie as claiming to have looked. And a local model
+    must be **installed**: "Gary Fast can read it. You can choose it" about a model
+    that is not on this Mac is an offer the child cannot act on, which is worse than
+    the honest limitation. A cloud model still needs the switch and a key.
     """
     attribute = _CAPABILITY_FOR_KIND.get(kind)
     if attribute is None:
         return ()
-    # Offering a switch that would not help is the same lie as claiming to have looked.
-    # Until a provider transmits image bytes, no model reads a picture here, however
-    # many of them could in principle -- see ``provider.IMAGE_INPUT_IMPLEMENTED``.
-    if kind == "image" and not provider_module.IMAGE_INPUT_IMPLEMENTED:
-        return ()
-    return tuple(
-        entry for entry in load_catalogue()
-        if getattr(entry.info, attribute)
-        and is_available(entry, allow_cloud=allow_cloud, credentials=credentials)
-    )
+    found = []
+    for entry in load_catalogue():
+        if not getattr(entry.info, attribute):
+            continue
+        if kind == "image" and not provider_module.can_send_images(entry.info):
+            continue
+        if not is_available(entry, allow_cloud=allow_cloud, credentials=credentials):
+            continue
+        if kind == "image" and entry.info.is_local and not _installed(entry):
+            continue
+        found.append(entry)
+    return tuple(found)
+
+
+def _installed(entry: ModelEntry) -> bool:
+    from opennest.models.discovery import locate
+
+    try:
+        return entry.model_id is not None and locate(entry.model_id, entry.revision) \
+            is not None
+    except Exception:  # noqa: BLE001 - an unreadable cache is "not installed", not a crash
+        return False
 
 
 def unmet_requirements(info: ModelInfo, profile) -> tuple[str, ...]:
@@ -166,6 +214,9 @@ def models_for_project(profile, *, allow_cloud: bool = False) -> tuple[ModelEntr
         entry for entry in load_catalogue()
         if not unmet_requirements(entry.info, profile)
         and (allow_cloud or not entry.info.requires_internet)
+        # A replaced local model only where it is on this Mac: choosing one that is not
+        # would just say it is not installed, and it is never to be downloaded again.
+        and (entry.offered_for_install or _installed(entry))
     )
 
 

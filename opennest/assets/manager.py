@@ -30,9 +30,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from opennest.ai import provider as provider_module
-from opennest.ai.provider import ModelInfo
-from opennest.assets import describe, kinds
+from opennest.ai.provider import ModelInfo, can_send_images
+from opennest.assets import describe, kinds, look
 from opennest.projects.manager import Project
 from opennest.security.sandbox import PathNotAllowed, resolve_in_project
 from opennest.versioning.autosave import atomic_write_bytes
@@ -66,6 +65,9 @@ class Asset:
     summary: str
     #: Whether anything has actually read what is inside the file.
     readable: bool = True
+    #: For a picture: what a model saw in it, when one has really been shown its pixels
+    #: and the file is still the one it was shown (``assets.look``). Empty otherwise.
+    seen: str = ""
 
     @property
     def name(self) -> str:
@@ -174,6 +176,7 @@ def list_assets(project: Project) -> list[Asset]:
     """
     by_directory = {kinds.directory_for(role): role for role in kinds.ROLES}
     found: list[Asset] = []
+    looked_at = look.seen(project)
     for directory in kinds.LIBRARY_DIRECTORIES:
         role = by_directory.get(directory, kinds.REFERENCE)
         root = project.directory / directory
@@ -192,6 +195,7 @@ def list_assets(project: Project) -> list[Asset]:
                     role=role,
                     summary=described.summary,
                     readable=described.readable,
+                    seen=looked_at.get(str(path.relative_to(project.directory)), ""),
                 )
             )
     return found
@@ -199,29 +203,25 @@ def list_assets(project: Project) -> list[Asset]:
 
 # -- what the model is told --------------------------------------------------
 
-def can_interpret(asset: Asset, model: ModelInfo | None) -> bool:
-    """Whether anything in this configuration can actually read the file's contents.
+def can_interpret(asset: Asset, model: ModelInfo | None = None) -> bool:
+    """Whether anything in this configuration has actually read the file's contents.
 
-    Text is readable by definition -- the model calls ``read_file``. A picture depends
-    on the model, which is section 13's ``model.supports_images`` and is why this is a
-    lookup rather than a constant: adding a vision model to ``models.json`` is a data
-    edit, and an image stops being unreadable the moment one is in use.
+    Text is readable by definition -- the model calls ``read_file``. A PDF or a sound
+    file is unreadable here for a different reason -- Open Nest has no way to extract
+    either, so no model can be offered one.
 
-    A PDF or a sound file is unreadable here for a different reason -- Open Nest has no
-    way to extract either, so no model can be offered one.
-
-    **A vision model is not enough on its own.** ``supports_images`` says the model
-    could see a picture if it were given one; ``IMAGE_INPUT_IMPLEMENTED`` says whether
-    Open Nest actually sends any. Until both are true the honest answer is no, and the
-    second one is currently False -- see the note on that constant for what went wrong
-    when only the first was checked.
+    **A picture has been read only when a model has really looked at it** -- its pixels
+    shown and what it shows recorded (``assets.look``, ``asset.seen``). Not when the
+    model in use *could* see: ``supports_images`` says a model could see a picture if it
+    were given one, and Phase 6 measured what trusting that alone did (SPIKES.md section
+    12) -- Claude selectable, no pixels sent, the "NOBODY HAS LOOKED" block and the
+    invention check both switched off. What was seen is in the prompt as words, so it
+    holds whichever model is Gary afterwards; ``model`` no longer decides it.
     """
     if asset.readable:
         return True
     if asset.kind == kinds.IMAGE:
-        if not provider_module.IMAGE_INPUT_IMPLEMENTED:
-            return False
-        return bool(model is not None and model.supports_images)
+        return bool(asset.seen)
     return False
 
 
@@ -242,7 +242,9 @@ def context_block(
         "FILES THEY HAVE ADDED TO THIS PROJECT",
         "These are real files in the project. Use them from these paths.",
     ]
-    lines.extend(f"- {asset.path} -- {asset.summary}" for asset in assets)
+    lines.extend(f"- {asset.path} -- {asset.summary}" + (
+        f" -- you have looked at it: it shows {asset.seen}" if asset.seen else "")
+        for asset in assets)
     sets = _numbered_sets([a.path for a in assets if a.kind == kinds.IMAGE])
     if sets:
         # Measured on the owner's test04 replay: six tree pictures, "make the forest", and
@@ -426,10 +428,16 @@ def import_message(
     is the limitation on its own rather than a suggestion the child cannot act on.
     """
     lines = [f"{asset.name} is in your project."]
+    if asset.kind == kinds.IMAGE and asset.seen:
+        # Said because it was seen: the pixels reached a model and this is its answer.
+        return f"{lines[0]} {_it_shows(asset.seen)}"
     if can_interpret(asset, model):
         return lines[0]
 
     lines.append("")
+    if asset.kind == kinds.IMAGE and can_send_images(model):
+        # A model that can see, which has not looked yet (a turn was running).
+        return f"{lines[0]} I'll look at it before your next message."
     if asset.kind == kinds.IMAGE:
         who = model.name if model else "This AI"
         lines.append(
@@ -474,7 +482,17 @@ def import_messages(
     pictures = [asset for asset in imported if asset.kind == kinds.IMAGE]
     unseen = [asset for asset in pictures if not can_interpret(asset, model)]
     hint = _use_hint(pictures, things) if game else ""
-    if unseen:
+    looked = [asset for asset in pictures if asset.seen]
+    if len(looked) == 1 and len(pictures) == 1:
+        lines[0] += f" {_it_shows(looked[0].seen)}"
+    elif looked:
+        lines += ["", "I looked at them:"] + [f"- {asset.name}: {asset.seen}"
+                                              for asset in looked]
+    if unseen and can_send_images(model):
+        # A model that can see, which has not looked yet (a turn was running).
+        lines += ["", f"I'll look at {'it' if len(unseen) == 1 else 'them'} before your "
+                      f"next message."]
+    elif unseen:
         who = model.name if model else "This AI"
         one = len(unseen) == 1
         lines += ["", f"{who} cannot see pictures, so it will not know what "
@@ -495,6 +513,10 @@ def import_messages(
         lines += ["", f"{alternatives[0].name} can read them. You can choose it for this "
                       f"project."]
     return "\n".join(lines)
+
+
+def _it_shows(seen: str) -> str:
+    return f"It shows {seen}."
 
 
 def _numbered_sets(paths: Sequence[str]) -> list[tuple[str, str]]:

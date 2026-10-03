@@ -13,7 +13,7 @@ from opennest.agent.controller import AgentController
 from opennest.agent.tools import Toolbox
 from opennest.ai import images
 from opennest.ai.provider import ProviderError
-from opennest.ai.router import build_provider, default_model_id, get_entry, unmet_requirements
+from opennest.ai.router import build_provider, get_entry, startup_model_id, unmet_requirements
 from opennest.fastpath.router import FastPathRouter
 from opennest.memory.manager import MemoryManager
 from opennest.projects.manager import Project, ProjectError, create_project
@@ -107,7 +107,8 @@ class MainWindow(QMainWindow):
     def _start_model_load(self) -> None:
         """Warm the local model in the background so the first message is not slow."""
         try:
-            self._provider = build_provider(default_model_id())
+            self._provider = build_provider(
+                startup_model_id(self.installation.preferred_model))
         except ProviderError as exc:
             self._deck.set_model_status("attention", "Not available")
             self._model_problem = str(exc)
@@ -239,7 +240,7 @@ class MainWindow(QMainWindow):
             # point "empty" is a choice the child made rather than one nobody made.
             project = create_project(
                 chosen.name, profile.id,
-                model=default_model_id(),
+                model=startup_model_id(self.installation.preferred_model),
                 starter_id=chosen.starter_id,
             )
         except ProjectError as exc:

@@ -54,6 +54,13 @@ _SCORE_CACHE_STEP = 16
 #: the rendered string can be split where the variable part begins.
 _SCORE_SENTINEL = "⁣OPENNEST-SCORE⁣"
 
+#: The most pixels a picture is shown at. Qwen3-VL turns every 32x32 square into one
+#: token, and its processor's own ceiling is 16 million pixels -- the owner's 1278x1230
+#: monster would have been ~1,500 tokens of a 16,000-token window. Measured (SPIKES.md
+#: section 32): at 384x384 the 4B named the monster, its purple spots and antennae, and
+#: each tree's kind and colours as well as at 512x512, in ~170 tokens and 0.6 s.
+PICTURE_PIXELS = 384 * 384
+
 
 @contextlib.contextmanager
 def _no_compiling_on_the_main_thread():
@@ -118,7 +125,18 @@ def resolve_local_model(model_id: str, revision: str | None = None) -> Path:
 
 
 class MLXProvider(ModelProvider):
-    """Runs a quantised model locally on Apple silicon."""
+    """Runs a quantised model locally on Apple silicon.
+
+    A vision model (``supports_images`` in the catalogue -- Qwen3-VL) is loaded through
+    the vision engine, ``mlx_vlm``, so that a picture on a message reaches it as pixels.
+    The same weights answer everything else: text turns go through the vision engine's
+    generation with no picture, and the Fast Path's scoring runs the model's language
+    half directly. Nothing is loaded twice.
+
+    If the vision engine is missing, a vision model still works as a text model --
+    ``mlx_lm`` reads the language half of a Qwen3-VL checkpoint -- and ``sees_images``
+    says so: Gary keeps working and nobody is told he has looked at anything.
+    """
 
     def __init__(self, info: ModelInfo, model_id: str, revision: str | None = None) -> None:
         self.info = info
@@ -126,7 +144,11 @@ class MLXProvider(ModelProvider):
         self.revision = revision
         self._model: Any = None
         self._tokenizer: Any = None
+        #: The vision engine's processor, when the model was loaded with its vision half.
+        self._processor: Any = None
         self._reply = Reply()
+        #: The pictures the most recent :meth:`chat` really showed the model.
+        self.last_shown: tuple[str, ...] = ()
         #: Prefilled scoring prefixes, most recently used last: (prefix ids, KV cache).
         self._score_cache: list[tuple[list[int], Any]] = []
 
@@ -136,9 +158,28 @@ class MLXProvider(ModelProvider):
     def is_loaded(self) -> bool:
         return self._model is not None
 
+    @property
+    def sees_images(self) -> bool:
+        return self._processor is not None
+
     def load(self) -> None:
         if self.is_loaded:
             return
+        local_path = resolve_local_model(self.model_id, self.revision)
+        if self.info.supports_images:
+            try:
+                from mlx_vlm import load as vision_load
+            except ImportError:
+                vision_load = None
+            if vision_load is not None:
+                try:
+                    self._model, self._processor = vision_load(str(local_path))
+                except Exception as exc:
+                    raise ProviderError(
+                        f"The local AI model could not be loaded.\n\n{exc}"
+                    ) from exc
+                self._tokenizer = self._processor.tokenizer
+                return
         try:
             from mlx_lm import load as mlx_load
         except ImportError as exc:
@@ -146,7 +187,6 @@ class MLXProvider(ModelProvider):
                 "The local AI engine is not installed. Run Setup again to repair it."
             ) from exc
 
-        local_path = resolve_local_model(self.model_id, self.revision)
         try:
             self._model, self._tokenizer = mlx_load(str(local_path))
         except Exception as exc:
@@ -158,6 +198,7 @@ class MLXProvider(ModelProvider):
         """Give the memory back. Reloading costs about a third of a second."""
         self._model = None
         self._tokenizer = None
+        self._processor = None
         self._score_cache = []
         try:
             import mlx.core as mx
@@ -178,28 +219,38 @@ class MLXProvider(ModelProvider):
         self.load()
         settings = settings or Settings()
         self._reply = Reply()
+        self.last_shown = ()
 
-        from mlx_lm import stream_generate
-        from mlx_lm.sample_utils import make_sampler
+        shown, pictures = self._pictures(messages) if self.sees_images else ((), [])
+        prompt = self._render(messages, tools, pictures=len(pictures))
+        if self.sees_images:
+            from mlx_vlm import stream_generate as vision_generate
 
-        prompt = self._render(messages, tools)
-        sampler = make_sampler(temp=settings.temperature)
+            stream = vision_generate(
+                self._model, self._processor, prompt, image=pictures or None,
+                max_tokens=settings.max_tokens, temperature=settings.temperature,
+            )
+        else:
+            from mlx_lm import stream_generate
+            from mlx_lm.sample_utils import make_sampler
+
+            stream = stream_generate(
+                self._model, self._tokenizer, prompt, max_tokens=settings.max_tokens,
+                sampler=make_sampler(temp=settings.temperature),
+            )
 
         pieces: list[str] = []
         last = None
         # Around the loop itself: this is a generator, so the model runs on whichever
         # thread iterates it, and that is the thread that matters.
         with _no_compiling_on_the_main_thread():
-            for response in stream_generate(
-                self._model,
-                self._tokenizer,
-                prompt,
-                max_tokens=settings.max_tokens,
-                sampler=sampler,
-            ):
+            for response in stream:
                 pieces.append(response.text)
                 last = response
                 yield Chunk(text=response.text)
+        #: The pictures this reply was given, as pixels -- the evidence ``assets.look``
+        #: records, rather than what a caller asked for.
+        self.last_shown = shown
 
         self._reply = reply_from_completion(
             "".join(pieces),
@@ -238,7 +289,6 @@ class MLXProvider(ModelProvider):
 
     def _score(self, system: str, user: str, labels: Sequence[str]) -> list[float]:
         import mlx.core as mx
-        from mlx_lm.models.cache import make_prompt_cache, trim_prompt_cache
 
         label_ids = []
         for label in labels:
@@ -264,35 +314,82 @@ class MLXProvider(ModelProvider):
         # A tokenizer may merge across the boundary; then the cached prefix is not a
         # prefix of this prompt and the whole thing is simply run uncached.
         if prefix and ids[:len(prefix)] == prefix and len(ids) > len(prefix):
-            cache = self._cached_prefix(prefix, make_prompt_cache, mx)
+            cache = self._cached_prefix(prefix)
             suffix = ids[len(prefix):]
-            logits = self._model(mx.array([suffix]), cache=cache)[0, -1]
+            logits = self._forward(suffix, cache, len(prefix))[0, -1]
             logprobs = logits - mx.logsumexp(logits)
             chosen = mx.take(logprobs, mx.array(label_ids))
             mx.eval(chosen)
-            trim_prompt_cache(cache, len(suffix))
+            for layer in cache:
+                layer.trim(len(suffix))
         else:
-            logits = self._model(mx.array([ids]))[0, -1]
+            logits = self._forward(ids, None, 0)[0, -1]
             logprobs = logits - mx.logsumexp(logits)
             chosen = mx.take(logprobs, mx.array(label_ids))
             mx.eval(chosen)
         return [float(value) for value in chosen.tolist()]
 
-    def _cached_prefix(self, prefix: list[int], make_prompt_cache, mx):
+    def _forward(self, ids: list[int], cache, offset: int):
+        """Logits for ``ids``, continuing ``cache`` from position ``offset``.
+
+        A vision model's language half places each token in three dimensions (time,
+        height, width -- Qwen3-VL's multimodal rotary positions) and, left to itself,
+        works them out from state kept on the model by the last generation, which may
+        have held a picture. Text has all three equal to the token's place in the
+        sequence, which is exactly ordinary positions, so they are given explicitly.
+        """
+        import mlx.core as mx
+
+        if not self.sees_images:
+            return self._model(mx.array([ids]), cache=cache)
+        positions = mx.broadcast_to(mx.arange(offset, offset + len(ids))[None, None, :],
+                                    (3, 1, len(ids)))
+        language = self._model.language_model
+        return language(mx.array([ids]), cache=cache, position_ids=positions).logits
+
+    def _cached_prefix(self, prefix: list[int]):
+        import mlx.core as mx
+
         for index, (ids, cache) in enumerate(self._score_cache):
             if ids == prefix:
                 self._score_cache.append(self._score_cache.pop(index))
                 return cache
-        cache = make_prompt_cache(self._model)
+        if self.sees_images:
+            from mlx_vlm.models.cache import make_prompt_cache
+
+            cache = make_prompt_cache(self._model.language_model)
+        else:
+            from mlx_lm.models.cache import make_prompt_cache
+
+            cache = make_prompt_cache(self._model)
         for layer in cache:
             if hasattr(layer, "step"):
                 layer.step = _SCORE_CACHE_STEP
-        mx.eval(self._model(mx.array([prefix]), cache=cache))
+        mx.eval(self._forward(prefix, cache, 0))
         self._score_cache.append((prefix, cache))
         del self._score_cache[:-_SCORE_CACHE_ENTRIES]
         return cache
 
-    def _render(self, messages: Sequence[Message], tools: Sequence[dict] | None) -> str:
+    def _pictures(self, messages: Sequence[Message]) -> tuple[tuple[str, ...], list]:
+        """The pictures to show with this request, ready: (paths, images).
+
+        Those of the latest message that carries any -- the child's message, for every
+        call of its turn, including after a correction Open Nest adds. The controller
+        takes them off when the turn is settled, so a picture is not sent again every
+        turn: what was seen is in the prompt as words from then on (``assets.look``). A
+        picture that will not open is left out rather than failing the turn.
+        """
+        carrying = _carrying(messages)
+        shown, pictures = [], []
+        for path in (messages[carrying].images if carrying is not None else ()):
+            picture = prepare_picture(path)
+            if picture is not None:
+                shown.append(path)
+                pictures.append(picture)
+        return tuple(shown), pictures
+
+    def _render(self, messages: Sequence[Message], tools: Sequence[dict] | None, *,
+                pictures: int = 0) -> str:
         """Build the prompt, with reasoning switched off where the template offers it.
 
         ``enable_thinking=False`` is Qwen3's own template mechanism, and Phase 12
@@ -304,11 +401,21 @@ class MLXProvider(ModelProvider):
           begins *"Okay, the user wants me to respond with exactly..."*.
         - **Qwen3 4B Instruct** ignores the flag completely -- the rendered prompt is
           byte-identical with it, without it, and with it set True.
+        - **Qwen3-VL 4B and 8B Instruct** (Gary Fast and Gary Smart) render a tool
+          conversation byte for byte as Qwen3 4B Instruct does (SPIKES.md section 32).
 
         So it is safe to pass unconditionally, and the fallback below covers a template
         that refuses an unexpected argument rather than ignoring it.
+
+        ``pictures``: how many pictures the message being answered carries, as
+        :meth:`_pictures` prepared them. Each gets the template's own picture marker,
+        ahead of the words, which the vision engine replaces with the picture's pixels.
         """
         payload = [m.as_dict() for m in messages]
+        carrying = _carrying(messages) if pictures else None
+        if carrying is not None:
+            payload[carrying]["content"] = [{"type": "image"} for _ in range(pictures)] + [
+                {"type": "text", "text": messages[carrying].content}]
         kwargs: dict[str, Any] = {"add_generation_prompt": True, "tokenize": False}
         if tools:
             kwargs["tools"] = list(tools)
@@ -324,6 +431,46 @@ class MLXProvider(ModelProvider):
             return self._tokenizer.apply_chat_template(payload, **kwargs)
         except Exception as exc:
             raise ProviderError(f"The conversation could not be prepared: {exc}") from exc
+
+
+def _carrying(messages: Sequence[Message]) -> int | None:
+    """Where the latest message with pictures on it is, if any."""
+    return next((index for index in range(len(messages) - 1, -1, -1)
+                 if messages[index].images), None)
+
+
+def prepare_picture(path: str):
+    """A picture as the model is shown it, or ``None`` if it will not open.
+
+    Two things the vision engine would get wrong left to itself, both measured on the
+    pictures the owner tested with (SPIKES.md section 32):
+
+    - **See-through pixels became black.** The engine converts to plain colour, and a
+      transparent pixel's colour is usually black: the Open Nest eagle, a dark bird on
+      nothing, was "a completely black image with no discernible content". A child's
+      sprite is very often see-through, so it is laid on white first.
+    - **Size.** Shown at full size, the owner's 1278x1230 monster is ~1,500 tokens.
+      Scaled to ``PICTURE_PIXELS`` it is ~170 and described just as well.
+    """
+    try:
+        from PIL import Image, ImageOps
+
+        with Image.open(path) as opened:
+            picture = ImageOps.exif_transpose(opened)
+            picture.load()
+    except Exception:  # noqa: BLE001 - an unreadable picture is left out, never fatal
+        return None
+    if picture.mode in ("RGBA", "LA", "PA") or (
+            picture.mode == "P" and "transparency" in picture.info):
+        picture = picture.convert("RGBA")
+        picture = Image.alpha_composite(Image.new("RGBA", picture.size, "white"), picture)
+    picture = picture.convert("RGB")
+    scale = (PICTURE_PIXELS / (picture.width * picture.height)) ** 0.5
+    if scale < 1:
+        picture = picture.resize((max(32, int(picture.width * scale)),
+                                  max(32, int(picture.height * scale))),
+                                 Image.Resampling.LANCZOS)
+    return picture
 
 
 def reply_from_completion(raw: str, *, prompt_tokens: int = 0,

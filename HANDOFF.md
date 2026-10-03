@@ -15,7 +15,38 @@ branch, nothing merged to `main`). Six pieces, in order:
 | **13C finished** | the same building blocks for everyone: the Fast Path's add-a-thing recipes give every look through `game_object` (no inline pygame, no named drawings added); a Blank project that has become a game is offered `game_object` (measured first); Gary can change anything in the scene -- look, colour, size, place, motion, layer, touch; a made-up drawing name is answered with how to compose it; clicked through the real app under cocoa, 45/45 | PHASE_13_HANDOFF §9.11, SPIKES §28H-N |
 | **stress pass** | Website, Research, Arduino, Pi and Blank driven with the local 4B and 8B, Luna and -- for the first time -- Sonnet; the touch bug fixed (`scene.touched`, once per touch; kit v2); sixteen shared-layer fixes for what the walks found, none provider-specific | PHASE_13_HANDOFF §10, SPIKES §29 |
 | **maze pass** | the owner's "Maze" card test: a game seen from above -- kit v4 grids, `layout: maze` (solvable, solid, player at the start, goal at "maze end"), `touch: block`; the maze words said beside a maze message, not in the always-sent schema (described there, they cost the 4B its first move on 5 of 12 plain requests) | PHASE_13_HANDOFF §12, SPIKES §31 |
+| **vision pass** | **Gary Fast and Gary Smart** -- Qwen3-VL 4B and 8B, pinned, installed through `config/models.json`, `scripts/fetch.sh model`, the registry and the setup wizard, with the vision engine (`mlx-vlm`, `--no-deps`); a picture looked at once, on import, and what it shows kept with it (`assets.look`); the older local models `deprecated` -- they run where installed and are never offered again; the Fast Path on Gary's own model; the app starts the model setup chose | SPIKES §32 |
 | **test04 pass** | the owner's in-person test (a night-forest shooter, their own monster and six tree pictures) replayed message for message with the 4B and 8B, four rounds each: Open Nest's own false corrections, layer defects and fallback words fixed; one look per copy (kit v3) and `touch: shoot`; one import question and message per batch; the child's requests kept in front of Gary; greetings, "what should I do?", whole-game requests and "not a good game" answered from guidance said beside the message | PHASE_13_HANDOFF §11, SPIKES §30 |
+
+**The vision pass in one paragraph** (SPIKES §32). Gary can see the child's pictures. A
+local vision model -- **Gary Fast** (`mlx-community/Qwen3-VL-4B-Instruct-4bit`, 3.1 GB,
+the default) or **Gary Smart** (Qwen3-VL 8B, 5.8 GB, for 16 GB+) -- is shown each picture
+once when it comes into the project, and what it says the picture shows is kept with the
+picture, by its SHA-256, and said to the child ("blue_monster.png is in your project. It
+shows a happy, fluffy blue monster with purple spots and big eyes."); a picture attached
+to a message also travels as pixels with that message. The honesty rules are unchanged
+in substance: a picture counts as seen only when its pixels reached a model and the
+answer was recorded, never because a vision model is selected, so "NOBODY HAS LOOKED"
+and the invention check still cover everything not looked at -- the same weights loaded
+without the vision engine said "You've got a picture of me, Gary, in a suit, holding a
+coffee cup". Measured, the vision models were the better fit: on the 94 Games requests
+Gary Fast chose an acceptable first move on **79 against Qwen3 4B's 67**, in a third of
+the time, and Gary Smart on 83 -- though **Qwen3 8B made 92**, the one comparison a vision
+model lost; told so, with the replays about even and Gary Smart faster and sighted, the
+owner kept the lineup. So, by the owner's ruling, **they are the only local models setup
+offers**; the
+older entries are `deprecated` (still running where installed, never suggested or
+downloaded), the app starts the model setup chose and moves to Gary Fast once it is
+there, and the demo launcher checks for it. The Fast Path classifier runs on Gary's own
+model, by the owner's choice: held-out 15 right recipe edits and 3 wrong against Qwen3
+4B's 18 and 0 (dev 49/2 against 48/2) -- keeping Qwen3 4B resident as a second model
+would have cost an 8 GB Mac ~2.7 GB. On the owner's replays Gary Fast made a forest
+of the child's own six trees with their monster to shoot and a score (no night sky, this
+run), and the maze; the maze
+replay found Open Nest's refusal for a whole imagined file sent as an edit too terse to
+stop a loop, and it now says what to do instead (round two: the maze on the first message).
+Through the real window: the setup wizard walk 53/53 and the Phase 12 app walk 42/42, on
+Gary Fast (`benchmarks/vision/results/app_walk_vision.txt`).
 
 **The test04 pass in one paragraph** (SPIKES §30). The owner asked the local 4B for "a
 game in the woods at night. A first person shooter. We have to shoot monsters hiding
@@ -58,7 +89,7 @@ and unchanged v1 kits are brought up to date. Luna and Sonnet behaved alike and 
 Sonnet needed nothing of its own. The keys the owner left in `.env` are in the Keychain,
 the file is gone, and no key material is in any file, log, result or commit.
 
-**1705 tests pass, ruff is clean** (1685 after the test04 pass, 1622 after the stress
+**1750 tests pass, ruff is clean** (1705 after the maze pass, 1685 after the test04 pass, 1622 after the stress
 pass, 1430 before 13C). The Phase 12 app walk is 41/41 under cocoa after the test04 pass
 (`benchmarks/owner_test04/results/app_walk_test04.txt`), as after the stress pass
 (`benchmarks/stress/results/app_walk_stress.txt`). The
@@ -110,8 +141,12 @@ name and all, into the chat.
 
 **What is next:**
 
-1. **The owner re-runs test04 on this build** -- the same thread, or a new one -- after
-   the test04 pass (SPIKES §30). Luna and Sonnet were not re-run: the owner's ruling was
+1. **The owner re-runs test04 and the maze on this build, with Gary Fast** -- the same
+   threads, or new ones (SPIKES §30-32). On a Mac set up before this pass the first launch
+   after `git pull` reinstalls the requirements (now including the vision engine), and
+   Settings (or `scripts/fetch.sh model qwen3-vl-4b-instruct`) downloads Gary Fast; the
+   app moves to it once it is there. **An 8 GB Mac is the open measurement**: Gary Fast
+   peaks at 3.64 GB on 48 GB, 1 GB above Qwen3 4B. Luna and Sonnet were not re-run: the owner's ruling was
    that if the 4B and 8B work, they will. Then the rest of the in-person click-through:
    Run Game, play, click the chat and back, Tab out; Pop out, play, Tab to Put back, close
    the window; and one owner demo across project types.
@@ -126,15 +161,12 @@ name and all, into the chat.
    `see_through` argument on
    `game_object` -- a description change, so re-run `benchmarks/graphics/tool_choice.py`
    before it ships.
-3. **A model that can see the child's pictures.** Every picture fix in SPIKES §30-31 works
-   around a model that sees only filenames. A local vision model -- Qwen3-VL-4B-Instruct
-   or similar, pinned to a commit in `config/models.json`, fetched by `scripts/fetch.sh
-   model <id>` and offered through the model registry and setup wizard
-   (`opennest/models/`, `opennest/setup/`, PHASE_11_HANDOFF) --
-   would let Gary know what a picture shows. Start from SPIKES §12 (why
-   `IMAGE_INPUT_IMPLEMENTED` is False and what `can_interpret` controls), measure with
-   `benchmarks/owner_test04/replay.py` and `benchmarks/graphics/tool_choice.py`, and keep
-   the honesty checks until the image bytes really reach the model.
+3. ~~**A model that can see the child's pictures.**~~ **Done** -- Gary Fast and Gary Smart
+   (SPIKES §32). What is left of it: a cloud provider still sends no pixels
+   (`IMAGE_INPUT_PROVIDERS` is `{"mlx"}`; Claude and OpenAI could see, and adding them is
+   image blocks in both message translators); what a picture shows is not checked against
+   the layers it is drawn in; and the Fast Path's gate was tuned on Qwen3 4B's scores
+   (frozen; Gary Fast makes three more wrong recipe edits on the held-out set).
 4. **Phase 14 -- Publish Version**, reshaped by the owner (PHASE_13_HANDOFF §6,
    PHASE_12_HANDOFF §7). Not started. The sunglasses wait for it.
 5. **Hardening items, each separate and none the graphics layer's** (SPIKES §28N): the
@@ -396,12 +428,15 @@ the tool loop, repair, the honesty corrections, truncation recovery and rollover
 (`agent/budget.py`, §6B). Before this each subsystem had a private allowance and nothing
 counted the total.
 
-**A vision model still cannot see a picture, and that is now enforced.** Neither cloud
-provider transmits image bytes — `provider.IMAGE_INPUT_IMPLEMENTED` is False and says
-so. Phase 6 briefly broke this: making Claude selectable made `can_interpret` answer
-True, which removed the honesty block from the prompt *and* took the image out of the
-set `invented_description` checks, while no pixels were sent. Both of Phase 5's defences
-off at once. SPIKES.md §12 has it; read it before touching `can_interpret`.
+**A picture is seen only when its pixels reached a model, and that is enforced.** Since
+SPIKES §32 the local vision models (Gary Fast, Gary Smart) are shown pictures; neither
+cloud provider transmits image bytes (`provider.IMAGE_INPUT_PROVIDERS` is `{"mlx"}`).
+Phase 6 once broke this: making Claude selectable made `can_interpret` answer True, which
+removed the honesty block from the prompt *and* took the image out of the set
+`invented_description` checks, while no pixels were sent. So `can_interpret` now goes by
+evidence -- `asset.seen`, recorded by `assets.look` only after a model was really shown
+the pixels -- and never by which model is selected. SPIKES.md §12 and §32 have it; read
+them before touching `can_interpret`.
 
 Read in this order: this file → [PLAN.md](PLAN.md) (phases and decisions) →
 [SPIKES.md](SPIKES.md) (measurements the design rests on). `WORKORDER_01.md` and
@@ -459,7 +494,7 @@ turn cloud on, and the child can switch to Claude or OpenAI after a warning, or 
 pictures with an image model. Everything except Image Creation still works with cloud off,
 which is the default.
 
-1525 tests pass, ruff is clean.
+1750 tests pass, ruff is clean.
 
 **The application icon is deliberately unresolved, and that is a ruling rather than a
 gap.** Phase 10D was told not to design or simplify one: it needs a separately approved
@@ -492,7 +527,7 @@ privileged-action pattern in §5, not a new mechanism.
 ## 2. Get running in five minutes
 
 ```bash
-.venv/bin/python -m pytest -q      # 1525 passing, about 3.5 minutes
+.venv/bin/python -m pytest -q      # 1750 passing, about 4 minutes
 ```
 
 It is slower than it was (7 s at Phase 6, 55 s at Phase 12.2). Phase 12.4 made every Games
@@ -590,6 +625,8 @@ opennest/
 ├── assets/
 │   ├── kinds.py            what a file is, and which directory it belongs in
 │   ├── describe.py         derived facts. The honesty rule lives here.
+│   ├── look.py             a picture shown to a vision model once; what it saw, kept by
+│   │                       SHA-256 in .opennest/looked.json -- the only "seen" there is
 │   └── manager.py          copy-in import; the injected block — deliberately not a tool
 ├── memory/
 │   ├── manager.py          the only memory object the controller holds
@@ -1091,6 +1128,36 @@ does.** Do not "clean up" these without re-measuring:
   pass (its bible's Decisions describe an eagle that was never made). Nothing rewrites a
   child's memory files automatically; deleting that project, or those lines, is the fix.
 
+**Vision traps -- Gary Fast and Gary Smart (SPIKES §32):**
+
+- **A picture is seen when `asset.seen` says so, and nothing else decides it.** That is
+  a record `assets.look` writes after a model was really shown the pixels
+  (`MLXProvider.last_shown`) and answered. Not the model in use: `can_send_images` only
+  says a model *could* be shown one, and treating that as seeing is the Phase 6 hole.
+- **See-through pixels reach the vision engine as black.** `prepare_picture` lays them on
+  white and scales to `PICTURE_PIXELS`; bypass it and the eagle is "a completely black
+  image", and a big picture is 1,500 tokens.
+- **Pixels travel with the message they came with, and only that turn.** The provider
+  shows the latest message carrying pictures (corrections arrive as later user messages,
+  so "the last user message" would drop them mid-turn); `_settle_history` takes them off.
+  A message rebuilt for the model must keep them: use `dataclasses.replace`, not a new
+  `Message` (four such places dropped them in the answer path).
+- **Looking is outside the turn's budget, on purpose** (`controller.look_at_pictures`):
+  once per picture, ever, local only. Do not route it through `MeteredProvider`.
+- **A vision model's language half keeps rotary-position state from its last
+  generation.** The Fast Path's scoring passes positions explicitly (`_forward`); a new
+  direct forward pass on that model must too.
+- **`mlx-vlm` is installed `--no-deps`** (`requirements/vision.txt`,
+  `bootstrap/environment.NO_DEPS_MANIFESTS`). `pip check` complains; installing its
+  declared extras adds ~250 MB of server, audio and OpenCV the vision path never imports.
+  Without it a vision model loads as a text model and `sees_images` is False.
+- **The app starts `router.startup_model_id(preferred)`, not the default.** It used to
+  start the default whatever setup recorded.
+- **`deprecated` is a working status, not a deletion**: runs where installed, appears in
+  pickers and Settings only there, never suggested or offered as a download
+  (`ModelEntry.offered_for_install`). Remove an entry and a family's installed model
+  becomes an unknown folder.
+
 **Phase 13C traps -- the graphics layer (PHASE_13_HANDOFF §9, SPIKES §28):**
 
 - **The 4B cannot decompose "car" into shapes, and prompt words did not change that**
@@ -1408,10 +1475,10 @@ flag was checked.
   configuration is sound and the worst failure is gone", not "the agent is honest" —
   the same caution SPIKES.md §4 carries about 16/16 tool selection. Widen it before
   Phase 10.
-- **An image cannot yet be *sent* to a model that could see it.** Phase 6 built the
-  providers but not image transmission, so this is still true — and §6B explains why
-  that briefly became dangerous rather than merely incomplete once a vision model became
-  selectable. `provider.IMAGE_INPUT_IMPLEMENTED` now holds the line.
+- ~~**An image cannot yet be *sent* to a model that could see it.**~~ **A local vision
+  model sees it now** (SPIKES §32): each picture is looked at once and what it shows is
+  kept (`assets.look`). The cloud providers still send no pixels, and the rule that
+  makes that safe is the evidence one in `can_interpret`.
 - **The classification dialog asks once per dropped file.** One extra click on the
   commonest path. Correct, but worth watching a real child use before keeping it.
 
@@ -1529,12 +1596,12 @@ one for this reason.
 
 ### What is not done
 
-- **No provider sends an image to a model.** `IMAGE_INPUT_IMPLEMENTED` is the flag; it
-  is False, and both `can_interpret` and `models_that_can_read` respect it, so the
-  behaviour is honest. But it means a vision model buys the asset layer nothing today.
-  Implementing transmission means image content blocks in both message translators,
-  a size limit, and deciding whether only *attached* images travel. Flip the flag and
-  delete the `can_send_images` test fixture in the same change.
+- **No cloud provider sends an image to a model.** The local one does (SPIKES §32);
+  `IMAGE_INPUT_PROVIDERS` names it, and `models_that_can_read` offers only an installed
+  local vision model for a picture. For a cloud provider it means image content blocks
+  in its message translator and a size limit (pixels travel only with the message they
+  came with, as locally). Add the provider to the set, and delete the `can_send_images`
+  test fixture, in the same change.
 - **No long real session has been run.** Repair, rollover and truncation have Sonnet
   and Luna parity (SPIKES.md §13), but every measurement is one or two turns — rollover
   was forced with a 900-token threshold rather than reached at 36,000.
@@ -1955,7 +2022,7 @@ From `CLAUDE.md` and from the developer directly:
 | D10 | **Whether a one-click in-app updater is wanted at all**, and if so what it does about local modifications, a moved model pin, and restarting a running app. Phase 8 deliberately stopped at "notice and report" — see §6D | after V1 |
 | **D12** | **What "Ask before using cloud AI" should actually require, and how often.** Today it is a child-answerable dialog shown once per model switch. Two independent questions: (a) should it take the parent PIN, making it a real approval rather than an awareness prompt? (b) should it fire per cloud *request* rather than per selection, as `cloud_needs_confirmation`'s docstring already claims? A PIN on every turn makes cloud unusable; a PIN on none is the current state. A likely answer is PIN once per session or per project, but that is a product call. See the defect in §6B | before V1 |
 | **D13** | **Which model classifies for the Fast Path when Gary is not a local model.** Today: Gary's own model if it can answer a closed question (any local MLX model -- measured on Qwen3 4B and 8B), otherwise no Fast Path, so a cloud Gary gets the normal path. Wired and tested but off: `FastPathRouter(classifier_provider=<local provider>)`, which lets the installed local model classify for a cloud Gary -- ~2.3 GB of memory while a project is open, private and free, and a recipe turn then costs no cloud call at all. The stronger form, requiring Qwen3 4B at setup so every install has a classifier, reverses WORKORDER_01 section 35A's "skipping local AI should be allowed" (2.28 GB). The work order's own future option is a dedicated tiny classifier -- **none has been added** (no Open-Jev, no second model). SPIKES.md section 25 | before the Fast Path merges |
-| — | Only one model is verified and downloaded. The other three local ones are pinned and described but untested | — |
+| — | The two local models Open Nest offers, Gary Fast and Gary Smart, are verified and downloaded (SPIKES §32); the older entries are `deprecated` | — |
 | — | All measurements are from a 48 GB Mac. The target is 8 GB | before V1 |
 
 **Resolved in Phase 9 — D1: OAuth device flow.** A classic OAuth App with device flow

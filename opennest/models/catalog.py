@@ -54,6 +54,10 @@ KNOWN_RUNTIMES = frozenset({"mlx", "cloud"})
 #: rather than a chain of ``if model_name ==``.
 KNOWN_CAPABILITIES = frozenset({"chat", "code", "vision", "tools", "documents"})
 
+#: ``deprecated``: replaced by a better choice. Still runs, and still offered in the model
+#: picker, wherever it is already installed -- nobody's model stops working and nothing
+#: is downloaded again -- but never suggested or offered as a new install
+#: (:func:`offered_for_install`). ``withdrawn``: gone from every list (:func:`merge`).
 KNOWN_STATUSES = frozenset({"supported", "deprecated", "withdrawn"})
 
 #: ``org/name``. Deliberately strict: this string is handed to huggingface_hub, and a
@@ -61,6 +65,11 @@ KNOWN_STATUSES = frozenset({"supported", "deprecated", "withdrawn"})
 _REPO_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$")
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 _MODEL_KEY = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+
+#: ``good_for`` is words a parent reads, so it is short and bounded like everything else
+#: a remote catalogue may say.
+_MAX_GOOD_FOR = 8
+_MAX_GOOD_FOR_CHARS = 40
 
 
 class CatalogError(Exception):
@@ -97,12 +106,21 @@ class ModelEntry:
     minimum_memory_gb: float = 0.0
     recommended_memory_gb: float = 0.0
     status: str = "supported"
+    #: What a parent is told it is good for, a few words each ("coding", "images"),
+    #: shown with a tick beside the model in setup. Words, never behaviour: what the
+    #: application does follows ``capabilities`` and the ``supports_*`` flags.
+    good_for: tuple[str, ...] = ()
     #: Where this entry came from: "bundled" or "remote". Carried so a person can be
     #: told, and so a test can prove the layering did what it claims.
     source: str = "bundled"
 
     def has(self, capability: str) -> bool:
         return capability in self.capabilities
+
+    @property
+    def offered_for_install(self) -> bool:
+        """Whether a parent may be offered this as something to download."""
+        return self.status == "supported"
 
 
 @dataclass(frozen=True)
@@ -209,6 +227,12 @@ def _entry_is_valid(item: object) -> bool:
         if not isinstance(revision, str) or not _SHA.match(revision):
             return False
 
+    good_for = item.get("good_for", [])
+    if not isinstance(good_for, list) or len(good_for) > _MAX_GOOD_FOR or any(
+            not isinstance(word, str) or not 0 < len(word.strip()) <= _MAX_GOOD_FOR_CHARS
+            for word in good_for):
+        return False
+
     options = item.get("provider_options")
     return options is None or isinstance(options, dict)
 
@@ -264,6 +288,7 @@ def build_entry(item: dict, *, source: str = "bundled") -> ModelEntry:
         minimum_memory_gb=float(item.get("minimum_memory_gb") or 0),
         recommended_memory_gb=float(item.get("recommended_memory_gb") or 0),
         status=item.get("status", "supported"),
+        good_for=tuple(word.strip() for word in item.get("good_for", ())),
         source=source,
     )
 

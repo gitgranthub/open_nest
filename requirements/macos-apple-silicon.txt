@@ -3,6 +3,11 @@
 # mlx and mlx-lm are pre-1.0 and move quickly, so no upper cap is claimed until Phase 1
 # has measured a known-good combination. Installed separately from base.txt so the app
 # can start (and the setup wizard can report a useful error) when MLX is unavailable.
+#
+# The floors for mlx and transformers are the vision engine's (vision.txt, installed
+# with --no-deps, so its own requirements are not enforced by pip): mlx-vlm 0.7.4 needs
+# mlx 0.32.2 and transformers 5.14.
 
-mlx>=0.18
+mlx>=0.32.2
 mlx-lm>=0.19
+transformers>=5.14

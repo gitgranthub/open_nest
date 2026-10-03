@@ -1,7 +1,7 @@
 #!/bin/bash
 # Phase 1 of the two-phase workflow: fetch pinned artifacts, with network.
 #
-#   scripts/fetch.sh model qwen3-4b-instruct
+#   scripts/fetch.sh model qwen3-vl-4b-instruct
 #   scripts/fetch.sh deps
 #
 # This is the ONLY script that is allowed to reach the internet. Everything downloaded
@@ -32,6 +32,9 @@ case "${1:-}" in
                                         -r requirements/macos-apple-silicon.txt \
                                         -r requirements/projects.txt \
                                         -r requirements/dev.txt
+        # The vision engine, without its declared extras: requirements/vision.txt says
+        # why, and bootstrap/environment.py's NO_DEPS_MANIFESTS does the same at setup.
+        .venv/bin/python -m pip install --no-deps -r requirements/vision.txt
         ;;
     arduino)
         # Pinned to a release tag and verified against the checksum Arduino publishes

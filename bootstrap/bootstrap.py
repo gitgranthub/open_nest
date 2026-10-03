@@ -108,7 +108,10 @@ def _install_local_ai() -> None:
     """
     _say("Installing the local AI engine...")
     try:
-        env.install_requirements([_requirements("macos-apple-silicon.txt")])
+        # vision.txt after it: the vision engine is installed without dependencies, so
+        # what it needs must already be there (its header has why).
+        env.install_requirements([_requirements("macos-apple-silicon.txt"),
+                                  _requirements("vision.txt")])
     except SetupError as exc:
         report_error(
             "Open Nest could not install the local AI engine, so it will not be able "

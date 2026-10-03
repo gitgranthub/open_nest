@@ -32,10 +32,11 @@ UNDERWAY_START = re.compile(
     r"changing|drawing|building)\s", re.IGNORECASE)
 
 #: Saying it looked. Nothing Open Nest does shows Gary the game, the screen or the Build /
-#: Preview panel -- and no provider sends image bytes at all yet
-#: (``provider.IMAGE_INPUT_IMPLEMENTED``) -- so each of these is an observation nobody
-#: made. Measured: "I see the eagle is missing." Only these phrasings, so "I see, you want
-#: it red" is left alone.
+#: Preview panel -- the only pixels any model is sent are a child's own pictures, to a
+#: local vision model (``provider.IMAGE_INPUT_PROVIDERS``) -- so each of these is an
+#: observation nobody made, unless a picture came with the message (``_claimed_to_see``).
+#: Measured: "I see the eagle is missing." Only these phrasings, so "I see, you want it
+#: red" is left alone.
 CLAIMED_SIGHT = ("i see the", "i see that", "i see it", "i see your", "i see a ",
                   "i see there", "i see no", "i can see", "i could see",
                   # A chart is a picture too, and nobody has looked at it (parity walk):
@@ -543,6 +544,7 @@ def presentable(text: str) -> str:
         kept += block
     kept = _without_code_runs(kept)
     kept = [_without_tool_talk(line) for line in kept]
+    kept = _each_line_once(kept)
     paragraphs, seen = [], set()
     for paragraph in re.split(r"\n\s*\n", "\n".join(kept)):
         key = " ".join(paragraph.split()).lower()
@@ -551,6 +553,33 @@ def presentable(text: str) -> str:
         seen.add(key)
         paragraphs.append(paragraph.strip())
     return "\n\n".join(part for part in paragraphs if part).strip()
+
+
+def _each_line_once(lines: list[str]) -> list[str]:
+    """A sentence-long line said a second time in one reply, said once.
+
+    Measured on the Gary Fast test04 replay (SPIKES.md section 32): "- The trees are
+    drawn in front of the monster, and clicking the monster gives a point." twice in a
+    row, in three replies. Whole paragraphs were already said once; this is the same for
+    a line inside one -- prose only, six words or more, and never inside a code block,
+    where a line may rightly repeat. What it would have changed in the earlier walks'
+    replies is in SPIKES.md section 32.
+    """
+    out, seen, fenced = [], set(), False
+    for line in lines:
+        if line.strip().startswith("```"):
+            fenced = not fenced
+        key = " ".join(line.strip().lstrip("-*• ").split()).lower()
+        if not fenced and len(key.split()) >= 6 and not _CODE_LIKE.search(key):
+            if key in seen:
+                continue
+            seen.add(key)
+        out.append(line)
+    return out
+
+
+#: A line that reads as code rather than prose.
+_CODE_LIKE = re.compile(r"[=(){}\[\];]|^\s*(?:def|import|for|if|while)\b")
 
 
 def looped(text: str) -> bool:

@@ -36,7 +36,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from opennest.agent.controller import AgentController  # noqa: E402
 from opennest.agent.tools import Toolbox  # noqa: E402
-from opennest.ai.router import build_provider  # noqa: E402
+from opennest.ai.router import build_provider, default_model_id  # noqa: E402
 from opennest.assets import manager as assets  # noqa: E402
 from opennest.fastpath.kinds import games, website  # noqa: E402
 from opennest.fastpath.router import FastPathRouter  # noqa: E402
@@ -104,7 +104,7 @@ def facts_of(project) -> dict:
 
 def main() -> int:
     app = QApplication([])
-    provider = build_provider("qwen3-4b-instruct")
+    provider = build_provider(default_model_id())
     provider.load()
     out = []
     for name, profile, script in SCRIPTS:

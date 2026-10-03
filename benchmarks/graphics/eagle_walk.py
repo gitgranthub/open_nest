@@ -42,7 +42,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from opennest.agent.controller import AgentController  # noqa: E402
 from opennest.agent.tools import Toolbox  # noqa: E402
-from opennest.ai.router import build_provider  # noqa: E402
+from opennest.ai.router import build_provider, default_model_id, get_entry  # noqa: E402
 from opennest.fastpath.kinds import games  # noqa: E402
 from opennest.fastpath.router import FastPathRouter  # noqa: E402
 from opennest.graphics import source as scene_source  # noqa: E402
@@ -196,11 +196,10 @@ def run_step(project, controller, bench, app, step: str, out_dir: Path, index: i
 
 def main() -> int:
     label = sys.argv[1] if len(sys.argv) > 1 else "eagle_walk"
-    model = sys.argv[2] if len(sys.argv) > 2 else "qwen3-4b-instruct"
+    model = sys.argv[2] if len(sys.argv) > 2 else default_model_id()
     only = set(sys.argv[3:])
     app = QApplication([])
-    provider = build_provider(model, allow_cloud=model not in (
-        "qwen3-4b-instruct", "qwen3-8b"))
+    provider = build_provider(model, allow_cloud=not get_entry(model).info.is_local)
     provider.load()
     out_dir = HERE / "results" / label
     out_dir.mkdir(parents=True, exist_ok=True)

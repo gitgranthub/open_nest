@@ -143,9 +143,17 @@ def _reinstall(repo_root: Path | None, runner: Callable[[list], int] | None) -> 
         return False, "The Open Nest installer could not be found."
 
     root = str(repo_root) if repo_root is not None else environment.repo_root()
+    # The local AI engine and the vision engine as well, on a Mac that runs them -- in
+    # the bootstrap's order. Without them, a `git pull` that moved either pin changed
+    # the fingerprint and reinstalled everything else: a family updating to a vision
+    # model would have got the model's catalogue entry and no way to show it a picture.
+    names = ["base.txt"]
+    if _apple_silicon(environment):
+        names += ["macos-apple-silicon.txt", "vision.txt"]
+    names.append("projects.txt")
     manifests = [
         str(Path(root) / "requirements" / name)
-        for name in ("base.txt", "projects.txt")
+        for name in names
         if (Path(root) / "requirements" / name).is_file()
     ]
     if not manifests:
@@ -162,3 +170,10 @@ def _reinstall(repo_root: Path | None, runner: Callable[[list], int] | None) -> 
     except Exception as exc:  # noqa: BLE001 - reported to a parent, never raised
         return False, f"{type(exc).__name__}: {exc}"
     return True, ""
+
+
+def _apple_silicon(environment) -> bool:
+    try:
+        return bool(environment.detect_machine().is_apple_silicon)
+    except Exception:  # noqa: BLE001 - unknown hardware installs the portable half only
+        return False

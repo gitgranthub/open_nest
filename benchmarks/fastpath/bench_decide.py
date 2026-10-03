@@ -1,7 +1,7 @@
 """The whole decision on labelled requests: facts, intent, message shape, route.
 
     OPENNEST_HOME=$PWD/.opennest-sandbox HF_HUB_OFFLINE=1 .venv/bin/python \
-        benchmarks/fastpath/bench_decide.py labels.json 4b [qwen3-4b-instruct] [--only=games]
+        benchmarks/fastpath/bench_decide.py labels.json 4b [model-id, default: the catalogue default] [--only=games]
 
 Unwrapped (HF_HUB_OFFLINE) because a follow-up's previous message is run through the
 real Fast Path first -- which may run a playtest or a compile, and Seatbelt cannot nest.
@@ -17,7 +17,7 @@ RAW = RESULTS / "raw"   # full runs, file contents included: local only, gitigno
 REPO = HERE.parents[1]; sys.path.insert(0, str(REPO)); sys.path.insert(0, str(HERE))
 import lexical
 from opennest.agent.tools import Toolbox
-from opennest.ai.router import build_provider
+from opennest.ai.router import build_provider, default_model_id
 from opennest.fastpath.classifier import IntentClassifier, OTHER
 from opennest.fastpath.kinds import kind_for
 from opennest.fastpath.router import FastPathRouter, SHAPE_OPTIONS, SHAPE_QUESTION, SLOT_ORDERINGS
@@ -26,7 +26,7 @@ from opennest.projects.manager import create_project
 args = [a for a in sys.argv[1:] if not a.startswith("--only=")]
 only = next((a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--only=")), None)
 labels_file, label = args[0], args[1]
-model = args[2] if len(args) > 2 else "qwen3-4b-instruct"
+model = args[2] if len(args) > 2 else default_model_id()
 items = json.loads((INPUTS / labels_file).read_text())
 if only:
     # One profile's requests only: an option added to one profile's list moves no other

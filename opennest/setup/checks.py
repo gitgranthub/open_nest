@@ -79,6 +79,7 @@ def run(
         _importable("PySide6", "PySide6.QtWidgets"),
         _importable("MLX", "mlx.core"),
         _importable("MLX-LM", "mlx_lm"),
+        _vision_engine(preferred_model),
         _local_model(preferred_model),
         _project_directory(),
         _sandbox(),
@@ -125,6 +126,27 @@ def _importable(name: str, module: str) -> Check:
     except Exception as exc:
         return Check(name, FAILED, f"could not be loaded ({type(exc).__name__})")
     return Check(name, OK)
+
+
+def _vision_engine(preferred: str) -> Check:
+    """The part that shows a local model a picture (``requirements/vision.txt``).
+
+    Failed only when the chosen model is a vision model: then Gary would work and not
+    see, and Repair Installation's reinstall puts it back. For a text model it is not
+    needed, which is a fact rather than a fault."""
+    try:
+        __import__("mlx_vlm")
+    except Exception as exc:
+        try:
+            wanted = bool(preferred) and router.get_entry(preferred).info.supports_images
+        except Exception:  # noqa: BLE001 - an unknown model id is the next check's to say
+            wanted = False
+        if wanted:
+            return Check("Vision engine", FAILED,
+                         f"could not be loaded ({type(exc).__name__}), so Gary will not see "
+                         f"pictures")
+        return Check("Vision engine", NOT_CONFIGURED, "not installed")
+    return Check("Vision engine", OK)
 
 
 def _local_model(preferred: str) -> Check:
@@ -259,7 +281,7 @@ def plan_repair(
     """Turn a health check into the list of repairs section 35A asks for."""
     by_name = {check.name: check for check in results}
     broken_imports = [
-        name for name in ("PySide6", "MLX", "MLX-LM")
+        name for name in ("PySide6", "MLX", "MLX-LM", "Vision engine")
         if by_name.get(name) is not None and by_name[name].state == FAILED
     ]
 

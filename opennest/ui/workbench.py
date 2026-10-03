@@ -43,7 +43,7 @@ from opennest.agent.controller import AgentController
 from opennest.agent.tools import Step, Toolbox
 from opennest.ai import images
 from opennest.ai.router import models_for_project, models_that_can_read, why_unavailable
-from opennest.assets import kinds
+from opennest.assets import kinds, look
 from opennest.assets import manager as assets
 from opennest.execution import arduino, outputs, web_preview
 from opennest.execution.python_runner import finished, stop_project
@@ -65,6 +65,7 @@ from opennest.ui.game_window import GameWindow
 from opennest.ui.worker import (
     AgentWorker,
     ImageWorker,
+    LookWorker,
     RunWorker,
     run_in_thread,
     stop_thread,
@@ -228,6 +229,8 @@ class Workbench(QWidget):
         self._thread = None
         #: Files dropped onto the chat, waiting to go with the next message.
         self._pending: list[assets.Asset] = []
+        #: Pictures just imported, while a model looks at them (``_looked``).
+        self._looking: list[assets.Asset] = []
         #: Pictures present before the current run, so its own output can be told apart
         #: from what the child imported earlier.
         self._images_before: outputs.Snapshot = {}
@@ -886,18 +889,49 @@ class Workbench(QWidget):
                 imported.append(asset)
                 if attach:
                     self._pending.append(asset)
-        if imported:
-            # Gary, not Open Nest: brand guide section 22's "Asset Import" is one of its
-            # worked Gary examples ("Got it. spaceship.png is now part of the project.").
-            # What he says states only what is actually known about the files (HANDOFF
-            # section 6A) -- and, in a game, how to ask for them to be used.
-            self._say(ASSISTANT_NAME, assets.import_messages(
-                imported, self._model_info(), self._models_that_could_read(imported[0]),
-                things=self._scene_things(), game=plays_in_panel(self.project)))
+        if imported and self._thread is None and look.can_look(self.controller.provider) \
+                and any(asset.kind == kinds.IMAGE for asset in imported):
+            # A model that can see looks first, so what Gary says is what he saw -- on a
+            # worker: each picture is a real model call (``assets.look``).
+            self._looking = imported
+            self._busy(True)
+            self.working(f"{ASSISTANT_NAME} is looking at "
+                         f"{'the picture' if len(imported) == 1 else 'the pictures'}.")
+            worker = LookWorker(self.controller)
+            worker.finished.connect(self._looked)
+            self._thread = run_in_thread(self, worker)
+            self._thread.finished.connect(self._thread_done)
+        elif imported:
+            self._say_imported(imported)
 
         self.refresh_files()
         self.controller.refresh_state()
         self._show_pending()
+
+    def _looked(self, seen) -> None:
+        """The pictures just added have been looked at: say so, with what was seen."""
+        if self._releasing:
+            return
+        self._busy(False)
+        self.working("")
+        by_path = {asset.path: asset for asset in seen}
+        imported = [by_path.get(asset.path, asset) for asset in self._looking]
+        self._pending = [by_path.get(asset.path, asset) for asset in self._pending]
+        self._looking = []
+        self._say_imported(imported)
+        self.refresh_files()
+        self.controller.refresh_state()
+        self._show_pending()
+
+    def _say_imported(self, imported) -> None:
+        # Gary, not Open Nest: brand guide section 22's "Asset Import" is one of its
+        # worked Gary examples ("Got it. spaceship.png is now part of the project.").
+        # What he says states only what is actually known about the files (HANDOFF
+        # section 6A) -- what a model really saw in a picture, if it looked -- and, in a
+        # game, how to ask for them to be used.
+        self._say(ASSISTANT_NAME, assets.import_messages(
+            imported, self._model_info(), self._models_that_could_read(imported[0]),
+            things=self._scene_things(), game=plays_in_panel(self.project)))
 
     def _scene_things(self) -> list[str]:
         """What the game's scene has, by name, for the import message's hint."""

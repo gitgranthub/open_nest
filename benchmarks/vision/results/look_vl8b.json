@@ -1,0 +1,73 @@
+{
+ "model": "qwen3-vl-8b-instruct",
+ "looks": [
+  {
+   "picture": "eagle_01.png",
+   "summary": "PNG image, 128x128 pixels, has transparency",
+   "saw": "a black eagle flying with its wings spread wide",
+   "seconds": 0.75,
+   "prompt_tokens": 105
+  },
+  {
+   "picture": "blue_monster.png",
+   "summary": "PNG image, 1278x1230 pixels, has transparency",
+   "saw": "a happy blue fuzzy monster with purple spots!",
+   "seconds": 0.83,
+   "prompt_tokens": 185
+  },
+  {
+   "picture": "tree_01.png",
+   "summary": "PNG image, 1086x1448 pixels, has transparency",
+   "saw": "a tall pine tree with green and blue leaves and a brown trunk",
+   "seconds": 1.07,
+   "prompt_tokens": 181
+  },
+  {
+   "picture": "tree_02.png",
+   "summary": "PNG image, 1086x1448 pixels, has transparency",
+   "saw": "a tree with green and blue leaves and a brown trunk",
+   "seconds": 0.89,
+   "prompt_tokens": 181
+  },
+  {
+   "picture": "tree_03.png",
+   "summary": "PNG image, 1086x1448 pixels, has transparency",
+   "saw": "a big, old tree with brown bark and green leaves and moss",
+   "seconds": 0.94,
+   "prompt_tokens": 181
+  },
+  {
+   "picture": "tree_04.png",
+   "summary": "PNG image, 1086x1448 pixels, has transparency",
+   "saw": "a big, old tree with brown bark and green leaves",
+   "seconds": 0.9,
+   "prompt_tokens": 181
+  },
+  {
+   "picture": "tree_05.png",
+   "summary": "PNG image, 1086x1448 pixels, has transparency",
+   "saw": "a big, leafy tree with brown trunk and roots, and green leaves",
+   "seconds": 0.98,
+   "prompt_tokens": 181
+  },
+  {
+   "picture": "tree_06.png",
+   "summary": "PNG image, 1086x1448 pixels, has transparency",
+   "saw": "a big pine tree with green needles and a brown trunk",
+   "seconds": 0.89,
+   "prompt_tokens": 181
+  }
+ ],
+ "load_s": 1.11,
+ "sees_images": true,
+ "colour_check": {
+  "passed": true,
+  "answer": "red"
+ },
+ "peak_memory_gb": 6.34,
+ "blind": {
+  "sees_images": false,
+  "shown": [],
+  "said": "I can't see your picture \u2014 I'm Gary, a project helper, not a visual assistant. Upload it, and I\u2019ll help you analyze it! \ud83d\udcf7"
+ }
+}

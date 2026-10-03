@@ -1,0 +1,73 @@
+{
+ "model": "qwen3-vl-4b-instruct",
+ "looks": [
+  {
+   "picture": "eagle_01.png",
+   "summary": "PNG image, 128x128 pixels, has transparency",
+   "saw": "a black eagle with its wings spread wide, flying in the sky",
+   "seconds": 0.47,
+   "prompt_tokens": 105
+  },
+  {
+   "picture": "blue_monster.png",
+   "summary": "PNG image, 1278x1230 pixels, has transparency",
+   "saw": "a happy, fluffy blue monster with purple spots and big eyes",
+   "seconds": 0.56,
+   "prompt_tokens": 185
+  },
+  {
+   "picture": "tree_01.png",
+   "summary": "PNG image, 1086x1448 pixels, has transparency",
+   "saw": "a tall, green pine tree with a brown trunk",
+   "seconds": 0.54,
+   "prompt_tokens": 181
+  },
+  {
+   "picture": "tree_02.png",
+   "summary": "PNG image, 1086x1448 pixels, has transparency",
+   "saw": "a tree with blue and green leaves and a brown trunk",
+   "seconds": 0.55,
+   "prompt_tokens": 181
+  },
+  {
+   "picture": "tree_03.png",
+   "summary": "PNG image, 1086x1448 pixels, has transparency",
+   "saw": "a big, brown tree with green leaves and moss growing on it",
+   "seconds": 0.58,
+   "prompt_tokens": 181
+  },
+  {
+   "picture": "tree_04.png",
+   "summary": "PNG image, 1086x1448 pixels, has transparency",
+   "saw": "a big, happy tree with brown bark and green leaves",
+   "seconds": 0.56,
+   "prompt_tokens": 181
+  },
+  {
+   "picture": "tree_05.png",
+   "summary": "PNG image, 1086x1448 pixels, has transparency",
+   "saw": "a big, happy tree with green leaves and brown bark",
+   "seconds": 0.56,
+   "prompt_tokens": 181
+  },
+  {
+   "picture": "tree_06.png",
+   "summary": "PNG image, 1086x1448 pixels, has transparency",
+   "saw": "a big green and blue pine tree with a brown trunk",
+   "seconds": 0.56,
+   "prompt_tokens": 181
+  }
+ ],
+ "load_s": 1.02,
+ "sees_images": true,
+ "colour_check": {
+  "passed": true,
+  "answer": "red"
+ },
+ "peak_memory_gb": 3.64,
+ "blind": {
+  "sees_images": false,
+  "shown": [],
+  "said": "I can\u2019t see your picture \u2014 you\u2019ll need to describe it or upload it for me to help. \ud83d\ude0a"
+ }
+}

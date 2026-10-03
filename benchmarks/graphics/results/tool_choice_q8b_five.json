@@ -1,0 +1,1860 @@
+{
+ "model": "qwen3-8b",
+ "eagle_seen": "",
+ "summary": {
+  "five": {
+   "acceptable": 92,
+   "of": 94,
+   "code_requests_sent_to_game_object": 0,
+   "questions_given_a_tool": 1,
+   "requests_with_no_tool": 1,
+   "looks_requests_with_game_object": 8
+  }
+ },
+ "rows": [
+  {
+   "request": "make the square go faster",
+   "gold": "change_player_speed",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player_speed = 5",
+    "new_text": "player_speed = 10"
+   },
+   "five_s": 10.0
+  },
+  {
+   "request": "can my player be blue insted of orange",
+   "gold": "change_player_colour",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player = pygame.Rect(300, 400, 50, 50)",
+    "new_text": "player = pygame.Rect(300, 400, 50, 50)\nplayer_color = (0, 0, 255)"
+   },
+   "five_s": 13.7
+  },
+  {
+   "request": "make the player bigger",
+   "gold": "change_player_size",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player = pygame.Rect(300, 400, 50, 50)",
+    "new_text": "player = pygame.Rect(300, 400, 100, 100)"
+   },
+   "five_s": 14.5
+  },
+  {
+   "request": "change the backround to black",
+   "gold": "change_background",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "screen.fill((255, 255, 255))",
+    "new_text": "screen.fill((0, 0, 0))"
+   },
+   "five_s": 18.3
+  },
+  {
+   "request": "change the title from My Game to Blob Escape",
+   "gold": "set_title",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "pygame.display.set_caption('My Game')",
+    "new_text": "pygame.display.set_caption('Blob Escape')"
+   },
+   "five_s": 11.5
+  },
+  {
+   "request": "its way too fast i cant control it, slow it down a little",
+   "gold": "change_player_speed",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player_speed = 5",
+    "new_text": "player_speed = 3"
+   },
+   "five_s": 11.1
+  },
+  {
+   "request": "make my guy a circle not a square",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player = pygame.Rect(300, 400, 50, 50)",
+    "new_text": "player = pygame.Rect(300, 400, 50, 50)\nplayer_shape = pygame.Surface((50, 50), pygame.SRCALPHA)\npygame.draw.circle(player_shape, (255, 165, 0), (25, 25), 25)"
+   },
+   "five_s": 14.0
+  },
+  {
+   "request": "i want to use WASD instead of the arrow keys cuz thats what i use in minecraft",
+   "gold": "change_controls",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "keys = [pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN]",
+    "new_text": "keys = [pygame.K_a, pygame.K_d, pygame.K_w, pygame.K_s]"
+   },
+   "five_s": 12.1
+  },
+  {
+   "request": "add a score in the top corner",
+   "gold": "add_score",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "    pygame.display.flip()",
+    "new_text": "    pygame.display.flip()\n    score_text = font.render(f'Score: {score}', True, (255, 255, 255))\n    screen.blit(score_text, (10, 10))"
+   },
+   "five_s": 12.7
+  },
+  {
+   "request": "add enemys that chase you",
+   "gold": "add_enemy",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "    player = pygame.Rect(300, 400, 50, 50)\n    player_speed = 5",
+    "new_text": "    player = pygame.Rect(300, 400, 50, 50)\n    player_speed = 5\n\n    # Enemy\n    enemy = pygame.Rect(100, 100, 50, 50)\n    enemy_speed = 3"
+   },
+   "five_s": 27.0
+  },
+  {
+   "request": "can you put coins in the game that i can collect",
+   "gold": "add_collectible",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "game_object",
+   "five_ok": true,
+   "five_args": {
+    "name": "coin",
+    "picture": "assets/coin.png",
+    "size": [
+     32,
+     32
+    ],
+    "at": [
+     [
+      100,
+      100
+     ],
+     [
+      200,
+      100
+     ],
+     [
+      300,
+      100
+     ],
+     [
+      400,
+      100
+     ],
+     [
+      500,
+      100
+     ]
+    ],
+    "layer": "things",
+    "touch": "collect",
+    "count": 5
+   },
+   "five_s": 13.5
+  },
+  {
+   "request": "make it so when i press space the square jumps",
+   "gold": "add_jump",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "    keys = pygame.key.get_pressed()\n    if keys[pygame.K_LEFT]:\n        player.x -= player.speed\n    if keys[pygame.K_RIGHT]:\n        player.x += player.speed\n    if keys[pygame.K_UP]:\n        player.y -= player.speed\n    if keys[pygame.K_DOWN]:\n        player.y += player.speed",
+    "new_text": "    keys = pygame.key.get_pressed()\n    if keys[pygame.K_LEFT]:\n        player.x -= player.speed\n    if keys[pygame.K_RIGHT]:\n        player.x += player.speed\n    if keys[pygame.K_UP]:\n        player.y -= player.speed\n    if keys[pygame.K_DOWN]:\n        player.y += player.speed\n    if keys[pygame.K_SPACE]:\n        player.y -= 20\n        player.jump = True"
+   },
+   "five_s": 17.0
+  },
+  {
+   "request": "the square goes off the screen and disapears!! make it stop at the edges",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player_rect.x += dx\n        player_rect.y += dy",
+    "new_text": "player_rect.x += dx\n        player_rect.y += dy\n        if player_rect.left < 0:\n            player_rect.left = 0\n        if player_rect.right > screen_width:\n            player_rect.right = screen_width\n        if player_rect.top < 0:\n            player_rect.top = 0\n        if player_rect.bottom > screen_height:\n            player_rect.bottom = screen_height"
+   },
+   "five_s": 14.3
+  },
+  {
+   "request": "add a timer that counts down from 60",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "    clock.tick(60)\n    # Game logic here\n    # Drawing code here",
+    "new_text": "    clock.tick(60)\n    # Game logic here\n    # Drawing code here\n\n    # Timer\n    timer = 60\n    timer_text = font.render(f\"Time: {timer}\", True, (255, 255, 255))"
+   },
+   "five_s": 21.3
+  },
+  {
+   "request": "i want 3 lives and you lose one every time an enemy touches you",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "lives = 3",
+    "new_text": "lives = 3\nplayer_lives = lives"
+   },
+   "five_s": 11.4
+  },
+  {
+   "request": "add a game over screen with a play again button",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "    pygame.display.flip()\n    clock.tick(60)",
+    "new_text": "    pygame.display.flip()\n    clock.tick(60)\n\n    # Game over screen\n    game_over = False\n    while not game_over:\n        for event in pygame.event.get():\n            if event.type == pygame.QUIT:\n                game_over = True\n            elif event.type == pygame.KEYDOWN:\n                if event.key == pygame.K_SPACE:\n                    # Restart game\n                    game_over = True\n                    # Reset game state here\n\n        # Draw game over screen\n        screen.fill((0, 0, 0))\n        font = pygame.font.Font(None, 36)\n        text = font.render('Game Over! Press Space to Play Again', True, (255, 255, 255))\n        screen.blit(text, (100, 200))\n"
+   },
+   "five_s": 26.1
+  },
+  {
+   "request": "turn it into a whole platformer like mario with 5 levels and a boss at the end and power ups",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player = pygame.Rect(300, 380, 50, 50)",
+    "new_text": "player = pygame.Rect(300, 380, 50, 50)\nplayer_speed = 5\nplayer_jump = 10\nplayer_jumping = False\nplayer_y = 380\nplayer_rect = pygame.Rect(300, 380, 50, 50)"
+   },
+   "five_s": 24.4
+  },
+  {
+   "request": "make it a snake game",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "    player = pygame.Rect(300, 200, 50, 50)\n    player_speed = 5",
+    "new_text": "    player = pygame.Rect(300, 200, 50, 50)\n    player_speed = 5\n\n    # Snake game variables\n    snake = [player]\n    snake_direction = 'RIGHT'\n    snake_speed = 10\n    food = pygame.Rect(400, 300, 10, 10)\n    score = 0"
+   },
+   "five_s": 17.1
+  },
+  {
+   "request": "make it spookier",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "    player = pygame.Rect(300, 400, 50, 50)\n    player_speed = 5",
+    "new_text": "    player = pygame.Rect(300, 400, 50, 50)\n    player_speed = 5\n\n    # Create a spooky background\n    background = pygame.Surface(screen.get_size())\n    background.fill((0, 0, 10))  # Dark blue\n    background.set_alpha(150)\n    screen.blit(background, (0, 0))"
+   },
+   "five_s": 29.4
+  },
+  {
+   "request": "its kinda boring make it more exciting",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "    player = pygame.Rect(300, 400, 50, 50)\n    player_speed = 5",
+    "new_text": "    player = pygame.Rect(300, 400, 50, 50)\n    player_speed = 5\n\n    # Add a moving obstacle\n    obstacle = pygame.Rect(100, 300, 50, 50)\n    obstacle_speed = 3"
+   },
+   "five_s": 15.8
+  },
+  {
+   "request": "can it feel like ur in space",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "game_object",
+   "five_ok": true,
+   "five_args": {
+    "name": "sky",
+    "drawing": "sky",
+    "size": [
+     640,
+     480
+    ],
+    "layer": "background"
+   },
+   "five_s": 11.6
+  },
+  {
+   "request": "make the player green and add a score and can the background be purple",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player = pygame.Rect(300, 400, 50, 50)",
+    "new_text": "player = pygame.Rect(300, 400, 50, 50)\nplayer_color = (0, 255, 0)"
+   },
+   "five_s": 27.6
+  },
+  {
+   "request": "add some walls i have to get around, put music in, and change the name to Maze Runner",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player = pygame.Rect(300, 300, 50, 50)",
+    "new_text": "player = pygame.Rect(300, 300, 50, 50)\n\n# Walls\nwalls = [\n    pygame.Rect(100, 100, 20, 400),\n    pygame.Rect(300, 100, 20, 400),\n    pygame.Rect(100, 300, 20, 400),\n    pygame.Rect(300, 300, 20, 400),\n    pygame.Rect(100, 100, 400, 20),\n    pygame.Rect(100, 300, 400, 20),\n    pygame.Rect(300, 100, 400, 20),\n    pygame.Rect(300, 300, 400, 20)\n]"
+   },
+   "five_s": 29.5
+  },
+  {
+   "request": "how does the speed work?",
+   "gold": "other",
+   "accept": [
+    "none"
+   ],
+   "five": "none",
+   "five_ok": true,
+   "five_args": null,
+   "five_s": 23.9
+  },
+  {
+   "request": "theyre too fast i keep dying lol",
+   "gold": "change_thing_speed",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player_speed = 5",
+    "new_text": "player_speed = 3"
+   },
+   "five_s": 11.4
+  },
+  {
+   "request": "lighter",
+   "gold": "change_player_colour",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player = pygame.Rect(300, 380, 50, 50)",
+    "new_text": "player = pygame.Rect(300, 380, 50, 50)\nplayer_color = (255, 200, 100)"
+   },
+   "five_s": 25.5
+  },
+  {
+   "request": "Make a game where a spaceship moves around and avoids asteroids.",
+   "gold": "make_avoid_game",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player = pygame.Rect(300, 200, 50, 50)",
+    "new_text": "player = pygame.Rect(300, 200, 50, 50)\nplayer_color = (255, 0, 0)"
+   },
+   "five_s": 12.8
+  },
+  {
+   "request": "Make the asteroids move faster.",
+   "gold": "change_thing_speed",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "asteroid_speed = 1",
+    "new_text": "asteroid_speed = 2"
+   },
+   "five_s": 20.4
+  },
+  {
+   "request": "Add a ball that bounces around the screen.",
+   "gold": "add_moving_thing",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "game_object",
+   "five_ok": true,
+   "five_args": {
+    "name": "ball",
+    "picture": "assets/eagle.png",
+    "size": [
+     32,
+     32
+    ],
+    "at": [
+     320,
+     240
+    ],
+    "moves": "bounce",
+    "speed": 2,
+    "layer": "things"
+   },
+   "five_s": 11.3
+  },
+  {
+   "request": "Make the square fall down the screen and start again at the top.",
+   "gold": "player_moves_itself",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "    player_rect.y += 1",
+    "new_text": "    player_rect.y += 1\n    if player_rect.y > height:\n        player_rect.y = 0"
+   },
+   "five_s": 12.8
+  },
+  {
+   "request": "Add a second square that slides left and right on its own.",
+   "gold": "add_moving_thing",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "    player = pygame.Rect(300, 400, 50, 50)\n    player_speed = 5",
+    "new_text": "    player = pygame.Rect(300, 400, 50, 50)\n    player_speed = 5\n\n    # Second square\n    second_square = pygame.Rect(200, 200, 50, 50)\n    second_square_speed = 3\n    second_square_direction = 1"
+   },
+   "five_s": 19.2
+  },
+  {
+   "request": "Make a game where you catch falling blocks.",
+   "gold": "make_catch_game",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player = pygame.Rect(300, 400, 50, 50)",
+    "new_text": "player = pygame.Rect(300, 400, 50, 50)\nplayer_speed = 5\nblock_speed = 3\nscore = 0\nfont = pygame.font.SysFont(None, 36)"
+   },
+   "five_s": 13.3
+  },
+  {
+   "request": "Add an enemy that chases the player.",
+   "gold": "add_enemy",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "    player = pygame.Rect(300, 400, 50, 50)\n    player_speed = 5",
+    "new_text": "    player = pygame.Rect(300, 400, 50, 50)\n    player_speed = 5\n\n    # Enemy\n    enemy = pygame.Rect(100, 100, 50, 50)\n    enemy_speed = 3"
+   },
+   "five_s": 14.4
+  },
+  {
+   "request": "Add a coin that you can collect for points.",
+   "gold": "add_collectible",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "game_object",
+   "five_ok": true,
+   "five_args": {
+    "name": "coin",
+    "picture": "assets/eagle.png",
+    "size": [
+     32,
+     32
+    ],
+    "at": [
+     400,
+     100
+    ],
+    "layer": "things",
+    "touch": "collect",
+    "remove": true
+   },
+   "five_s": 12.0
+  },
+  {
+   "request": "Add stars that drift down the background.",
+   "gold": "add_moving_thing",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "none",
+   "five_ok": false,
+   "five_args": null,
+   "five_s": 12.7
+  },
+  {
+   "request": "Add a score that goes up every second.",
+   "gold": "add_score",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "    clock.tick(60)\n    pygame.display.flip()",
+    "new_text": "    clock.tick(60)\n    pygame.display.flip()\n\n    # Update score\n    if current_time - last_score_time > 1000:\n        score += 1\n        last_score_time = current_time\n        print(f\"Score: {score}\")"
+   },
+   "five_s": 13.3
+  },
+  {
+   "request": "Make the player bigger.",
+   "gold": "change_player_size",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player = pygame.Rect(300, 400, 50, 50)",
+    "new_text": "player = pygame.Rect(300, 400, 75, 75)"
+   },
+   "five_s": 12.3
+  },
+  {
+   "request": "Change the background colour to dark blue.",
+   "gold": "change_background",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "screen = pygame.display.set_mode((640, 480))",
+    "new_text": "screen = pygame.display.set_mode((640, 480))\npygame.display.set_caption('Eagle Town')"
+   },
+   "five_s": 12.4
+  },
+  {
+   "request": "Call my game Space Rocks.",
+   "gold": "set_title",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player = pygame.Rect(300, 400, 50, 50)",
+    "new_text": "player = pygame.Rect(300, 400, 50, 50)\nplayer_image = pygame.image.load('assets/eagle.png')"
+   },
+   "five_s": 18.9
+  },
+  {
+   "request": "Make the player move faster.",
+   "gold": "change_player_speed",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player_speed = 5",
+    "new_text": "player_speed = 7"
+   },
+   "five_s": 11.1
+  },
+  {
+   "request": "Change the background to dark green.",
+   "gold": "change_background",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "screen.fill((255, 255, 255))",
+    "new_text": "screen.fill((0, 100, 0))"
+   },
+   "five_s": 17.9
+  },
+  {
+   "request": "Add a score in the top left corner.",
+   "gold": "add_score",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "    pygame.display.flip()\n",
+    "new_text": "    # Draw score\n    font = pygame.font.Font(None, 36)\n    text = font.render(f'Score: {score}', True, (255, 255, 255))\n    screen.blit(text, (10, 10))\n    pygame.display.flip()\n"
+   },
+   "five_s": 19.9
+  },
+  {
+   "request": "Now make it blue.",
+   "gold": "change_player_colour",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player = pygame.Rect(300, 380, 50, 50)",
+    "new_text": "player = pygame.Rect(300, 380, 50, 50)\nplayer_color = (0, 0, 255)"
+   },
+   "five_s": 19.3
+  },
+  {
+   "request": "Use this picture for my spaceship.",
+   "gold": "replace_player_sprite",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "game_object",
+   "five_ok": true,
+   "five_args": {
+    "name": "spaceship",
+    "picture": [
+     "assets/eagle.png"
+    ],
+    "at": [
+     320,
+     240
+    ],
+    "layer": "player"
+   },
+   "five_s": 11.3
+  },
+  {
+   "request": "add a moving asteroid",
+   "gold": "add_moving_thing",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "game_object",
+   "five_ok": true,
+   "five_args": {
+    "name": "asteroid",
+    "picture": [
+     "assets/eagle.png"
+    ],
+    "at": [
+     640,
+     0
+    ],
+    "moves": "left",
+    "speed": 2,
+    "layer": "things"
+   },
+   "five_s": 18.9
+  },
+  {
+   "request": "add movement",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "    player = pygame.Rect(300, 400, 50, 50)\n    player_speed = 5",
+    "new_text": "    player = pygame.Rect(300, 400, 50, 50)\n    player_speed = 5\n\n    # Movement\n    keys = pygame.key.get_pressed()\n    if keys[pygame.K_LEFT]:\n        player.x -= player_speed\n    if keys[pygame.K_RIGHT]:\n        player.x += player_speed\n    if keys[pygame.K_UP]:\n        player.y -= player_speed\n    if keys[pygame.K_DOWN]:\n        player.y += player_speed"
+   },
+   "five_s": 22.4
+  },
+  {
+   "request": "add score",
+   "gold": "add_score",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "    player = pygame.Rect(300, 400, 50, 50)\n    clock = pygame.time.Clock()\n    running = True",
+    "new_text": "    player = pygame.Rect(300, 400, 50, 50)\n    clock = pygame.time.Clock()\n    running = True\n    score = 0"
+   },
+   "five_s": 23.7
+  },
+  {
+   "request": "add collision",
+   "gold": "add_collision",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "    player_rect = pygame.Rect(100, 100, 50, 50)\n    player_speed = 5",
+    "new_text": "    player_rect = pygame.Rect(100, 100, 50, 50)\n    player_speed = 5\n\n    # Collision detection\n    enemy_rect = pygame.Rect(300, 200, 50, 50)\n    enemy_speed = 3"
+   },
+   "five_s": 18.7
+  },
+  {
+   "request": "create a simple spaceship game",
+   "gold": "make_avoid_game",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "import pygame\npygame.init()\n\n# Screen dimensions\nWIDTH, HEIGHT = 640, 480\nscreen = pygame.display.set_mode((WIDTH, HEIGHT))\npygame.display.set_caption(\"Eagle Town\")\n\n# Colors\nWHITE = (255, 255, 255)\nBLACK = (0, 0, 0)\n\n# Game clock\nclock = pygame.time.Clock()\n\n# Player settings\nPLAYER_SIZE = (40, 40)\nPLAYER_COLOR = (255, 165, 0)  # Orange\nPLAYER_SPEED = 5\n\n# Player rectangle\nplayer_rect = pygame.Rect(300, 400, *PLAYER_SIZE)\n\n# Game loop\nrunning = True\nwhile running:\n    for event in pygame.event.get():\n        if event.type == pygame.QUIT:\n            running = False\n\n    # Player movement\n    keys = pygame.key.get_pressed()\n    if keys[pygame.K_LEFT]:\n        player_rect.x -= PLAYER_SPEED\n    if keys[pygame.K_RIGHT]:\n        player_rect.x += PLAYER_SPEED\n    if keys[pygame.K_UP]:\n        player_rect.y -= PLAYER_SPEED\n    if keys[pygame.K_DOWN]:\n        player_rect.y += PLAYER_SPEED\n\n    # Drawing\n    screen.fill(BLACK)\n    pygame.draw.rect(screen, PLAYER_COLOR, player_rect)\n    pygame.display.flip()\n    clock.tick(60)\n\npygame.quit()",
+    "new_text": "import pygame\npygame.init()\n\n# Screen dimensions\nWIDTH, HEIGHT = 640, 480\nscreen = pygame.display.set_mode((WIDTH, HEIGHT))\npygame.display.set_caption(\"Eagle Town\")\n\n# Colors\nWHITE = (255, 255, 255)\nBLACK = (0, 0, 0)\n\n# Game clock\nclock = pygame.time.Clock()\n\n# Player settings\nPLAYER_SIZE = (40, 40)\nPLAYER_COLOR = (255, 165, 0)  # Orange\nPLAYER_SPEED = 5\n\n# Player rectangle\nplayer_rect = pygame.Rect(300, 400, *PLAYER_SIZE)\n\n# Game loop\nrunning = True\nwhile running:\n    for event in pygame.event.get():\n        if event.type == pygame.QUIT:\n            running = False\n\n    # Player movement\n    keys = pygame.key.get_pressed()\n    if keys[pygame.K_LEFT]:\n        player_rect.x -= PLAYER_SPEED\n    if keys[pygame.K_RIGHT]:\n        player_rect.x += PLAYER_SPEED\n    if keys[pygame.K_UP]:\n        player_rect.y -= PLAYER_SPEED\n    if keys[pygame.K_DOWN]:\n        player_rect.y += PLAYER_SPEED\n\n    # Drawing\n    screen.fill(BLACK)\n    pygame.draw.rect(screen, PLAYER_COLOR, player_rect)\n    pygame.display.flip()\n    clock.tick(60)\n\npygame.quit()"
+   },
+   "five_s": 45.7
+  },
+  {
+   "request": "Make this feel more mysterious.",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player = pygame.Rect(300, 400, 50, 50)",
+    "new_text": "player = pygame.Rect(300, 400, 50, 50)\nplayer_color = (30, 30, 50)"
+   },
+   "five_s": 20.4
+  },
+  {
+   "request": "Make the enemies scared of the player.",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "    player = pygame.Rect(300, 400, 50, 50)\n    player_speed = 5",
+    "new_text": "    player = pygame.Rect(300, 400, 50, 50)\n    player_speed = 5\n\n    # Create enemies\n    enemies = [pygame.Rect(100, 100, 50, 50), pygame.Rect(200, 150, 50, 50)]\n    enemy_speed = 2"
+   },
+   "five_s": 27.4
+  },
+  {
+   "request": "Turn this into something weird.",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "    player = pygame.Rect(300, 400, 50, 50)\n    player_speed = 5",
+    "new_text": "    player = pygame.Rect(300, 400, 50, 50)\n    player_speed = 5\n\n    # Weird player\n    player.color = (255, 0, 0)\n    player.shape = 'triangle'\n    player.size = [50, 50]\n    player.at = [300, 400]"
+   },
+   "five_s": 16.5
+  },
+  {
+   "request": "Make the game feel like you're lost inside an old television.",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "pygame.display.set_caption(\"Eagle Town\")",
+    "new_text": "pygame.display.set_caption(\"Eagle Town - Lost in Static\")"
+   },
+   "five_s": 12.0
+  },
+  {
+   "request": "make the asteroids red and bigger",
+   "gold": "change_thing_look",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "pygame.draw.rect(screen, (255, 165, 0), player)\n",
+    "new_text": "pygame.draw.rect(screen, (255, 0, 0), player, 0, 5)\n"
+   },
+   "five_s": 13.0
+  },
+  {
+   "request": "my guy moves like a snail lol can he go quicker",
+   "gold": "change_player_speed",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player_speed = 0.5",
+    "new_text": "player_speed = 1.0"
+   },
+   "five_s": 11.7
+  },
+  {
+   "request": "the square keeps going off the side of the screen and disapearing. can it stop at the edges",
+   "gold": "fix_problem",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player_rect.x += dx\n        player_rect.y += dy",
+    "new_text": "player_rect.x += dx\n        player_rect.y += dy\n        if player_rect.left < 0:\n            player_rect.left = 0\n        if player_rect.right > screen_width:\n            player_rect.right = screen_width\n        if player_rect.top < 0:\n            player_rect.top = 0\n        if player_rect.bottom > screen_height:\n            player_rect.bottom = screen_height"
+   },
+   "five_s": 15.0
+  },
+  {
+   "request": "rename the window thing at the top to Blob Quest",
+   "gold": "set_title",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "pygame.display.set_caption('Eagle Town')",
+    "new_text": "pygame.display.set_caption('Blob Quest')"
+   },
+   "five_s": 11.8
+  },
+  {
+   "request": "i want my guy to be the colour of a lime",
+   "gold": "change_player_colour",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player = pygame.Rect(300, 400, 50, 50)",
+    "new_text": "player = pygame.Rect(300, 400, 50, 50)\nplayer_color = (50, 205, 50)"
+   },
+   "five_s": 18.0
+  },
+  {
+   "request": "backround should be dark purple",
+   "gold": "change_background",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "screen.fill((255, 255, 255))",
+    "new_text": "screen.fill((64, 0, 128))"
+   },
+   "five_s": 24.0
+  },
+  {
+   "request": "make him smaller hes too chunky",
+   "gold": "change_player_size",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player = pygame.Rect(300, 200, 50, 50)",
+    "new_text": "player = pygame.Rect(300, 200, 30, 30)"
+   },
+   "five_s": 18.6
+  },
+  {
+   "request": "let me use wasd too not just the arrows",
+   "gold": "change_controls",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "keys = [pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN]",
+    "new_text": "keys = [pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN, pygame.K_a, pygame.K_s, pygame.K_w, pygame.K_d]"
+   },
+   "five_s": 13.3
+  },
+  {
+   "request": "put some gems around and when i grab one a counter goes up",
+   "gold": "add_collectible",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "game_object",
+   "five_ok": true,
+   "five_args": {
+    "name": "gem",
+    "picture": "assets/eagle.png",
+    "at": [
+     [
+      100,
+      100
+     ],
+     [
+      200,
+      150
+     ],
+     [
+      300,
+      200
+     ],
+     [
+      400,
+      250
+     ],
+     [
+      500,
+      300
+     ]
+    ],
+    "layer": "things",
+    "touch": "collect",
+    "count": 5
+   },
+   "five_s": 13.8
+  },
+  {
+   "request": "i want lava blocks and if you touch one you go back to the start",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "game_object",
+   "five_ok": true,
+   "five_args": {
+    "name": "lava",
+    "picture": [
+     "assets/eagle.png"
+    ],
+    "touch": "avoid",
+    "at": [
+     320,
+     400
+    ],
+    "size": [
+     128,
+     128
+    ],
+    "layer": "things"
+   },
+   "five_s": 12.6
+  },
+  {
+   "request": "space bar = jump. and he should fall back down like real gravity",
+   "gold": "add_jump",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "    if event.key == pygame.K_LEFT:\n        player.x -= 5\n    elif event.key == pygame.K_RIGHT:\n        player.x += 5",
+    "new_text": "    if event.key == pygame.K_LEFT:\n        player.x -= 5\n    elif event.key == pygame.K_RIGHT:\n        player.x += 5\n    elif event.key == pygame.K_SPACE:\n        player.vy = -10"
+   },
+   "five_s": 14.6
+  },
+  {
+   "request": "can my little brother play too on the same keyboard? he can be a diffrent colour",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player = pygame.Rect(300, 400, 50, 50)",
+    "new_text": "player = pygame.Rect(300, 400, 50, 50)\nplayer_color = (255, 0, 0)  # Red for the brother\nplayer2 = pygame.Rect(300, 400, 50, 50)\nplayer2_color = (0, 0, 255)  # Blue for the player"
+   },
+   "five_s": 28.7
+  },
+  {
+   "request": "add a 30 second timer and when its done it says TIME UP",
+   "gold": "add_game_rules",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "    clock.tick(60)\n    pygame.display.flip()",
+    "new_text": "    clock.tick(60)\n    pygame.display.flip()\n\n    # Timer logic\n    if timer > 0:\n        timer -= 1\n    else:\n        game_over = True\n        print(\"TIME UP\")"
+   },
+   "five_s": 27.5
+  },
+  {
+   "request": "i want to shoot little lasers out of the square when i press x",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "    keys = pygame.key.get_pressed()\n    if keys[pygame.K_LEFT]:\n        player.x -= player.speed\n    if keys[pygame.K_RIGHT]:\n        player.x += player.speed\n    if keys[pygame.K_UP]:\n        player.y -= player.speed\n    if keys[pygame.K_DOWN]:\n        player.y += player.speed",
+    "new_text": "    keys = pygame.key.get_pressed()\n    if keys[pygame.K_LEFT]:\n        player.x -= player.speed\n    if keys[pygame.K_RIGHT]:\n        player.x += player.speed\n    if keys[pygame.K_UP]:\n        player.y -= player.speed\n    if keys[pygame.K_DOWN]:\n        player.y += player.speed\n    if keys[pygame.K_x]:\n        lasers.append(Laser(player.x + player.size[0] // 2, player.y))"
+   },
+   "five_s": 37.8
+  },
+  {
+   "request": "make it a whole dungeon crawler with rooms and keys and a dragon boss at the end",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player = pygame.Rect(300, 380, 50, 50)",
+    "new_text": "player = pygame.Rect(300, 380, 50, 50)\nplayer_speed = 5\nplayer_color = (255, 165, 0)  # Orange\nplayer_layer = 'player'"
+   },
+   "five_s": 24.4
+  },
+  {
+   "request": "ok so me and my friend want a game where ur a little square and rocks fall from the sky and u have to dodge them and every one u dodge is a point and it gets faster and faster and if u get hit its game over and it shows ur score and a play again button",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player = pygame.Rect(300, 400, 50, 50)",
+    "new_text": "player = pygame.Rect(300, 400, 50, 50)\nrock_speed = 5\nscore = 0\nfont = pygame.font.SysFont(None, 36)\nrock_timer = 0"
+   },
+   "five_s": 30.3
+  },
+  {
+   "request": "its kinda boring",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "    player = pygame.Rect(300, 400, 50, 50)",
+    "new_text": "    player = pygame.Rect(300, 400, 50, 50)\n    eagle = pygame.image.load('assets/eagle.png').convert_alpha()"
+   },
+   "five_s": 13.7
+  },
+  {
+   "request": "make it feel more spooky and mysterious idk",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "game_object",
+   "five_ok": true,
+   "five_args": {
+    "name": "sky",
+    "picture": [
+     "assets/eagle.png"
+    ],
+    "layer": "background",
+    "size": [
+     640,
+     480
+    ],
+    "at": [
+     0,
+     0
+    ]
+   },
+   "five_s": 12.2
+  },
+  {
+   "request": "i dont know what i want it to be yet",
+   "gold": "other",
+   "accept": [
+    "none"
+   ],
+   "five": "none",
+   "five_ok": true,
+   "five_args": null,
+   "five_s": 11.5
+  },
+  {
+   "request": "change the square to green, give me a score in the corner, and make the window bigger",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player = pygame.Rect(300, 380, 50, 50)",
+    "new_text": "player = pygame.Rect(300, 380, 50, 50)\nplayer_color = (0, 255, 0)"
+   },
+   "five_s": 18.3
+  },
+  {
+   "request": "add a start screen and also make my guy a cat and can there be music",
+   "gold": "other",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "import pygame\npygame.init()\n\n# Set up\nWIDTH, HEIGHT = 640, 480\nscreen = pygame.display.set_mode((WIDTH, HEIGHT))\npygame.display.set_caption('Eagle Town')\n\n# Colors\nWHITE = (255, 255, 255)\nBLACK = (0, 0, 0)\n\n# Game loop\nrunning = True\nwhile running:\n    for event in pygame.event.get():\n        if event.type == pygame.QUIT:\n            running = False\n\n    screen.fill(WHITE)\n    pygame.display.flip()\n\npygame.quit()",
+    "new_text": "import pygame\npygame.init()\n\n# Set up\nWIDTH, HEIGHT = 640, 480\nscreen = pygame.display.set_mode((WIDTH, HEIGHT))\npygame.display.set_caption('Eagle Town')\n\n# Colors\nWHITE = (255, 255, 255)\nBLACK = (0, 0, 0)\n\n# Game loop\nrunning = True\nwhile running:\n    for event in pygame.event.get():\n        if event.type == pygame.QUIT:\n            running = False\n\n    screen.fill(WHITE)\n    pygame.display.flip()\n\npygame.quit()"
+   },
+   "five_s": 48.0
+  },
+  {
+   "request": "what does PLAYER_SPEED even do",
+   "gold": "other",
+   "accept": [
+    "none"
+   ],
+   "five": "read_file",
+   "five_ok": false,
+   "five_args": {
+    "path": "src/game.py"
+   },
+   "five_s": 19.4
+  },
+  {
+   "request": "how does it know when im pressing the arrow keys?",
+   "gold": "other",
+   "accept": [
+    "none"
+   ],
+   "five": "none",
+   "five_ok": true,
+   "five_args": null,
+   "five_s": 14.6
+  },
+  {
+   "request": "theyre way too fast i die in like 2 seconds",
+   "gold": "change_thing_speed",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player_speed = 5",
+    "new_text": "player_speed = 2"
+   },
+   "five_s": 11.7
+  },
+  {
+   "request": "nah undo that i liked orange better",
+   "gold": "change_player_colour",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player = pygame.Rect(300, 380, 50, 50)",
+    "new_text": "player = pygame.Rect(300, 380, 50, 50)"
+   },
+   "five_s": 13.1
+  },
+  {
+   "request": "Use my eagle picture as the player.",
+   "gold": "graphics",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player = pygame.Rect(300, 400, 50, 50)",
+    "new_text": "player = pygame.Rect(300, 400, 128, 128)\nplayer_image = pygame.image.load('assets/eagle.png')"
+   },
+   "five_s": 13.7
+  },
+  {
+   "request": "Use this image for the player.",
+   "gold": "graphics",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player = pygame.Rect(300, 400, 50, 50)",
+    "new_text": "player = pygame.Rect(300, 400, 128, 128)\nplayer_image = pygame.image.load('assets/eagle.png')"
+   },
+   "five_s": 13.7
+  },
+  {
+   "request": "Make the cars look like cars.",
+   "gold": "graphics",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "game_object",
+   "five_ok": true,
+   "five_args": {
+    "name": "cars",
+    "picture": [
+     "assets/eagle.png"
+    ],
+    "drawing": "vehicle",
+    "size": [
+     64,
+     32
+    ],
+    "at": [
+     [
+      100,
+      100
+     ],
+     [
+      150,
+      100
+     ],
+     [
+      200,
+      100
+     ]
+    ],
+    "layer": "things",
+    "speed": 1.5,
+    "moves": "left",
+    "touch": "avoid"
+   },
+   "five_s": 14.3
+  },
+  {
+   "request": "Build out the background into a little town with a sky and road. Make it feel like a clean modern mobile game.",
+   "gold": "graphics",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "game_object",
+   "five_ok": true,
+   "five_args": {
+    "name": "sky",
+    "drawing": "sky",
+    "size": [
+     640,
+     480
+    ],
+    "layer": "background"
+   },
+   "five_s": 17.0
+  },
+  {
+   "request": "Add three cars to the road.",
+   "gold": "graphics",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "game_object",
+   "five_ok": true,
+   "five_args": {
+    "name": "car",
+    "picture": [
+     "assets/eagle.png"
+    ],
+    "at": [
+     [
+      100,
+      400
+     ],
+     [
+      200,
+      400
+     ],
+     [
+      300,
+      400
+     ]
+    ],
+    "layer": "things",
+    "speed": 1,
+    "moves": "left",
+    "touch": "avoid"
+   },
+   "five_s": 13.5
+  },
+  {
+   "request": "Add buildings and clouds in the background.",
+   "gold": "graphics",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "game_object",
+   "five_ok": true,
+   "five_args": {
+    "name": "sky",
+    "drawing": "sky",
+    "size": [
+     640,
+     480
+    ],
+    "at": [
+     0,
+     0
+    ],
+    "layer": "background"
+   },
+   "five_s": 21.8
+  },
+  {
+   "request": "Put coins along the road.",
+   "gold": "graphics",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "game_object",
+   "five_ok": true,
+   "five_args": {
+    "name": "coins",
+    "picture": "assets/eagle.png",
+    "size": [
+     32,
+     32
+    ],
+    "at": [
+     [
+      100,
+      400
+     ],
+     [
+      150,
+      400
+     ],
+     [
+      200,
+      400
+     ],
+     [
+      250,
+      400
+     ],
+     [
+      300,
+      400
+     ]
+    ],
+    "layer": "things",
+    "touch": "collect",
+    "count": 5
+   },
+   "five_s": 24.2
+  },
+  {
+   "request": "Make everything look more colorful and friendly.",
+   "gold": "graphics",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "pygame.display.set_caption(\"Eagle Town\")",
+    "new_text": "pygame.display.set_caption(\"Eagle Town\")\npygame.display.set_icon(pygame.image.load('assets/eagle.png'))"
+   },
+   "five_s": 23.7
+  },
+  {
+   "request": "Make it look like a colorful little town with the eagle flying above the road.",
+   "gold": "graphics",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "game_object",
+   "five_ok": true,
+   "five_args": {
+    "name": "sky",
+    "drawing": "sky",
+    "size": [
+     640,
+     480
+    ],
+    "layer": "background"
+   },
+   "five_s": 37.3
+  },
+  {
+   "request": "make the eagle bigger",
+   "gold": "graphics",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player = pygame.Rect(300, 400, 32, 32)",
+    "new_text": "player = pygame.Rect(300, 400, 64, 64)"
+   },
+   "five_s": 25.1
+  },
+  {
+   "request": "put a sign that says Trent Motors",
+   "gold": "graphics",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "game_object",
+   "five_ok": true,
+   "five_args": {
+    "name": "sign",
+    "text": "Trent Motors",
+    "at": [
+     320,
+     20
+    ],
+    "layer": "ui"
+   },
+   "five_s": 20.3
+  },
+  {
+   "request": "add some trees",
+   "gold": "graphics",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "game_object",
+   "five_ok": true,
+   "five_args": {
+    "name": "trees",
+    "drawing": "tree",
+    "at": [
+     [
+      100,
+      400
+     ],
+     [
+      200,
+      400
+     ],
+     [
+      300,
+      400
+     ],
+     [
+      400,
+      400
+     ],
+     [
+      500,
+      400
+     ]
+    ],
+    "layer": "scenery"
+   },
+   "five_s": 23.1
+  },
+  {
+   "request": "make the eagle flap its wings",
+   "gold": "graphics",
+   "accept": [
+    "edit_file",
+    "game_object",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "    player = pygame.Rect(300, 400, 50, 50)",
+    "new_text": "    player = pygame.Rect(300, 400, 50, 50)\n    player_image = pygame.image.load('assets/eagle.png')"
+   },
+   "five_s": 25.1
+  },
+  {
+   "request": "when I press space the eagle should drop an egg",
+   "gold": "graphics",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "    if event.key == pygame.K_SPACE:\n        player.y -= 10",
+    "new_text": "    if event.key == pygame.K_SPACE:\n        if player.name == 'eagle':\n            egg = game_object(\n                name='egg',\n                picture=[assets.eagle_egg.png],\n                at=[player.x + 16, player.y],\n                layer='player',\n                remove=True\n            )"
+   },
+   "five_s": 28.5
+  },
+  {
+   "request": "make the eagle go faster",
+   "gold": "graphics",
+   "accept": [
+    "edit_file",
+    "read_file",
+    "write_file"
+   ],
+   "five": "edit_file",
+   "five_ok": true,
+   "five_args": {
+    "path": "src/game.py",
+    "old_text": "player_speed = 5",
+    "new_text": "player_speed = 8"
+   },
+   "five_s": 23.0
+  },
+  {
+   "request": "what does the eagle do?",
+   "gold": "graphics",
+   "accept": [
+    "none"
+   ],
+   "five": "none",
+   "five_ok": true,
+   "five_args": null,
+   "five_s": 12.6
+  }
+ ]
+}

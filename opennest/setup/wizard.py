@@ -464,6 +464,9 @@ class LocalAIStep(Step):
             for entry in router.local_models()
             if entry.info.id in self._verdicts
             and self._verdicts[entry.info.id].usable
+            # A replaced model is offered only where it is installed already: it keeps
+            # working, and is never something to download.
+            and (entry.offered_for_install or self._verdicts[entry.info.id].installed)
         ]
         for entry, verdict in compatibility.sort_for_display(pairs):
             note = "Already installed" if verdict.installed else verdict.label
@@ -479,9 +482,15 @@ class LocalAIStep(Step):
         # A model this parent already chose beats a fresh suggestion: they are running
         # setup again, not starting over.
         preferred = self.state.preferred_model
-        wanted = preferred if preferred and self._picker.findData(preferred) >= 0 else (
-            suggested[0].info.id if suggested else None
-        )
+        try:
+            # A replaced model the parent chose before is not chosen for them again: it
+            # stays in the list while it is installed, and the suggestion is the new one.
+            replaced = bool(preferred) and not router.get_entry(preferred).offered_for_install
+        except ProviderError:
+            replaced = False
+        wanted = preferred if preferred and not replaced and \
+            self._picker.findData(preferred) >= 0 else (
+                suggested[0].info.id if suggested else None)
         index = self._picker.findData(wanted) if wanted else -1
         self._picker.setCurrentIndex(max(0, index))
 
@@ -526,10 +535,15 @@ class LocalAIStep(Step):
             f"About {entry.download_gb:.1f} GB to download."
         )
         untested = compatibility.untested_note(entry, installed=installed)
-        self._detail.setText(
-            " ".join(part for part in (f"{entry.info.description}.", size, untested)
-                     if part)
-        )
+        about = " ".join(part for part in (f"{entry.info.description}.", size, untested)
+                         if part)
+        if entry.good_for:
+            # The model it runs, and what it is good for with a tick each -- the owner's
+            # layout for the two Gary models (SPIKES.md section 32).
+            model = (entry.model_id or "").rsplit("/", 1)[-1]
+            ticks = "   ".join(f"✓ {word}" for word in entry.good_for)
+            about = "\n".join(part for part in (model, ticks, about) if part)
+        self._detail.setText(about)
         self._fit.setText(verdict.reason if verdict else "")
         self._install.setText("Check It Works" if installed else "Install")
 
@@ -734,7 +748,9 @@ class LocalAIStep(Step):
             self.state.preferred_model = entry.info.id
             if entry.info.id not in self.state.installed_models:
                 self.state.installed_models.append(entry.info.id)
-            self._status.setText("\n".join(result.lines()))
+            # A vision model that works but cannot be shown a picture says so here.
+            self._status.setText("\n\n".join(part for part in (
+                "\n".join(result.lines()), result.message) if part))
             # It is on disk now, so the page should stop offering to download it. The
             # verdict is recomputed rather than patched, because "installed" also
             # changes whether free disk is checked at all.

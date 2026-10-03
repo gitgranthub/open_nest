@@ -50,7 +50,7 @@ from pathlib import Path
 
 from opennest import paths
 from opennest.ai import router
-from opennest.ai.provider import Message, ProviderError, Settings
+from opennest.ai.provider import Message, ProviderError, Settings, can_send_images
 
 #: What the verification step asks the model to say (section 35A, "Model verification").
 #: Nothing checks the answer against this -- see :func:`verify` for why. It is worth
@@ -178,18 +178,25 @@ class VerificationResult:
     inference_completed: bool = False
     reply: str = ""
     message: str = ""
+    #: For a vision model only: whether it named the colour of a picture it was shown --
+    #: proof that the pixels reach it (SPIKES.md section 32). None for a text model.
+    sees_pictures: bool | None = None
 
     @property
     def ok(self) -> bool:
         return self.engine_loaded and self.model_loaded and self.inference_completed
 
     def lines(self) -> tuple[str, ...]:
-        """The three ticks section 35A shows under the model name."""
-        return (
+        """The three ticks section 35A shows under the model name, and a fourth for a
+        model that should be able to see."""
+        ticks = (
             _tick(self.engine_loaded, "Installed"),
             _tick(self.model_loaded, "Loaded successfully"),
             _tick(self.inference_completed, "Test response received"),
         )
+        if self.sees_pictures is None:
+            return ticks
+        return (*ticks, _tick(self.sees_pictures, "Sees pictures"))
 
 
 # --------------------------------------------------------------------- what is installed
@@ -538,9 +545,48 @@ def verify(
             engine_loaded=True, model_loaded=True,
             message=f"{entry.info.name} loaded but answered with nothing.",
         )
+    sees = _sees_pictures(provider) if can_send_images(entry.info) else None
     return VerificationResult(
         engine_loaded=True, model_loaded=True, inference_completed=True, reply=reply,
+        sees_pictures=sees,
+        message="" if sees is not False else (
+            f"{entry.info.name} works, but could not be shown a picture, so it will "
+            f"not see the pictures added to a project. Running Setup again "
+            f"reinstalls the part that shows it pictures."),
     )
+
+
+#: The picture the verification shows a vision model: one colour, so its answer can be
+#: checked without trusting anything it says about shapes. A model that never received
+#: the pixels cannot know it -- measured, the same weights without the vision engine
+#: invented a picture of "Gary, in a suit, holding a coffee cup".
+VISION_CHECK_COLOUR = (220, 30, 30)
+VISION_CHECK_WORD = "red"
+VISION_CHECK_PROMPT = "What colour is this picture? Answer with one word."
+
+
+def _sees_pictures(provider) -> bool:
+    """Show the model a plain red picture and see whether it says red."""
+    if not getattr(provider, "sees_images", False):
+        return False
+    import tempfile
+
+    try:
+        from PIL import Image
+    except ImportError:
+        return False
+    with tempfile.TemporaryDirectory(prefix="opennest-vision-") as folder:
+        path = Path(folder) / "check.png"
+        Image.new("RGB", (96, 96), VISION_CHECK_COLOUR).save(path)
+        try:
+            for _ in provider.chat(
+                    [Message(role="user", content=VISION_CHECK_PROMPT, images=(str(path),))],
+                    settings=Settings(temperature=0.0, max_tokens=VERIFICATION_MAX_TOKENS)):
+                pass
+            answer = provider.finish().text.lower()
+        except Exception:  # noqa: BLE001 - reported as "does not see", never raised
+            return False
+        return str(path) in getattr(provider, "last_shown", ()) and VISION_CHECK_WORD in answer
 
 
 # --------------------------------------------------------------------- internals

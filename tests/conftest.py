@@ -126,18 +126,19 @@ def configured_credentials():
 
 @pytest.fixture
 def can_send_images(monkeypatch):
-    """Pretend a provider can put image bytes in front of a model.
+    """Pretend the cloud providers put image bytes in front of a model too.
 
-    None can, today (``provider.IMAGE_INPUT_IMPLEMENTED``). Tests of the *capability
-    rule* -- "a model that can see should not be told it cannot" -- need the
-    precondition to hold, and those rules are correct and worth keeping tested. Tests of
-    today's behaviour must not use this fixture.
+    Only the local vision engine does (``provider.IMAGE_INPUT_PROVIDERS``). Tests of the
+    *capability rule* with a cloud vision model -- "a model that can see should not be
+    told it cannot" -- need the precondition to hold, and those rules are worth keeping
+    tested. Tests of today's behaviour must not use this fixture.
 
-    Delete it in the change that implements image transmission, along with the constant.
+    Delete it in the change that makes a cloud provider send pixels.
     """
     from opennest.ai import provider as provider_module
 
-    monkeypatch.setattr(provider_module, "IMAGE_INPUT_IMPLEMENTED", True)
+    monkeypatch.setattr(provider_module, "IMAGE_INPUT_PROVIDERS",
+                        frozenset({"mlx", "anthropic", "openai"}))
 
 
 @pytest.fixture

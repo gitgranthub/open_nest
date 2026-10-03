@@ -454,6 +454,20 @@ class Toolbox:
             )
         return ToolResult(True, text)
 
+    def _in_file(self, relative: str, text: str) -> bool:
+        try:
+            path = resolve_in_project(self.project.directory, relative)
+            return text in path.read_text(encoding="utf-8")
+        except (PathNotAllowed, OSError, UnicodeDecodeError):
+            return False
+
+    def _instead_of_a_whole_file(self) -> str:
+        """What to do instead of writing a whole file over -- in a game with the scene."""
+        if "game_object" not in self.allowed:
+            return ""
+        return (" To add things to the game (a maze, a monster, coins), call game_object, "
+                "one call per thing; to change a rule, edit_file on the real lines.")
+
     def _write_file(self, args: dict) -> ToolResult:
         """Create a new file. Existing files must be changed with edit_file.
 
@@ -473,7 +487,7 @@ class Toolbox:
         if path.exists():
             raise ToolError(
                 f"{relative!r} already exists. Use edit_file to change part of it, "
-                f"giving the exact text to replace.",
+                f"giving the exact text to replace." + self._instead_of_a_whole_file(),
                 reason="exists",
             )
         # Same hazard as edit_file's new_text, and worse here: a whole new file written
@@ -508,6 +522,17 @@ class Toolbox:
         relative = _require(args, "path")
         old = args.get("old_text")
         new = args.get("new_text")
+        if old and new is None and not self._in_file(relative, str(old)):
+            # A whole game it imagined, as old_text, and nothing to put in its place --
+            # meaning "make the file this". Measured on the maze replay (SPIKES.md section
+            # 32): Gary Fast sent the same such call five times in one turn against the
+            # shorter refusal below and changed nothing; told what it was and what to use
+            # instead, it called game_object and built the maze, two runs of two.
+            raise ToolError(
+                f"That edit has no new_text, and its old_text is not in {relative}, so "
+                f"nothing changed. edit_file swaps a few lines copied exactly from the file "
+                f"for new ones -- it does not replace the whole file."
+                + self._instead_of_a_whole_file(), reason="missing_argument")
         if old is None or new is None:
             raise ToolError("edit_file needs a path, the exact old_text, and the new_text.",
                             reason="missing_argument")

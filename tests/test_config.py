@@ -410,7 +410,7 @@ def test_the_picker_can_be_filtered_to_models_that_would_work() -> None:
     from opennest.projects.profiles import get_profile
 
     usable = {e.info.id for e in models_for_project(get_profile("games"))}
-    assert "qwen3-4b-instruct" in usable
+    assert "qwen3-vl-4b-instruct" in usable
     assert "gemma2-2b" not in usable
     assert "claude-sonnet" not in usable          # cloud is off by default
     assert "claude-sonnet" in {

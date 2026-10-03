@@ -816,3 +816,31 @@ maze.
 owner's maze thread replayed with the 4B and 8B -- both lay the maze out on the first
 message, with the monster at its end. The Phase 12 app walk was not re-run for this half
 (41/41 after the test04 half).
+
+## 13. Gary sees the child's pictures -- the vision models
+
+The next lead after the maze pass (HANDOFF "What is next", 3): a local vision model, through
+the install system, so Gary knows what a child's picture shows. The owner named the two
+choices -- **Gary Fast** (Qwen3-VL-4B-Instruct-4bit) and **Gary Smart**
+(Qwen3-VL-8B-Instruct-4bit) -- and ruled, once they measured better, that they replace
+every earlier local model at setup and install, with the Fast Path classifier on Gary's own
+model. SPIKES §32 has every number; `benchmarks/vision/` the probe.
+
+**What changed:**
+
+| | |
+|---|---|
+| the engine | `mlx-vlm` 0.7.4, pinned, installed `--no-deps` (`requirements/vision.txt`); `MLXProvider` loads a vision model with its vision half, shows the pictures on the latest message that carries any (see-through laid on white, 384x384), scores the Fast Path on the language half with explicit positions, and falls back to a text model -- `sees_images` False -- without the engine |
+| seeing | `assets.look`: a picture looked at once, on import (a worker; "Gary is looking at the picture.") or before the next turn, outside the turn's budget; what it shows kept by SHA-256 in `.opennest/looked.json`, put in every prompt as one line and said to the child. `can_interpret` goes by that record, never by the model in use. A picture attached to a message also travels as pixels with it |
+| honesty | `IMAGE_INPUT_IMPLEMENTED` became `IMAGE_INPUT_PROVIDERS = {"mlx"}`; "NOBODY HAS LOOKED" and the invention check cover every picture not looked at; "I can see" allowed only with pixels in the message or about a picture that was looked at |
+| the catalogue | Gary Fast (default, recommended, 8 GB) and Gary Smart (16 GB), verified, with `good_for` ticks; every older local entry `deprecated` -- runs where installed, never suggested or downloaded (`offered_for_install`) |
+| setup and the app | the wizard offers the two Gary models with the model name and ticks, and its verification shows a vision model a red picture; the health check reports the vision engine; the post-pull migration reinstalls the AI manifests; the app starts the model setup chose (`router.startup_model_id`) and moves to Gary Fast once it is there; Settings offers removal, not download, of a replaced model; the demo launcher checks for the default through the app's lookup |
+| words | a line said twice in one reply is said once; a whole imagined file sent as `edit_file` or `write_file` is told what to use instead (the maze replay's loop) |
+
+**Measured** (SPIKES §32C): tool choice 79 of 94 (Gary Fast) and 83 (Gary Smart) against
+Qwen3 4B's 67; the Fast Path on Gary Fast held-out 15 right / 3 wrong recipe edits (18 / 0),
+dev 49 / 2 (48 / 2), on Gary Smart held-out 11 / 0; Qwen3 8B's tool choice is 92, above Gary
+Smart's 83 -- told, the owner kept the two Gary models; the setup wizard walk 53/53 and the
+Phase 12 app walk 42/42 under cocoa, on Gary Fast; looks
+about half a second; peak 3.64 GB (Gary Fast) and 6.34 GB (Gary Smart) on 48 GB. **Not
+measured: an 8 GB Mac.**

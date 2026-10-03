@@ -32,7 +32,7 @@ Re-measure on 8 GB hardware before V1.
 
 | Decision | Resolved to |
 |---|---|
-| **D2** — default local model | `mlx-community/Qwen3-4B-Instruct-2507-4bit`, pinned to `50d4275` |
+| **D2** — default local model | `mlx-community/Qwen3-4B-Instruct-2507-4bit`, pinned to `50d4275` -- **since section 32, Gary Fast: `mlx-community/Qwen3-VL-4B-Instruct-4bit` @ `2fd8dac`**, which also sees pictures |
 | **D3** — tool-call format | Native `<tool_call>` chat template, temperature 0, **four** tools, file state injected |
 
 Both risks are retired. The agent design can proceed.
@@ -4870,3 +4870,250 @@ superseded; the 4B's `before` is the code as the owner ran it).
 drawing, PLAYER_SPEED edits) and, told "you didn't create a real maze" about a game that
 has one, offers to build it; the 4B's replies are short and end with a suggested next
 question; neither turns the orange square into anything but itself.
+
+## 32. A model that sees the child's pictures -- Gary Fast and Gary Smart
+
+Every picture fix in sections 30 and 31 worked around a model that saw only filenames.
+This pass adds a local vision model through the install system and measures it against
+the Qwen3 models it might replace: **Qwen3-VL-4B-Instruct** ("Gary Fast") and
+**Qwen3-VL-8B-Instruct** ("Gary Smart"), the owner's names, both
+`mlx-community/*-4bit` conversions pinned to a commit (`2fd8dac`, `defcdea`), Apache-2.0
+upstream. Measured, they were the better fit, and the owner's ruling followed: **they are
+now the only local models setup offers**; every earlier local entry is `deprecated` --
+it keeps working where it is installed, is never suggested or downloaded again -- and
+the Fast Path classifier runs on whichever of them is Gary (the owner chose that over
+keeping Qwen3 4B resident beside it; numbers below).
+
+`benchmarks/vision/look.py` is the probe; `benchmarks/graphics/tool_choice.py --model=`,
+`benchmarks/fastpath/bench_decide.py` and `benchmarks/owner_test04/replay.py` the
+comparisons. Everything offline, through the shipped provider and `assets.look`.
+
+### 32A. The engine, and what it would have pulled in
+
+`mlx-lm` can read a Qwen3-VL checkpoint's **language half** only (it drops the vision
+tower). Showing it a picture needs `mlx-vlm`, whose 0.7.4 wheel is 3.1 MB and MIT -- and
+declares a web server (fastapi, starlette, uvicorn, websockets, python-multipart), an
+audio stack (mlx-audio, miniaudio, sounddevice, scipy), OpenCV (48 MB) and llguidance:
+roughly 250 MB and a microphone library on a child's Mac. **Measured: loading Qwen3-VL,
+showing it a picture, generating and scoring import none of them** (every import
+resolved against what `macos-apple-silicon.txt`, `base.txt` and `projects.txt` already
+install). So `requirements/vision.txt` pins `mlx-vlm==0.7.4` and is installed with
+`--no-deps` -- by the bootstrap, `scripts/fetch.sh deps` and the post-pull migration
+alike (`bootstrap/environment.NO_DEPS_MANIFESTS`) -- and the floors it would have
+enforced (mlx 0.32.2, transformers 5.14) are stated in `macos-apple-silicon.txt`
+instead. `pip check` complains about the missing extras; that is the design.
+
+Two things the engine gets wrong left to itself, both on the owner's own pictures:
+
+- **See-through pixels became black.** It converts to plain colour, and a transparent
+  pixel's colour is usually black: the Open Nest eagle (a dark bird on nothing) was "a
+  completely black image with no discernible content". `mlx_provider.prepare_picture`
+  lays a see-through picture on white first: "a black silhouette of a flying eagle".
+- **Size.** Qwen3-VL makes one token per 32x32 square and its processor allows 16
+  million pixels: the owner's 1278x1230 monster would have been ~1,500 tokens of a
+  16,000-token window. At 384x384 it is ~170 tokens and described as well as at 512x512
+  (~285): "a cheerful, fluffy blue monster with purple spots and antennae" either way.
+
+And one the provider had to handle: the vision model's language half places tokens in
+three dimensions (multimodal rotary positions) and, left alone, works them out from
+state the last generation left on the model -- which may have held a picture. Text has
+all three equal to the token's place, so the Fast Path's scoring passes them explicitly
+(`MLXProvider._forward`). Scores through the vision engine match `mlx-lm`'s text-only
+reading of the same weights to 0.25 nats (bf16).
+
+The chat templates: Qwen3-VL 4B and 8B render a tool conversation **byte for byte** as
+Qwen3 4B Instruct's does, so every difference below is the weights.
+
+### 32B. Looking, and the honesty rules (section 12, kept)
+
+`provider.IMAGE_INPUT_IMPLEMENTED = False` became `IMAGE_INPUT_PROVIDERS = {"mlx"}`: the
+local provider sends pixels, the cloud ones still do not. But that only says a model
+*could* be shown a picture. **A picture counts as seen only when its pixels reached a
+model and the answer is recorded** -- `assets.look`, `.opennest/looked.json`, keyed by
+the file's SHA-256 so a replaced picture is unread again. `can_interpret` goes by
+`asset.seen` now, never by the model in use, so the "NOBODY HAS LOOKED" block and
+`invented_description` stay armed for every picture nothing has looked at -- including
+with a vision model selected, which was the Phase 6 hole.
+
+**Look once, keep it in words.** A picture is looked at when it comes into the project
+(the Workbench, on a worker thread: "Gary is looking at the picture.") and before any
+turn for one that came in another way -- one short local call per picture, ever, outside
+the turn's call budget (the owner's six trees would have been half of a message's
+twelve). What was seen goes into every prompt as one line ("you have looked at it: it
+shows ..."), about fifteen tokens, for whichever model is Gary afterwards. A picture
+attached to a message also travels as pixels with that message, so "what is this?" is
+answered by looking; the settled history keeps the words, not the pixels. The child is
+told what was seen: "blue_monster.png is in your project. It shows a happy, fluffy blue
+monster with purple spots and big eyes."
+
+"I can see ..." is still corrected unless pixels came with the message, or the sentence
+is about a picture that was looked at ("I can see your monster picture has purple
+spots" is true; "I see the monster is missing" is about the screen and is not).
+Setup's verification shows a vision model a plain red picture and checks it says red
+(`downloader._sees_pictures`, "✓ Sees pictures").
+
+**Why the checks stay until the pixels arrive**, measured: the same Qwen3-VL 4B weights
+loaded *without* the vision engine (a text model, as a broken install would leave it)
+and asked about the eagle answered once "You've got a picture of me, Gary, in a suit,
+holding a coffee cup and smiling" and once, with a longer system prompt, "I can't see
+your picture". A blind model sometimes invents; `sees_images` is False there and nothing
+is recorded as seen.
+
+### 32C. The measurements
+
+**Looking** (`benchmarks/vision/results/look_{vl4b,vl8b}.json`, 48 GB M4 Pro):
+
+| | Gary Fast (VL 4B) | Gary Smart (VL 8B) |
+|---|---|---|
+| download | 3.11 GB, 131 s | 5.78 GB, 229 s |
+| load | 1.0 s | 1.1 s |
+| a look | 0.47-0.58 s, 105-185 tokens | 0.75-1.07 s |
+| the colour check | red | red |
+| peak memory while looking | 3.64 GB | 6.34 GB |
+| the owner's monster | "a happy, fluffy blue monster with purple spots and big eyes" | "a happy blue fuzzy monster with purple spots" |
+| tree_01 | "a tall, green pine tree with a brown trunk" | "a tall pine tree with green and blue leaves and a brown trunk" |
+
+Gary Fast is 0.8 GB bigger on disk than Qwen3 4B for the same language model (its vision
+half is kept at full precision) and peaks 1 GB higher than Qwen3 4B's measured 2.61 GB
+resident. It is rated for 8 GB like the model it replaces; **an 8 GB Mac is still
+unmeasured**.
+
+**Tool choice**, the 94 Games requests, first move only, the current prompt and five
+tools, the eagle picture looked at for the vision models
+(`benchmarks/graphics/results/tool_choice_vl4b_five.json` at the 700-token cap the
+committed results used, and `tool_choice_vl4b.json` uncapped -- the same 79):
+
+| | acceptable | no tool | code sent to game_object | question given a tool | time, median |
+|---|---:|---:|---:|---:|---:|
+| Qwen3 4B (`tool_choice_4`) | 67 | 16 | 10 | 2 | 19.8 s |
+| **Gary Fast** | **79** | 5 | 6 | 4 | 7.6 s |
+| **Gary Smart** (`tool_choice_vl8b_five`) | **83** | 10 | 0 | 1 | 10.6 s |
+| Qwen3 8B (`tool_choice_q8b_five`) | **92** | 1 | 0 | 1 | 17.0 s |
+
+Seventeen requests better, five worse. Better: the player's colour and speed, titles,
+score, movement, "stop at the edges", "make it spookier", "its kinda boring", the second
+player, "nah undo that". Worse: two three-part requests and "catch falling blocks" given
+no tool, and two questions ("i dont know what i want it to be yet", "how does it know
+when im pressing the arrow keys?") given one. On the old four-tool prompt the same model
+made 87 against Qwen3 4B's 43. Gary Smart sends no code request to game_object and
+answers the questions without tools; against Gary Fast it is better on twelve (score,
+collision, game over, "how does the speed work?", the egg) and worse on eight, mostly
+narrating a change instead of making it ("theyre way too fast i die in like 2 seconds").
+
+**Qwen3 8B chose best of all, 92 of 94** -- the one measurement here where a vision model
+lost to the model it replaces. So the owner's condition ("if the newer models are better
+for all local building") held for Gary Fast over Qwen3 4B and not, on tool choice, for
+Gary Smart over Qwen3 8B; put to the owner with the replays (about even: both made the
+maze at once; on test04 Qwen3 8B used the child's monster picture, Gary Smart the six
+trees but monsters of its own), the speed (10.6 s against 17.0 s a request) and the
+pictures, **the owner kept the lineup: Gary Fast and Gary Smart only.**
+
+**The Fast Path classifier on Gary's own model** (`decide_{heldout,dev}_vl4b.json`
+against `decide_heldout5`/`decide_dev6`, scored by `analyse_routes.py`):
+
+| | held-out: right / wrong recipe edits | dev: right / wrong | intent correct (held-out, dev) | latency |
+|---|---|---|---|---|
+| Qwen3 4B | 18 / 0 | 48 / 2 | 68%, 77% | 442 ms |
+| Gary Fast | 15 / 3 | 49 / 2 | 76%, 81% | 454 ms |
+| Gary Smart (held-out only) | 11 / 0 | -- | 80% | 802 ms |
+
+Gary Fast names the intent *more* often, and is more sure of itself: three confident
+mistakes passed a gate tuned on Qwen3 4B's scores -- the whole rock-dodging game taken
+by the dodging recipe, "can it do the average temp for each week" by the averaging
+recipe, and "make it super flickery like a broken light" as a faster blink. No threshold
+separates them (each scored 1.00 in every ordering), so the alternative was a second
+model: Qwen3 4B kept as the classifier beside Gary, +2.3 GB to download and ~2.7 GB
+resident, which an 8 GB Mac cannot spare. **The owner chose Gary's own model.** The
+classifier and its gate are otherwise unchanged (they were frozen before Phase 13).
+Gary Smart names the intent most often of the three and is the most cautious: no wrong
+recipe edit on the held-out set, eleven right, and the rest handed to Gary -- at 0.8 s a
+decision.
+
+**The owner's threads, replayed** (`results/{vision,maze_vision}_vl4b.json`):
+
+- **test04**: the monster picture looked at and named on import, the six trees listed
+  with what each shows; the monster made the child's picture and the thing to shoot the
+  moment it came; the six pictures one forest, one per copy; a score; every playtest
+  passed. Against Qwen3 4B's last round: no night sky (its whole-game turn first tried to
+  rewrite the file from a game it imagined, both refused, and the plan Open Nest's
+  fallback asked it for left the sky out) and the trees placed in the air rather than on
+  the ground -- one run, the model's own layout. One reply said a bullet line twice: a
+  line said twice in one reply is now said once (`replies._each_line_once`; on the 769
+  replies of every kept walk it changed only the three that did it).
+- **maze**: Qwen3 4B laid the maze out on the first message; Gary Fast changed nothing on
+  the first two -- it sent `edit_file` with a 539-character game it imagined as
+  `old_text` and no `new_text`, five times in one turn, then the same text to
+  `write_file` -- and made the maze with `drawing: "maze"` on the third, the monster in
+  it. **That loop was partly Open Nest's**: the refusal said only "edit_file needs a
+  path, the exact old_text, and the new_text". Replayed on that message alone, twice
+  each: as it was, neither run built anything; told what had happened ("its old_text is
+  not in src/game.py ... it does not replace the whole file") and what to use instead
+  (game_object, one call per thing), both runs built the maze. Now the refusal for both
+  `edit_file` and `write_file`, wherever the project offers game_object.
+- **Gary Smart, test04** (`vision_vl8b`): the whole-game message made a dark-blue sky,
+  five trees and three monsters to shoot, at once; the pictures were looked at and named;
+  but it never used them -- three calls for an `assets/tree.png` nobody has, then two
+  empty replies on "this should allow you to make the forest", then "I'll replace the
+  current tree drawing with your tree pictures ... What do you want next?" with nothing
+  done. **That last was Open Nest's**: a promise is corrected unless the reply asks the
+  child something, and a tacked-on "What do you want next?" counted as asking. Now only a
+  question that is not that kind exempts it (`_NEXT_QUESTION`; on the 782 replies of the
+  kept walks it changes exactly those two).
+- **Gary Smart, maze** (`maze_vision_vl8b`): the maze from the first message (`drawing:
+  "maze"`), the child's monster in it to collect, coins on the second -- as Qwen3 8B's
+  last round. It first wrote `game_object(...)` into the game with edit_file (refused,
+  as since section 30) and then called it.
+- **Round two, Gary Fast, with both fixes** (`vision2_vl4b`, `maze_vision2_vl4b`): the
+  maze laid out **on the first message** -- one refused whole-file edit, then
+  `layout: "maze"` -- and the child's monster in it on the second, where the first round
+  took three messages. test04 the same game as round one (the six tree pictures one
+  forest standing along the bottom, the monster to shoot, the starter's dark background,
+  no sky drawn) with no line said twice; the whole-game turn still tried the file first
+  and was planned by the fallback. One answer said "no shooting" of a monster that can be
+  shot -- a negative claim about the game, which no check reads; recorded.
+- **Round two, Gary Smart** (`vision2_vl8b`): a night sky, three monsters to shoot and,
+  this time, the six tree pictures as one forest; the child's monster picture still never
+  used, and three calls for the `assets/tree.png` nobody has (each refused as no change).
+
+**Through the real window** (cocoa): the setup wizard walk **53/53** -- on this 48 GB Mac
+"Open Nest suggests Gary Smart for this Mac", the model name and the ticks, Qwen3 4B and
+8B listed only as "Already installed", the verification "✓ Sees pictures", the health
+check "✓ Vision engine" -- and the Phase 12 app walk **42/42** on Gary Fast, started from
+a record that still prefers Qwen3 4B (`benchmarks/vision/results/app_walk_vision.txt`;
+its picture check is now "claims to have seen only if a model really looked", plus "a
+model that can see looked at the picture"). The wizard walk's docstring said it put
+`installation.json` back and it never did; it does now.
+
+### 32D. Setup, the demo, and the models a Mac already has
+
+- The wizard offers Gary Fast and Gary Smart, each with the model it runs and what it is
+  good for (`good_for`, a validated catalogue field: "✓ coding ✓ images ✓ screenshots
+  ✓ documents ✓ general questions"); an 8 GB Mac is suggested Gary Fast and a 16 GB+ Mac
+  Gary Smart. A replaced model appears only where it is installed, and Settings offers to
+  remove it, not download it.
+- **The app used to start the default model whatever setup recorded** -- a parent who
+  chose Qwen3 8B still gave the child the 4B -- which with Gary Fast as the default
+  would have told every existing install its model was missing.
+  `router.startup_model_id` starts the chosen model; a replaced one gives way to its
+  replacement once that is on the Mac, and keeps working until then.
+- The post-pull migration reinstalled only `base.txt` and `projects.txt`, so a family
+  updating would have got the vision entries and no vision engine. On Apple silicon it
+  now reinstalls the local AI and vision manifests too, in the bootstrap's order.
+- The health check reports the vision engine, failed only when the chosen model needs it.
+- `Launch Open Nest Demo.command` checks for the catalogue default through the app's own
+  lookup (it tested Qwen3 4B's folder by name). The demo sandbox's record (set up before
+  this pass) preferred Qwen3 4B, and the app started Gary Fast from it regardless -- the
+  app walk ran that way; the record now names Gary Fast too. Every benchmark driver
+  defaults to the catalogue's default model (each named Qwen3 4B; their earlier results
+  are Qwen3 4B's).
+
+### 32E. Rules this pass adds
+
+- **A picture is seen when its pixels reached a model and the answer is kept**, never
+  because a vision model is selected. Anything that decides what may be said about a
+  picture reads `asset.seen`.
+- **Pixels travel with the message they came with**; what was seen travels as words.
+- **A broken install degrades to a text model, honestly**: no vision engine,
+  `sees_images` False, nothing recorded as seen.
+- **A replaced model is `deprecated`, not deleted**: no family's model stops working and
+  nothing is downloaded twice.

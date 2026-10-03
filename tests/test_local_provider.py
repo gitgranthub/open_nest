@@ -199,7 +199,7 @@ def _loaded_provider():
 
     provider = MLXProvider(ModelInfo(id="x", name="X", provider="mlx"), "repo/x")
     provider._model = object()          # loaded, as far as the provider can tell
-    provider._render = lambda messages, tools: "PROMPT"
+    provider._render = lambda messages, tools, **_: "PROMPT"
     return provider
 
 

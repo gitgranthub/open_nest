@@ -10,7 +10,7 @@ INPUTS = HERE / "inputs"
 RESULTS = HERE / "results"
 RAW = RESULTS / "raw"   # full runs, file contents included: local only, gitignored
 sys.path.insert(0, str(HERE.parents[1]))
-from opennest.ai.router import build_provider
+from opennest.ai.router import build_provider, default_model_id
 from opennest.fastpath.classifier import IntentClassifier, Option
 from opennest.fastpath.registry import RecipeRegistry
 
@@ -22,7 +22,7 @@ VARIANTS = {
 }
 rows = json.loads((RESULTS / sys.argv[1]).read_text())
 reg = RecipeRegistry()
-provider = build_provider("qwen3-4b-instruct"); provider.load()
+provider = build_provider(default_model_id()); provider.load()
 out = []
 for row in rows:
     recipe = reg.for_profile(row["profile"]).for_intent(row["intent"])

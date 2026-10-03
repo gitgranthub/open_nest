@@ -329,16 +329,28 @@ def test_what_the_child_says_about_a_file_is_still_allowed(project, dropped) -> 
     assert "If they tell you what one is, believe them" in block(project)
 
 
-def test_a_model_that_can_see_is_not_told_it_cannot(project, dropped, can_send_images):
-    """Capability-driven, not a hard-coded apology. Adding a vision model is a data edit.
+def _looked_at(project, asset, saw: str) -> None:
+    """Record that a model was shown this picture's pixels and said what it shows -- what
+    ``assets.look`` writes after a real look (tests/test_vision.py drives that)."""
+    import json
 
-    Needs ``can_send_images``: a vision model only counts once Open Nest can actually
-    put the pixels in front of it. The rule this asserts is right and unchanged; the
-    fixture is what makes its precondition true. See ``IMAGE_INPUT_IMPLEMENTED``.
-    """
-    assets.import_file(project, dropped("spaceship.png", SPACESHIP))
+    from opennest.assets import look
+
+    record = project.directory / look.RECORD
+    record.parent.mkdir(parents=True, exist_ok=True)
+    record.write_text(json.dumps({asset.path: {
+        "sha256": look.digest(project.directory / asset.path), "saw": saw, "by": "x"}}))
+
+
+def test_a_picture_a_model_has_looked_at_is_not_called_unseen(project, dropped) -> None:
+    """Evidence-driven, not a hard-coded apology: once a model has really been shown the
+    picture (SPIKES.md section 32), the prompt says what it saw and stops saying nobody
+    has looked -- whichever model is Gary now."""
+    asset = assets.import_file(project, dropped("spaceship.png", SPACESHIP))
+    _looked_at(project, asset, "a silver rocket with red fins")
     text = block(project, model=SIGHTED)
     assert "assets/spaceship.png" in text
+    assert "it shows a silver rocket with red fins" in text
     assert "NOBODY HAS LOOKED" not in text
 
 
@@ -633,12 +645,18 @@ def test_an_honest_reply_costs_no_extra_round_trip(project, dropped) -> None:
     assert len(provider.calls) == 1
 
 
-def test_a_model_that_can_see_is_never_pulled_up(project, dropped, can_send_images):
-    """Capability-driven: with a vision model that was actually sent the picture,
-    there is nothing dishonest about describing it."""
+def test_a_picture_that_was_looked_at_is_never_pulled_up(project, dropped):
+    """Evidence-driven: a picture whose pixels a model was really shown, and whose answer
+    is recorded, can be described without that being invention. ("I see them clearly"
+    would still be corrected here: this model was not sent the pixels -- only a model
+    shown them with the message may say it sees, tests/test_vision.py.)"""
     asset = assets.import_file(project, dropped("red-dragon-with-wings.png", SPACESHIP))
-    controller, provider = build(project, [Reply(text=REPLY_CLAIMED_SIGHT)], model=SIGHTED)
-    turn = controller.send("Does it have wings?", attachments=[asset])
+    _looked_at(project, asset, "a red dragon with big wings")
+    controller, provider = build(project, [Reply(text=(
+        "Yes, the dragon in the picture has wings. I'll use that image for the player "
+        "character."))], model=SIGHTED)
+    turn = controller.send("Does it have wings?",
+                           attachments=[assets.list_assets(project)[0]])
     assert not turn.corrected_invention
     assert len(provider.calls) == 1
 

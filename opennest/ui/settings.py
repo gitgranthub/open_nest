@@ -238,7 +238,9 @@ class SettingsWindow(QDialog):
             if item.widget():
                 item.widget().deleteLater()
 
-        entries = router.local_models()
+        # A replaced model only when it is here: it can be removed, never downloaded.
+        entries = tuple(entry for entry in router.local_models()
+                        if entry.offered_for_install or entry.info.id in installed_ids)
         verdicts = {
             v.model_id: v
             for v in compatibility.assess_all(entries, machine, installed_ids)
@@ -275,10 +277,20 @@ class SettingsWindow(QDialog):
             detail.append(entry.license)
         box.addWidget(mono_label("   ".join(p for p in detail if p), wrap=True))
 
-        fit = _body(
-            f"{verdict.label}. {verdict.reason}" if not verdict.installed
-            else f"On this Mac. {verdict.label}."
-        )
+        if verdict.installed and not entry.offered_for_install:
+            # Replaced by the vision models (SPIKES.md section 32): still on the Mac and
+            # still working, but not what Open Nest starts once its replacement is here.
+            try:
+                newer = router.get_entry(router.default_model_id()).info.name
+            except ProviderError:
+                newer = "a newer model"
+            fit = _body(f"On this Mac. Replaced by {newer}, which Open Nest uses once it "
+                        f"is downloaded. Removing this one frees its space.")
+        else:
+            fit = _body(
+                f"{verdict.label}. {verdict.reason}" if not verdict.installed
+                else f"On this Mac. {verdict.label}."
+            )
         box.addWidget(fit)
 
         buttons = QHBoxLayout()

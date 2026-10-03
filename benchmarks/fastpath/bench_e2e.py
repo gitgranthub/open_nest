@@ -35,7 +35,7 @@ sys.path.insert(0, str(REPO))
 
 from opennest.agent.controller import AgentController  # noqa: E402
 from opennest.agent.tools import Toolbox, normalise_tool_name  # noqa: E402
-from opennest.ai.router import build_provider  # noqa: E402
+from opennest.ai.router import build_provider, default_model_id  # noqa: E402
 from opennest.assets import manager as assets  # noqa: E402
 from opennest.execution.python_runner import run_project  # noqa: E402
 from opennest.fastpath.kinds import games, website  # noqa: E402
@@ -544,7 +544,7 @@ def main() -> int:
     parser.add_argument("--arm", default="both", choices=("current", "fast", "both"))
     parser.add_argument("--only", default="")
     parser.add_argument("--label", default="e2e")
-    parser.add_argument("--model", default="qwen3-4b-instruct")
+    parser.add_argument("--model", default=default_model_id())
     parser.add_argument("--set", default="main", choices=("main", "closure"))
     args = parser.parse_args()
     wanted = set(filter(None, args.only.split(",")))

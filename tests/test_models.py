@@ -180,7 +180,8 @@ def test_the_label_is_about_fit_not_ranking() -> None:
 def test_the_suggestion_fits_the_machine(entries) -> None:
     small = compatibility.suggestion(entries, AIR_8GB)
     big = compatibility.suggestion(entries, STUDIO_64GB)
-    assert small[0].info.id == "qwen3-4b-instruct"
+    assert small[0].info.id == "qwen3-vl-4b-instruct"        # Gary Fast
+    assert big[0].info.id == "qwen3-vl-8b-instruct"          # Gary Smart
     assert big[0].download_gb > small[0].download_gb, (
         "a 64 GB Studio was suggested the same model as an 8 GB Air"
     )
@@ -193,10 +194,18 @@ def test_an_installed_model_is_suggested_over_a_download(entries) -> None:
     wrong suggestion however roomy their Mac is.
     """
     chosen, verdict = compatibility.suggestion(
-        entries, STUDIO_64GB, installed_ids=["qwen3-4b-instruct"]
+        entries, STUDIO_64GB, installed_ids=["qwen3-vl-4b-instruct"]
     )
-    assert chosen.info.id == "qwen3-4b-instruct"
+    assert chosen.info.id == "qwen3-vl-4b-instruct"
     assert verdict.installed
+
+
+def test_a_replaced_model_on_the_mac_is_not_suggested_over_its_replacement(entries) -> None:
+    """The owner's ruling (SPIKES.md section 32): the vision models replace the older
+    local models. One already installed keeps working; it is not what Open Nest
+    suggests."""
+    chosen, _ = compatibility.suggestion(entries, AIR_8GB, installed_ids=["qwen3-4b-instruct"])
+    assert chosen.info.id == "qwen3-vl-4b-instruct"
 
 
 def test_a_model_that_cannot_use_tools_is_never_suggested(entries) -> None:
@@ -216,7 +225,7 @@ def test_the_bundled_catalogue_stands_alone() -> None:
     merged = catalog.merge(catalog.bundled_payload(), None)
     assert merged.entries
     assert not merged.used_remote
-    assert merged.default_local_model == "qwen3-4b-instruct"
+    assert merged.default_local_model == "qwen3-vl-4b-instruct"
 
 
 def test_a_remote_entry_revises_a_bundled_one() -> None:
@@ -242,7 +251,7 @@ def test_a_remote_catalogue_cannot_change_what_a_fresh_mac_downloads() -> None:
         catalog.bundled_payload(),
         {"schema_version": 4, "default_local_model": "something-else", "models": []},
     )
-    assert merged.default_local_model == "qwen3-4b-instruct"
+    assert merged.default_local_model == "qwen3-vl-4b-instruct"
 
 
 def test_a_withdrawn_model_stops_being_offered() -> None:

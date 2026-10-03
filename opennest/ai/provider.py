@@ -32,6 +32,10 @@ class Message:
     #: For role="tool": which call this is answering.
     tool_call_id: str = ""
     name: str = ""
+    #: Pictures shown with this message, as paths on disk. Only a provider whose
+    #: ``sees_images`` is True puts their pixels in front of the model, and only for the
+    #: message that is being answered -- see :class:`~opennest.ai.mlx_provider.MLXProvider`.
+    images: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {"role": self.role, "content": self.content}
@@ -145,25 +149,32 @@ class ModelInfo:
         return not self.requires_internet
 
 
-#: Whether **any** provider can currently put image bytes in front of a model.
-#:
-#: Flip this to True in the same change that implements it, and not before. It is a
-#: statement about the transport, not about the models: ``models.json`` has entries with
+#: The providers whose code puts image bytes in front of a model. A statement about the
+#: transport, not about the models: ``models.json`` has cloud entries with
 #: ``supports_images: true`` and those flags are correct -- Claude and OpenAI really can
-#: see pictures. What was missing until this existed is that **Open Nest never sends
-#: them any**, so a vision model receives exactly as many pixels as a 4B local one.
+#: see pictures -- but **neither cloud provider sends them any**, so to Open Nest they are
+#: as blind as a text model. Add a provider here in the same change that makes it send
+#: pixels, and not before.
 #:
-#: Phase 6 made that gap dangerous rather than merely incomplete. Before it, no cloud
-#: model was reachable, so ``assets.can_interpret`` answered False for every image and
-#: Phase 5's honesty machinery stayed on. With a key configured and Claude selected it
-#: began answering True -- which removed the "NOBODY HAS LOOKED" block from the prompt
-#: *and* took the image out of ``unread_assets``, which is the set
-#: ``assets.invented_description`` checks. Both defences off, no pixels sent: the exact
-#: configuration SPIKES.md section 10 measured as producing "Yes, the dragon in the
-#: picture has wings. I see them clearly."
+#: This was a single ``IMAGE_INPUT_IMPLEMENTED = False`` until a local vision model
+#: arrived (SPIKES.md section 32), and the reason it exists is Phase 6: making Claude
+#: selectable made ``assets.can_interpret`` answer True, which removed the "NOBODY HAS
+#: LOOKED" block from the prompt *and* took the image out of the set
+#: ``assets.invented_description`` checks -- both defences off, no pixels sent, the exact
+#: configuration SPIKES.md section 10 measured producing "Yes, the dragon in the picture
+#: has wings. I see them clearly." (SPIKES.md section 12.)
 #:
-#: Found by running spikes/spike_image_generation.py (SPIKES.md section 12).
-IMAGE_INPUT_IMPLEMENTED = False
+#: Even here, this only says a model *could* be shown a picture. Whether one has been is
+#: evidence, and it is what the asset layer goes by: a picture counts as seen only once
+#: its pixels have reached a model and what it saw is recorded (``assets.look``).
+IMAGE_INPUT_PROVIDERS = frozenset({"mlx"})
+
+
+def can_send_images(info: ModelInfo | None) -> bool:
+    """Whether Open Nest could show this model a picture: a vision model, reached through
+    a provider that sends pixels. The loaded provider's ``sees_images`` is the proof."""
+    return bool(info is not None and info.supports_images
+                and info.provider in IMAGE_INPUT_PROVIDERS)
 
 
 class ProviderError(Exception):
@@ -196,6 +207,15 @@ class ModelProvider(ABC):
     @property
     @abstractmethod
     def is_loaded(self) -> bool: ...
+
+    @property
+    def sees_images(self) -> bool:
+        """Whether a picture on a message really reaches this model as pixels, now.
+
+        False unless a provider's code sends them -- which only the local vision engine
+        does (``IMAGE_INPUT_PROVIDERS``) -- and, there, only once the model is loaded with
+        its vision half."""
+        return False
 
     @abstractmethod
     def chat(

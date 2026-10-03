@@ -49,6 +49,7 @@ SCHEMA_VERSION = 1
 REQUIREMENT_FILES: tuple[str, ...] = (
     "base.txt",
     "macos-apple-silicon.txt",
+    "vision.txt",
     "projects.txt",
 )
 

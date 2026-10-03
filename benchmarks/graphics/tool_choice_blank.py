@@ -34,7 +34,7 @@ from tool_choice import REPO, first_move, requests  # noqa: E402
 from opennest.agent.controller import build_system_prompt, scene_prompt  # noqa: E402
 from opennest.agent.tools import SCHEMAS, Toolbox  # noqa: E402
 from opennest.ai.provider import Message, Settings  # noqa: E402
-from opennest.ai.router import build_provider  # noqa: E402
+from opennest.ai.router import build_provider, default_model_id  # noqa: E402
 from opennest.assets import manager as assets  # noqa: E402
 from opennest.fastpath.kinds import family_for  # noqa: E402
 from opennest.projects.manager import create_project  # noqa: E402
@@ -55,7 +55,7 @@ def main() -> int:
                 "eagle_01.png", picture)
     assets.import_file(project, picture)
     toolbox = Toolbox(project)
-    provider = build_provider("qwen3-4b-instruct")
+    provider = build_provider(default_model_id())
     provider.load()
     asset_block = assets.context_block(project, provider.info)
     # Since the measurement, a Blank game *is* offered game_object (tools.offers_graphics),

@@ -128,7 +128,23 @@ def test_the_model_list_comes_from_the_catalogue(wizard) -> None:
     step = _step(wizard, "LocalAIStep")
     step.inspect_now(BIG_MAC)
     offered = {step._picker.itemData(i) for i in range(step._picker.count())}
-    assert offered == {entry.info.id for entry in router.local_models()}
+    assert offered == {entry.info.id for entry in router.local_models()
+                       if entry.offered_for_install}
+
+
+def test_setup_offers_the_two_gary_models_and_says_what_they_are_for(wizard) -> None:
+    """The owner's lineup (SPIKES.md section 32): Gary Fast and Gary Smart, each with the
+    model it runs and what it is good for. The replaced models are not offered to a Mac
+    that does not already have them."""
+    step = _step(wizard, "LocalAIStep")
+    step.inspect_now(BIG_MAC)
+    offered = {step._picker.itemData(i) for i in range(step._picker.count())}
+    assert offered == {"qwen3-vl-4b-instruct", "qwen3-vl-8b-instruct"}
+    step._picker.setCurrentIndex(step._picker.findData("qwen3-vl-4b-instruct"))
+    step._describe()
+    detail = step._detail.text()
+    assert "Qwen3-VL-4B-Instruct-4bit" in detail
+    assert "✓ coding" in detail and "✓ images" in detail and "✓ general questions" in detail
 
 
 def test_a_small_mac_is_not_offered_a_model_it_cannot_hold(wizard) -> None:
@@ -143,8 +159,8 @@ def test_a_small_mac_is_not_offered_a_model_it_cannot_hold(wizard) -> None:
         step._picker.itemData(i): step._picker.itemText(i)
         for i in range(step._picker.count())
     }
-    assert "Recommended for this Mac" in labels["qwen3-4b-instruct"]
-    assert "Not recommended" in labels["qwen3-coder-30b-a3b"]
+    assert "Recommended for this Mac" in labels["qwen3-vl-4b-instruct"]
+    assert "Not recommended" in labels["qwen3-vl-8b-instruct"]
 
 
 def test_the_suggestion_is_phrased_as_a_fit_not_a_ranking(wizard) -> None:

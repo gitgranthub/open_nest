@@ -1,8 +1,8 @@
 #!/bin/bash
 # Open Nest — demo launcher, for testing on this Mac.
 #
-# Runs the app against the project's own sandbox folder (.opennest-sandbox), where Qwen3 4B
-# is already downloaded, instead of the normal install in ~/Library/Application Support.
+# Runs the app against the project's own sandbox folder (.opennest-sandbox), where the demo
+# model is already downloaded, instead of the normal install in ~/Library/Application Support.
 # The same command as HANDOFF.md section 2:
 #
 #     OPENNEST_HOME=$PWD/.opennest-sandbox .venv/bin/python -m opennest.app
@@ -31,12 +31,25 @@ Open \\\"Setup Open Nest.command\\\" first."
     exit 1
 fi
 
-if [ ! -d "$SANDBOX/models/models--mlx-community--Qwen3-4B-Instruct-2507-4bit" ]; then
-    show_error "The demo model (Qwen3 4B) is not in .opennest-sandbox yet.
+export OPENNEST_HOME="$SANDBOX"
 
-Fetch it first with: scripts/fetch.sh model qwen3-4b-instruct"
+# The demo model is whatever the catalogue's default is (Gary Fast, the 4B vision model,
+# since SPIKES.md section 32), asked through the app's own lookup rather than a folder
+# name written here -- the folder this used to test was Qwen3 4B's.
+MISSING="$(.venv/bin/python - <<'PY' 2>/dev/null
+from opennest.ai.router import default_model_id, get_entry
+from opennest.models.discovery import locate
+
+entry = get_entry(default_model_id())
+if locate(entry.model_id, entry.revision) is None:
+    print(f"{entry.info.name}|{entry.info.id}")
+PY
+)"
+if [ -n "$MISSING" ]; then
+    show_error "The demo model (${MISSING%%|*}) is not in .opennest-sandbox yet.
+
+Fetch it first with: scripts/fetch.sh model ${MISSING##*|}"
     exit 1
 fi
 
-export OPENNEST_HOME="$SANDBOX"
 exec .venv/bin/python -m opennest.app

@@ -257,6 +257,14 @@ def create_venv(python_exe: str, root: str | None = None) -> None:
     _run([python_exe, "-m", "venv", venv_dir(root)], "create the Python environment")
 
 
+#: Manifests installed without their packages' own dependencies. A requirements file
+#: cannot say ``--no-deps`` itself, so it is said here, by name -- and so it holds for
+#: every caller, the bootstrap and the update migration alike. ``vision.txt``'s header
+#: has the measurement: mlx-vlm declares a web server, an audio stack and OpenCV that the
+#: vision path never imports.
+NO_DEPS_MANIFESTS = ("vision.txt",)
+
+
 def install_requirements(requirement_files: list[str], root: str | None = None) -> None:
     executable = venv_python(root)
     _run(
@@ -264,8 +272,9 @@ def install_requirements(requirement_files: list[str], root: str | None = None) 
         "update the packaging tools",
     )
     for path in requirement_files:
+        extra = ["--no-deps"] if os.path.basename(path) in NO_DEPS_MANIFESTS else []
         _run(
-            [executable, "-m", "pip", "install", "-r", path],
+            [executable, "-m", "pip", "install", *extra, "-r", path],
             f"install {os.path.basename(path)}",
         )
 
