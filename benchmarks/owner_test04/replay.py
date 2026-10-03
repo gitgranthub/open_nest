@@ -1,7 +1,7 @@
 """The owner's test04, replayed message for message through the real Workbench.
 
     OPENNEST_HOME=$PWD/.opennest-sandbox HF_HUB_OFFLINE=1 .venv/bin/python \
-        benchmarks/owner_test04/replay.py <label> [model-id]
+        benchmarks/owner_test04/replay.py <label> [model-id] [test04|maze]
 
 The owner's own live test on 2026-10-02 (a Game project, the local 4B): a greeting, "what
 should I do first?", a whole night-forest shooter in one sentence, then their own monster
@@ -59,7 +59,7 @@ MONSTER = ("<add>", ["blue_monster.png"])
 TREES = ("<add>", [f"tree_0{n}.png" for n in range(1, 7)])
 
 #: The owner's messages, verbatim, with the pictures added where they were added.
-SCRIPT = [
+TEST04 = [
     "Hi Gary",
     "What should I do first? any ideas for me?",
     "Let's make this a game in the woods at night. A first person shooter. We have to "
@@ -73,6 +73,21 @@ SCRIPT = [
     "Gary, whay is a tree moving? You are not making a good game.",
     RUN,
 ]
+
+#: The owner's next test (2026-10-03, ``Maze_test01``): the "Maze" idea card, their
+#: monster picture, and a top-down maze asked for four ways.
+MAZE = [
+    MONSTER,
+    "Make a maze game to find the monster I added",
+    "make this a top down view of a maze you create, no road... the player gets coins when "
+    "they reach the monster at the end of the maze",
+    "create a maze",
+    "Gary! you didn't create a real maze. The problem is the monster is just floating in the "
+    "sky and there is a random building and road. There needs to be a maze!",
+    RUN,
+]
+
+THREADS = {"test04": TEST04, "maze": MAZE}
 
 LEAK = re.compile(r"edit_file|write_file|read_file|run_project|game_object|old_text|"
                   r"new_text|<tool_call>|\"name\"\s*:|```|\\n")
@@ -190,6 +205,7 @@ def run_step(project, controller, bench, app, step, out_dir: Path, index: int) -
 def main() -> int:
     label = sys.argv[1] if len(sys.argv) > 1 else "replay"
     model = sys.argv[2] if len(sys.argv) > 2 else "qwen3-4b-instruct"
+    script = THREADS[sys.argv[3] if len(sys.argv) > 3 else "test04"]
     app = QApplication([])
     provider = build_provider(model, allow_cloud=model not in (
         "qwen3-4b-instruct", "qwen3-8b"))
@@ -211,7 +227,7 @@ def main() -> int:
     app.processEvents()
     print(f"\n===== test04 ({model})", flush=True)
     out = []
-    for index, step in enumerate(SCRIPT):
+    for index, step in enumerate(script):
         record = run_step(project, controller, bench, app, step, out_dir, index)
         out.append(record)
         print(f"\n--- {record['step']}  ({record['seconds']} s)", flush=True)

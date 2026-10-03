@@ -143,6 +143,10 @@ def _scene_drawn(source: str) -> set[str]:
         # What it is drawn as counts too: the player wearing assets/eagle.png draws the
         # eagle, though nothing in the game is called that.
         names.add(entry.look.lower())
+        if "grid" in entry.keywords:
+            # Walls laid out from MAZE draw the maze (the 8B's plan step "Add a top-down
+            # view of a maze" was told "nothing draws it yet" -- Maze_test01 replay).
+            names |= {entry.keywords["grid"].lower(), "maze", "labyrinth"}
     return names
 
 
@@ -413,6 +417,17 @@ def _scene_lines(project: Project, source: str) -> list[str]:
         lines.append("- The game's scene, read from its code and drawn back to front -- "
                      "described in words, not the code itself; game_object changes any of "
                      "these by name:\n" + "\n".join(f"  * {thing}" for thing in things))
+    layout = scene_source.maze_layout(scene)
+    if layout is not None:
+        from opennest.graphics import maze
+
+        entry, grid, cell, (left, top) = layout
+        finish = maze.end(grid)
+        if finish is not None:
+            lines.append(f"- The game is a maze seen from above: {entry.name} is its walls, "
+                         f"solid, laid out from MAZE at the top of the game (# is a wall). "
+                         f"Its end is at ({left + finish[0] * cell}, {top + finish[1] * cell}) "
+                         f"-- game_object with at \"maze end\" puts a thing there.")
     skies = [entry for entry in scene.entries.values() if entry.look_class == "Sky"]
     background = facts.get("background")
     if skies and background and skies[0].look == f"Sky({background})":

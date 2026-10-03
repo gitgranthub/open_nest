@@ -564,6 +564,30 @@ def _relation(entry: Entry, scene: GameScene) -> str:
     return ""
 
 
+def maze_layout(scene: GameScene):
+    """(entry, grid, cell, (left, top)) of the scene's maze -- a ``scene.add(...,
+    grid=NAME, ...)`` whose NAME is a list of strings at the top of the game -- or None."""
+    if scene.tree is None:
+        return None
+    for entry in scene.entries.values():
+        name = entry.keywords.get("grid")
+        if not name or not name.isidentifier():
+            continue
+        for node in scene.tree.body:
+            if isinstance(node, ast.Assign) and any(
+                    isinstance(t, ast.Name) and t.id == name for t in node.targets):
+                try:
+                    grid = ast.literal_eval(node.value)
+                except (ValueError, SyntaxError):
+                    return None
+                if isinstance(grid, list) and all(isinstance(row, str) for row in grid):
+                    cell = entry.literals.get("cell", 40)
+                    at = entry.literals.get("at")
+                    corner = at if isinstance(at, tuple) and len(at) == 2 else (0, 0)
+                    return entry, grid, cell if isinstance(cell, int) else 40, corner
+    return None
+
+
 def relation(scene: GameScene, name: str) -> str:
     """Where a thing in the scene is against the road or ground, in words, or ""."""
     entry = scene.entries.get(name)
@@ -580,8 +604,8 @@ def touch_rule(scene: GameScene, name: str) -> str:
     rule = scene.rules.get(name)
     if rule is not None:
         text = "\n".join(scene.source.split("\n")[rule[0]:rule[1] + 1])
-        return "shoot" if "MOUSEBUTTONDOWN" in text else "collect" if "score" in text \
-            else "avoid"
+        return "shoot" if "MOUSEBUTTONDOWN" in text else "block" if "_was" in text \
+            else "collect" if "score" in text else "avoid"
     entry = scene.entries.get(name)
     items = entry.wraps if entry is not None else None
     target = entry.target if entry is not None else None
@@ -627,10 +651,14 @@ def describe(scene: GameScene, player: str | None = None) -> list[str]:
                 parts.append(where)
         if "moves" in entry.keywords and entry.keywords["moves"] not in ("(0, 0)",):
             parts.append(f"moving {entry.keywords['moves']} a frame")
+        if "grid" in entry.keywords:
+            parts[0] = (f"{entry.name}: {words}, laid out as a maze from "
+                        f"{entry.keywords['grid']} at the top of the game (# is a wall)")
         rule = scene.rules.get(entry.name)
         if rule is not None:
             text = "\n".join(scene.source.split("\n")[rule[0]:rule[1] + 1])
             parts.append("clicking one hits it for a point" if "MOUSEBUTTONDOWN" in text
+                         else "solid: the player cannot walk through it" if "_was" in text
                          else "touching one scores a point" if "score" in text else
                          "touching one sends the player back to the start")
         parts.append(f"layer {entry.layer}")

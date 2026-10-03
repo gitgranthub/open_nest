@@ -179,7 +179,10 @@ SCHEMAS: dict[str, dict] = {
     ),
     # Phase 13C: the game graphics layer (opennest/graphics). Gary says what a thing is
     # and how it looks; Open Nest writes the pygame code. SPIKES.md section 28 has the
-    # prototype runs that shaped every description here.
+    # prototype runs that shaped every description here. ``layout: maze`` and ``at:
+    # "maze end"`` are accepted and not described here: described, they took the 4B from
+    # acting on 7 of 12 plain requests to 2 (SPIKES.md section 31) -- they are said beside a
+    # message about a maze (``controller.TOP_DOWN``), and in the results and facts.
     "game_object": _schema(
         "game_object",
         "How things LOOK, and things to SEE: the player's picture, a sky, a road, "
@@ -233,7 +236,8 @@ SCHEMAS: dict[str, dict] = {
                       "description": "Which way it keeps moving by itself. It comes back "
                                      "round the other side."},
             "speed": {"type": "number"},
-            "touch": {"type": "string", "enum": ["nothing", "avoid", "collect", "shoot"],
+            "touch": {"type": "string", "enum": ["nothing", "avoid", "collect", "shoot",
+                                                 "block"],
                       "description": "What touching it does: avoid sends the player back to "
                                      "the start, collect scores a point, shoot makes it a "
                                      "target -- clicking it (or Space with the player over "

@@ -784,3 +784,35 @@ child's six trees, the child's monster as the thing to shoot, and a score.
 - **A kit change is still a version bump, a hash and a fixture**: v3 added one look per
   copy; `tests/fixtures/scene_kit_v2.txt` is v2, and a hand-changed old kit is given what
   it can draw.
+
+## 12. The owner's maze -- a game seen from above
+
+The owner's next test (2026-10-03, `Maze_test01`): the Games idea card "Maze", their
+monster picture, and a top-down maze asked for four ways. The game was a sky, a road, the
+monster on the road, and a "maze_wall" that was a building standing on it; then "The maze
+has walls and a path" after turns that changed nothing. Replayed, the 4B understood the
+request and had nothing to make it with: the scene layer knew only games seen from the
+side. SPIKES §31.
+
+**What changed** (SPIKES §31A): kit version 4 lays copies out from a grid drawn in text
+(`MAZE` at the top of the game, "#" a wall); `layout: maze` -- also `drawing: "maze"`, or a
+thing named maze, which is how the models asked -- carves a solvable maze sized to the
+window, makes it solid, fits the player to its paths and starts it at the beginning, and
+takes away a road, a ground and walls tried before; `touch: block` makes anything solid;
+`at: "maze end"` places the goal, and reaching it in a maze scores and starts the run
+again; things placed in a maze go on its paths, a square's size; walls show against the
+floor. Gary is told, beside a maze or top-down message, that a sky and a road are for a
+game seen from the side and how to make the maze; every turn, where the maze's end is; and
+"the maze" counts as present only when one is laid out.
+
+**Where the words go** (SPIKES §31B): described in game_object's schema, `layout` and
+"maze end" took the 4B from acting on 7 of 12 plain requests to 2. The schema is the
+committed one with "block" added; the maze words are said beside the message and in the
+results, and both models then made the maze -- by `drawing: "maze"`, which is therefore a
+maze.
+
+**Verified**: 1705 tests (`tests/test_owner_test04.py`'s maze half, and
+`tests/fixtures/scene_kit_v3.txt`), ruff clean; tool choice 67 of 94 (64, 62 before); the
+owner's maze thread replayed with the 4B and 8B -- both lay the maze out on the first
+message, with the monster at its end. The Phase 12 app walk was not re-run for this half
+(41/41 after the test04 half).

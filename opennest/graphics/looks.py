@@ -37,6 +37,7 @@ KIT = Path(__file__).with_name("kit") / "scene.py"
 EARLIER_KITS = {
     "682fdd81378c8f5b716ebbf915069e3e6164d8d043f5874456fa25ea793b4445": 1,
     "584048a418ce3bae5246ebbe7c9a38091261b0138f79d8797a6c72b54b12bb0d": 2,
+    "0bef49d4e25375ddd33ae0e77aac9fff8c1fa52b4dea42adeb878941ce1eaba5": 3,
 }
 
 #: The kit's ready-made drawings, as Gary names them, and the class that draws each.

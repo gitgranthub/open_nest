@@ -14,6 +14,7 @@ branch, nothing merged to `main`). Six pieces, in order:
 | **13C** | **the game graphics and scene layer**: a child's picture becomes the player; a scene -- sky, road, buildings, cars to dodge, coins to collect -- built from Gary's plain choices through one tool, `game_object`, drawn by `src/scene.py`, a small pygame kit in the project; look kept separate from movement and collisions; the playtest records what the scene drew | PHASE_13_HANDOFF §9, SPIKES §28 |
 | **13C finished** | the same building blocks for everyone: the Fast Path's add-a-thing recipes give every look through `game_object` (no inline pygame, no named drawings added); a Blank project that has become a game is offered `game_object` (measured first); Gary can change anything in the scene -- look, colour, size, place, motion, layer, touch; a made-up drawing name is answered with how to compose it; clicked through the real app under cocoa, 45/45 | PHASE_13_HANDOFF §9.11, SPIKES §28H-N |
 | **stress pass** | Website, Research, Arduino, Pi and Blank driven with the local 4B and 8B, Luna and -- for the first time -- Sonnet; the touch bug fixed (`scene.touched`, once per touch; kit v2); sixteen shared-layer fixes for what the walks found, none provider-specific | PHASE_13_HANDOFF §10, SPIKES §29 |
+| **maze pass** | the owner's "Maze" card test: a game seen from above -- kit v4 grids, `layout: maze` (solvable, solid, player at the start, goal at "maze end"), `touch: block`; the maze words said beside a maze message, not in the always-sent schema (described there, they cost the 4B its first move on 5 of 12 plain requests) | PHASE_13_HANDOFF §12, SPIKES §31 |
 | **test04 pass** | the owner's in-person test (a night-forest shooter, their own monster and six tree pictures) replayed message for message with the 4B and 8B, four rounds each: Open Nest's own false corrections, layer defects and fallback words fixed; one look per copy (kit v3) and `touch: shoot`; one import question and message per batch; the child's requests kept in front of Gary; greetings, "what should I do?", whole-game requests and "not a good game" answered from guidance said beside the message | PHASE_13_HANDOFF §11, SPIKES §30 |
 
 **The test04 pass in one paragraph** (SPIKES §30). The owner asked the local 4B for "a
@@ -57,8 +58,8 @@ and unchanged v1 kits are brought up to date. Luna and Sonnet behaved alike and 
 Sonnet needed nothing of its own. The keys the owner left in `.env` are in the Keychain,
 the file is gone, and no key material is in any file, log, result or commit.
 
-**1685 tests pass, ruff is clean** (1622 after the stress pass, 1572 after 13C, 1430
-before 13C). The Phase 12 app walk is 41/41 under cocoa after the test04 pass
+**1705 tests pass, ruff is clean** (1685 after the test04 pass, 1622 after the stress
+pass, 1430 before 13C). The Phase 12 app walk is 41/41 under cocoa after the test04 pass
 (`benchmarks/owner_test04/results/app_walk_test04.txt`), as after the stress pass
 (`benchmarks/stress/results/app_walk_stress.txt`). The
 Phase 12 app walk 41/41 through MainWindow under cocoa, its dodging game now built with
@@ -120,22 +121,32 @@ name and all, into the chat.
    owner's ruling), and says when a picture has a solid background. Next: take a plain
    background away for the child -- `Picture(path, see_through=True)` in the kit (the
    corner colour's connected area made transparent with `pygame.mask`, so a white eye is
-   kept), `VERSION = 4` (v3, one look per copy, is the test04 pass's) -- add v3's SHA-256
-   to `looks.EARLIER_KITS` and a v3 fixture -- and a `see_through` argument on
+   kept), `VERSION = 5` (v3 is the test04 pass's one look per copy, v4 the maze pass's
+   grids) -- add v4's SHA-256 to `looks.EARLIER_KITS` and a v4 fixture -- and a
+   `see_through` argument on
    `game_object` -- a description change, so re-run `benchmarks/graphics/tool_choice.py`
    before it ships.
-3. **Phase 14 -- Publish Version**, reshaped by the owner (PHASE_13_HANDOFF §6,
+3. **A model that can see the child's pictures.** Every picture fix in SPIKES §30-31 works
+   around a model that sees only filenames. A local vision model -- Qwen3-VL-4B-Instruct
+   or similar, pinned to a commit in `config/models.json`, fetched by `scripts/fetch.sh
+   model <id>` and offered through the model registry and setup wizard
+   (`opennest/models/`, `opennest/setup/`, PHASE_11_HANDOFF) --
+   would let Gary know what a picture shows. Start from SPIKES §12 (why
+   `IMAGE_INPUT_IMPLEMENTED` is False and what `can_interpret` controls), measure with
+   `benchmarks/owner_test04/replay.py` and `benchmarks/graphics/tool_choice.py`, and keep
+   the honesty checks until the image bytes really reach the model.
+4. **Phase 14 -- Publish Version**, reshaped by the owner (PHASE_13_HANDOFF §6,
    PHASE_12_HANDOFF §7). Not started. The sunglasses wait for it.
-4. **Hardening items, each separate and none the graphics layer's** (SPIKES §28N): the
+5. **Hardening items, each separate and none the graphics layer's** (SPIKES §28N): the
    playtest sees under two seconds of a game, so a crash behind a timer is missed (three
    options, with their latency cost -- a parser check for pygame names that do not exist
    is the cheap one); Gary can repeat one refused call until the turn's budget runs out.
    ~~A touch counts on every frame it lasts~~ -- **fixed** by `scene.touched` (SPIKES §29B).
-5. **Known limits, recorded rather than hidden**: the 4B's layouts are its own and
+6. **Known limits, recorded rather than hidden**: the 4B's layouts are its own and
    uneven; motion is left, right, up, down or bounce (a recipe's other motions stay its
    own code); what a picture *shows* is not checked; a Blank project cannot become a
    Website or Arduino project in place (architecture work). SPIKES §27E-F, §28G, §28N.
-6. ~~**A working Anthropic key**~~ -- the owner handed over a new one; **Sonnet has run**
+7. ~~**A working Anthropic key**~~ -- the owner handed over a new one; **Sonnet has run**
    the stress pass (SPIKES §29). Its Games walks are still `benchmarks/graphics/eagle_walk.py
    <label> claude-sonnet` and `scenes_walk.py <label> claude-sonnet`, if they are wanted.
 

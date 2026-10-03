@@ -534,6 +534,19 @@ WHOLE_GAME = (
     "does, and edit_file for other rules. If it needs 3D or first person, build the "
     "closest 2D version and say so in one sentence.)")
 
+#: Said beside a message about a game seen from above -- a maze, "top down". Measured on
+#: the owner's Maze_test01: asked for "a top down view of a maze you create, no road", the
+#: 4B kept the sky and the road and made its walls buildings standing on the road -- the
+#: only scene it had been shown was one seen from the side.
+TOP_DOWN = (
+    "(Open Nest: this game is seen from above. A sky and a road are for a game seen from "
+    "the side, and a maze has neither. For the maze, call game_object once with name walls "
+    "and layout maze: Open Nest lays the maze out, makes its walls solid and puts the "
+    "player at its start. Then put what they are looking for at the end with at "
+    "\"maze end\". (touch block makes any other wall solid too.))")
+_FROM_ABOVE = re.compile(r"\b(?:maze|labyrinth|top[- ]?down|from above|bird'?s[- ]eye|"
+                         r"overhead view|dungeon|pac-?man)\b", re.IGNORECASE)
+
 #: A message that asks for a whole game: "make a game where...", a kind of game.
 _GENRES = re.compile(r"\b(?:shooter|platformer|racer|racing game|runner|maze|dodger|"
                      r"adventure|rpg|tower defen[cs]e|space invaders|pac-?man|mario)\b",
@@ -1026,13 +1039,17 @@ class AgentController:
                 self.history[-1] = Message(role="user", content=(
                     f"{self.history[-1].content}\n\n{NOT_GOOD}"))
                 self._asked_text = text
-        if not answering and step is None and plays_in_panel(self.project) and (
-                _GENRES.search(text) or (_NAMES_A_GAME.search(text)
-                                         and len(text.split()) >= 8)):
+        if not answering and step is None and plays_in_panel(self.project):
             # Beside the message, for this turn only; the settled history keeps their words.
-            self.history[-1] = Message(role="user", content=(
-                f"{self.history[-1].content}\n\n{WHOLE_GAME}"))
-            self._asked_text = text
+            notes = [WHOLE_GAME] if _GENRES.search(text) or (
+                _NAMES_A_GAME.search(text) and len(text.split()) >= 8) else []
+            if _FROM_ABOVE.search(text) and "game_object" in self.toolbox.allowed and \
+                    not self._has_maze():
+                notes.append(TOP_DOWN)
+            if notes:
+                self.history[-1] = Message(role="user", content="\n\n".join(
+                    [self.history[-1].content, *notes]))
+                self._asked_text = text
         try:
             turn = self._exchange(turn, text, on_text, challenged, corrected)
         except BudgetExhausted:
@@ -1860,10 +1877,12 @@ class AgentController:
                         # A request: the thing may simply not have been made yet. Measured
                         # on the 13C walk: "It's behind the road" after a turn that made
                         # only the sky (SPIKES.md section 28E).
+                        how = (" -- game_object with name walls and layout maze makes one"
+                               if missing.rstrip("s") in ("maze", "labyrinth") else "")
                         self.history.append(Message(role="user", content=(
                             f"The {what} has no {missing} -- its files have none. If they "
-                            f"asked for one, make it now with your tools; otherwise say "
-                            f"plainly it is not there. {about}")))
+                            f"asked for one, make it now with your tools{how}; otherwise "
+                            f"say plainly it is not there. {about}")))
                     continue
                 refused_claim = self._claims_what_was_refused(turn)
                 if refused_claim is not None and disowned:
@@ -2090,6 +2109,18 @@ class AgentController:
                 f"is missing: {about}" + (f" Its scene: {listed}." if listed else "")
                 + " If what they asked for is already so, tell them it already is, and how "
                   "it looks now.")
+
+    def _has_maze(self) -> bool:
+        """Whether the game's scene has a maze laid out (``layout: maze``)."""
+        if not self.project.entrypoint_path.is_file():
+            return False
+        from opennest.graphics import source as scene_source
+
+        try:
+            code = self.project.entrypoint_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return False
+        return scene_source.maze_layout(scene_source.read(code)) is not None
 
     def _getting_started(self, text: str) -> bool:
         """A hello or "what should I do?" -- while the game is still its starter."""
@@ -2519,6 +2550,12 @@ class AgentController:
                 stem = word[:-1] if word.endswith("s") and len(word) > 3 else word
                 forms = (stem, *_PAGE_FORMS.get(stem, ())) if not plays_in_panel(project) \
                     else (stem, *_SCENE_FORMS.get(stem, ()))
+                if stem in ("maze", "labyrinth") and plays_in_panel(project):
+                    # A maze is a layout, not a word: a "maze_wall" building made "the maze
+                    # has walls and a path" true of a game with no maze (Maze_test01).
+                    if re.search(rf"\b{stem}s?\b", lowered) and not self._has_maze():
+                        return word
+                    continue
                 if re.search(rf"\b{stem}s?\b", lowered) and not any(
                         form in source for form in forms):
                     return word

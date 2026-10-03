@@ -718,3 +718,212 @@ def test_a_sentence_that_would_not_read_without_its_place_goes() -> None:
     said = ("The blue monster is at (150, 350) with touch scoring a point. Trees are already "
             "in place at (100, 300) with six copies.")
     assert replies.without_coordinates(said) == "Trees are already in place with six copies."
+
+
+# ============================================================================ the maze
+
+
+def test_a_maze_can_always_be_solved() -> None:
+    from opennest.graphics import maze
+
+    for seed in range(20):
+        grid = maze.carve(15, 11, seed)
+        assert len(grid) == 11 and all(len(row) == 15 for row in grid)
+        assert all(row[0] == row[-1] == "#" for row in grid) and set(grid[0]) == {"#"}
+        assert maze.start(grid) == (1, 1) and maze.end(grid) != (1, 1)
+        # Every open square is reachable from the start: a tree of corridors.
+        squares, seen, todo = maze.open_squares(grid), {(1, 1)}, [(1, 1)]
+        while todo:
+            x, y = todo.pop()
+            for step in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                if step in squares and step not in seen:
+                    seen.add(step)
+                    todo.append(step)
+        assert seen == squares
+    assert maze.carve(15, 11, 3) == maze.carve(15, 11, 3)
+
+
+def test_layout_maze_lays_out_a_solid_maze_seen_from_above(woods) -> None:
+    """The owner's Maze_test01: "a top down view of a maze you create, no road", and the
+    4B's walls were buildings standing on the road."""
+    box = Toolbox(woods)
+    dispatch(box, "a maze game", name="sky", color="blue")
+    dispatch(box, "a maze game", name="road", drawing="road")
+    dispatch(box, "a maze game", name="blue_monster", picture="assets/blue_monster.png",
+             on="road")
+    dispatch(box, "a maze game", name="maze_wall", drawing="building", on="road")
+    body = dispatch(box, "a top down maze, no road", name="walls", layout="maze")
+    code = woods.entrypoint_path.read_text(encoding="utf-8")
+    found = scene(woods)
+    assert "MAZE = [" in code and "grid=MAZE" in code and "road" not in found.entries
+    assert "maze_wall" not in found.entries
+    assert "on" not in found.entries["blue_monster"].literals
+    assert scene_source.touch_rule(found, "walls") == "block"
+    assert "player_was = player.topleft" in code and "player.topleft = player_was" in code
+    assert "PLAYER_SIZE = 28" in code and "pygame.Rect(66, 66, PLAYER_SIZE" in code
+    assert body["end"] and "solid" in body["touch"]
+    compile(code, "game.py", "exec")
+
+
+def test_the_goal_goes_at_the_maze_end_and_reaching_it_starts_a_new_run(woods) -> None:
+    from opennest.graphics import maze
+
+    box = Toolbox(woods)
+    end = dispatch(box, "a maze", name="walls", layout="maze")["end"]
+    body = dispatch(box, "find the monster", name="blue_monster",
+                    picture="assets/blue_monster.png", at="maze end", touch="collect")
+    entry = scene(woods).entries["blue_monster"]
+    x, y = entry.literals["at"]
+    w, h = entry.literals["size"]
+    assert end[0] <= x and x + w <= end[0] + 40 and end[1] <= y and y + h <= end[1] + 40
+    assert "starts the maze again" in body["touch"]
+    code = woods.entrypoint_path.read_text(encoding="utf-8")
+    assert "player.topleft = (66, 66)" in code and "respawn()" not in code
+    layout = scene_source.maze_layout(scene(woods))
+    assert layout is not None and maze.end(layout[1]) is not None
+
+
+def test_a_solid_thing_can_be_made_passable_again(woods) -> None:
+    box = Toolbox(woods)
+    dispatch(box, "a wall", name="wall", shapes=[{"rect": [0, 0, 20, 200]}], at=[100, 100],
+             touch="block")
+    assert "player_was" in woods.entrypoint_path.read_text(encoding="utf-8")
+    dispatch(box, "let me walk through it", name="wall", touch="nothing")
+    assert "player_was" not in woods.entrypoint_path.read_text(encoding="utf-8")
+
+
+def test_a_hand_changed_v3_kit_cannot_be_given_a_maze(woods) -> None:
+    from opennest.graphics.game_object import KIT_PATH
+
+    v3 = (Path(__file__).resolve().parent / "fixtures" / "scene_kit_v3.txt").read_text()
+    assert looks.is_earlier_kit(v3) and looks.kit_version(v3) == 3
+    dispatch(Toolbox(woods), "a sky", name="sky", drawing="sky")
+    (woods.directory / KIT_PATH).write_text(v3.replace("SMOOTH = 3", "SMOOTH = 2"))
+    result = Toolbox(woods).dispatch("game_object", {"name": "walls", "layout": "maze"})
+    assert not result.ok and result.reason == "kit_changed"
+
+
+def test_the_kit_lays_copies_out_from_a_grid(kit) -> None:
+    scene_kit, pygame, screen = kit
+    world = scene_kit.Scene(screen)
+    walls = world.add("walls", scene_kit.Colour("gray"), grid=["###", "# #", "###"],
+                      cell=40, at=(10, 10))
+    assert len(walls) == 8 and (walls[0].x, walls[0].y) == (10 + 3, 10 + 3)
+
+
+def test_a_top_down_request_is_told_what_a_maze_is_made_with(woods) -> None:
+    controller, provider = _controller(woods, [Reply(text="ok")])
+    controller.send("make this a top down view of a maze you create, no road")
+    sent = provider.calls[0][-1].content
+    assert "seen from above" in sent and "layout maze" in sent and "maze end" in sent
+
+
+def test_the_maze_is_not_said_to_be_there_when_it_is_a_building_called_maze_wall(woods) -> None:
+    """"The maze has walls and a path", after three refused calls, about a game whose only
+    maze was a building named maze_wall -- relayed (Maze_test01)."""
+    controller, provider = _controller(woods, [Reply(text="I made it."),
+                                               Reply(text="ok"), Reply(text="ok")])
+    dispatch(controller.toolbox, "walls", name="maze_wall", drawing="building")
+    controller._asked_for |= {"maze"}
+    controller.send("create a maze")
+    provider.replies[:] = [Reply(text="The maze has walls and a path."),
+                           Reply(text="There is no maze yet.")]
+    controller.send("create a maze")
+    assert any("has no maze" in text and "layout maze" in text
+               for text in corrections(provider))
+
+
+def test_changing_a_maze_s_walls_keeps_the_maze(woods) -> None:
+    """The 4B sent the walls a size and "at": "maze end" copied from a result, and the
+    maze became one block at its own end."""
+    box = Toolbox(woods)
+    dispatch(box, "a maze", name="walls", layout="maze")
+    dispatch(box, "again", name="walls", layout="15 x 11 squares", at="maze end",
+             size=[40, 40], color="darkgreen")
+    entry = scene(woods).entries["walls"]
+    assert entry.keywords["grid"] == "MAZE" and "hitbox" in entry.keywords
+    assert "darkgreen" in entry.look
+
+
+def test_a_maze_s_walls_stay_solid_when_told_to_avoid(woods) -> None:
+    box = Toolbox(woods)
+    dispatch(box, "a maze", name="walls", layout="maze")
+    dispatch(box, "walls", name="walls", color="brown", touch="avoid")
+    code = woods.entrypoint_path.read_text(encoding="utf-8")
+    assert code.count("player.topleft = player_was") == 1
+    assert scene_source.touch_rule(scene(woods), "walls") == "block"
+
+
+def test_a_new_maze_takes_the_goal_to_its_new_end(woods) -> None:
+    box = Toolbox(woods)
+    dispatch(box, "a maze", name="walls", layout="maze")
+    dispatch(box, "find it", name="blue_monster", picture="assets/blue_monster.png",
+             at="maze end", touch="collect")
+    end = dispatch(box, "another maze", name="walls", layout="maze")["end"]
+    x, y = scene(woods).entries["blue_monster"].literals["at"]
+    assert end[0] <= x < end[0] + 40 and end[1] <= y < end[1] + 40
+
+
+@pytest.mark.parametrize("arguments", [{"name": "walls", "drawing": "maze"},
+                                       {"name": "maze"}, {"name": "walls", "layout": "maze"}])
+def test_a_maze_asked_for_any_of_the_ways_models_ask_is_a_maze(woods, arguments) -> None:
+    dispatch(Toolbox(woods), "make a maze game", **arguments)
+    assert scene_source.maze_layout(scene(woods)) is not None
+
+
+def test_the_monster_to_find_is_not_the_player(woods) -> None:
+    box = Toolbox(woods)
+    box.message = ("Make a maze game to find the monster I added", ())
+    result = box.dispatch("game_object", {"name": "player",
+                                          "picture": "assets/blue_monster.png"})
+    assert not result.ok and result.reason == "picture_not_asked"
+
+
+def test_things_placed_in_a_maze_go_on_its_paths(woods) -> None:
+    from opennest.graphics import maze
+
+    box = Toolbox(woods)
+    dispatch(box, "a maze", name="walls", layout="maze")
+    dispatch(box, "coins", name="coins", drawing="coin", touch="collect",
+             at=[[20 * n, 20 * n] for n in range(1, 11)])
+    dispatch(box, "the monster", name="monster", picture="assets/blue_monster.png",
+             at=[140, 300])
+    found = scene(woods)
+    _entry, grid, cell, (left, top) = scene_source.maze_layout(found)
+    open_ = maze.open_squares(grid)
+    for name in ("coins", "monster"):
+        spots = found.entries[name].literals["at"]
+        size = found.entries[name].literals["size"]
+        assert max(size) <= cell - 6
+        for x, y in (spots if isinstance(spots, list) else [spots]):
+            assert ((x - left) // cell, (y - top) // cell) in open_
+
+
+def test_maze_walls_show_against_the_floor(woods) -> None:
+    dispatch(Toolbox(woods), "a maze", name="walls", layout="maze", color="black")
+    look = scene(woods).entries["walls"].look
+    assert "black" not in look
+
+
+def test_a_big_thing_moved_into_a_maze_is_a_square_s_size(woods) -> None:
+    box = Toolbox(woods)
+    dispatch(box, "the monster", name="monster", picture="assets/blue_monster.png")
+    dispatch(box, "a maze", name="walls", layout="maze")
+    dispatch(box, "move it", name="monster", at=[300, 200])
+    assert max(scene(woods).entries["monster"].literals["size"]) <= 34
+
+
+def test_a_laid_out_maze_counts_as_drawn(woods) -> None:
+    from opennest.agent import evidence
+
+    dispatch(Toolbox(woods), "a maze", name="walls", layout="maze")
+    code = woods.entrypoint_path.read_text(encoding="utf-8")
+    assert evidence.undrawn(code, {"maze"}) == []
+
+
+def test_a_maze_asked_for_under_another_name_is_the_same_maze(woods) -> None:
+    box = Toolbox(woods)
+    dispatch(box, "a maze", name="walls", layout="maze")
+    dispatch(box, "create a maze", name="maze")
+    assert [e.name for e in scene(woods).entries.values() if "grid" in e.keywords] == \
+        ["walls"]

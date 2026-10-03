@@ -4800,3 +4800,73 @@ a list of three next steps; the 8B asks for an `assets/player.png` nobody has, a
   as its own replies. A new example in a prompt is a sentence the child may read.
 - **A correction must not erase what is true.** Every correction about a change now says
   what the game already has.
+
+## 31. The owner's maze -- a game seen from above
+
+The owner's next test (2026-10-03, `Maze_test01`, the local 4B): the Games card "Maze",
+their `blue_monster.png`, then "Make a maze game to find the monster I added", "make this
+a top down view of a maze you create, no road... the player gets coins when they reach the
+monster at the end of the maze", "create a maze", and "Gary! you didn't create a real maze.
+The problem is the monster is just floating in the sky and there is a random building and
+road." From the project's checkpoints: a sky, a road, the monster standing on the road;
+then a "maze_wall" that was a brown **building** standing on the road; then two turns of
+refused calls, answered "The maze has walls and a path."
+
+Replayed (`replay.py <label> <model> maze`, `maze_before_4b`), the 4B **understood** -- "How
+should the player navigate the maze? Should they avoid walls or find a path to the
+monster?" -- and had nothing to build one with. The scene layer knew one kind of game, seen
+from the side: a sky behind, a road along the bottom, things standing on it. Its walls were
+buildings with "touch: avoid", the second replacing the first, and the monster stood on a
+wall. And "the maze" was taken as present because a thing was named `maze_wall`.
+
+### 31A. What changed
+
+- **Kit version 4: a layout drawn in text.** `scene.add("walls", Colour("gray"), grid=MAZE,
+  cell=40, at=(20, 20))` puts a square wherever `MAZE` -- one string a row, at the top of
+  the game, for the child to read and change -- has a "#". v3's SHA-256 in
+  `EARLIER_KITS`, `tests/fixtures/scene_kit_v3.txt`; a hand-changed older kit is refused a
+  maze rather than given code it cannot run.
+- **`layout: maze`** (`graphics/maze.py`, `_Work._maze`): a maze carved as a tree of
+  corridors (so always solvable) sized to the window; its walls solid; the player made to
+  fit the paths and moved to the start, top left (and "back to the start" with it); a road
+  or ground, and walls tried before, taken out -- a maze is seen from above -- and nothing
+  left standing on them; the result says the maze's size and where its end is.
+- **`touch: block`**: solid -- walking into it puts the player back where it was, written
+  round the game's own arrow-key code; taken away again with its "where it was" line.
+  A maze's walls stay solid when told "avoid" (the 4B's habit).
+- **`at: "maze end"`** puts a thing in the maze's last square, sized to fit; reaching a
+  collected thing in a maze scores and starts the run again, never jumping into a wall; a
+  new maze takes what was at the old end to the new one; a change to the walls never
+  undoes the layout (the 4B sent them a size and "maze end" copied from a result).
+- **What Gary is told**: beside a message about a maze or a top-down game, that a sky and a
+  road are for a game seen from the side and the maze is `layout maze`, then the goal at
+  "maze end"; every turn, that the game is a maze and where its end is; "the maze" is
+  present only when a maze is laid out, and the correction says how to make one.
+
+### 31B. Where the words go, again
+
+The first version described `layout`, "maze end" and `block` in the game_object schema --
+sent with every request. On the full tool-choice set the 4B fell behind at once, and on
+12 requests the described schema left it acting on **2 of 12**, where the committed
+schema acted on 7 and the committed one with only "block" added to the touch list on 8:
+plain requests ("add a timer that counts down from 60", "make the player bigger")
+narrated instead. So the schema is the committed one plus "block"; `layout` and
+`"maze end"` are accepted, not described, and said beside a maze message and in results
+and facts -- where the replays show the 4B following them. The full set on the final schema
+(`tool_choice_4.json`): **67 of 94** acceptable first moves (64 after the test04 pass,
+62 before it); 16 requests with no tool (23 before).
+
+### 31C. The replays
+
+`results/maze_{before,final}_{4b,8b}.json` (an `after` round and the stopped ones were
+superseded; the 4B's `before` is the code as the owner ran it).
+
+| | Qwen3 4B | Qwen3 8B |
+|---|---|---|
+| before | a sky, a road, the monster on it; walls as buildings with "avoid", the second replacing the first, the monster standing on a wall; "The maze is not built" -- no maze in any turn | (not run before) |
+| final | the maze from the first message (`drawing: "maze"`), the monster at its end; "Touching the monster scores a point and restarts the maze." in every later turn | the maze from the first message, "I placed the monster at the maze's end"; coins put on the paths; a second "maze" made the same maze again (fixed after: one maze a game) |
+
+**Model-only, recorded rather than chased**: the 8B keeps changing the player (a vehicle
+drawing, PLAYER_SPEED edits) and, told "you didn't create a real maze" about a game that
+has one, offers to build it; the 4B's replies are short and end with a suggested next
+question; neither turns the orange square into anything but itself.

@@ -18,10 +18,6 @@ How a game uses it:
     trees = scene.add("trees", [Picture("assets/tree_01.png"),   # a list of looks: each
                                 Picture("assets/tree_02.png")],  # copy takes the next one
                       size=(90, 120), on="road", count=4)
-    MAZE = ["#####",                           # a layout drawn in text: a wall
-            "#   #",                           # wherever there is a "#"
-            "#####"]
-    walls = scene.add("walls", Colour("gray"), grid=MAZE, cell=40, at=(0, 0))
 
     while running:
         ...                                    # your own movement and rules
@@ -49,9 +45,8 @@ from pathlib import Path
 import pygame
 
 #: Scene files are versioned so Open Nest can tell its own copy from one you changed.
-#: 2 added ``Scene.touched``; 3 lets one thing have a list of looks, one per copy; 4 lays
-#: copies out from a grid drawn in text (``grid=``), which is how a maze is made.
-VERSION = 4
+#: 2 added ``Scene.touched``; 3 lets one thing have a list of looks, one per copy.
+VERSION = 3
 
 #: Layers, drawn back to front. Things in the same layer are drawn in the order added.
 LAYERS = ("background", "scenery", "things", "player", "effects", "ui")
@@ -679,7 +674,7 @@ class Scene:
 
     def add(self, name, look, *, rect=None, rects=None, scale=1.0, size=None, at=None,
             on=None, layer="things", count=1, moves=(0, 0), edges="wrap", vary=0.0,
-            hitbox=None, grid=None, cell=40):
+            hitbox=None):
         """Put something in the scene, or replace what is there under that name.
 
         - ``rect=``/``rects=``: draw the game's own rectangle, or list of them, with this
@@ -694,23 +689,12 @@ class Scene:
         Picture("assets/tree_02.png")]`` -- and then each copy takes the next one, so a
         row of trees is not one tree over and over.
 
-        ``grid`` is a layout drawn in text, one string a row, with a copy ``cell`` pixels
-        square wherever there is a "#" -- a maze's walls -- starting at ``at``.
-
         Returns the thing -- or a list of them when there are several.
         """
         if layer not in LAYERS:
             raise SceneError(f"{layer!r} is not a layer; the layers are {', '.join(LAYERS)}")
         if isinstance(look, (list, tuple)) and not look:
             raise SceneError(f"{name!r} was given an empty list of looks")
-        if grid is not None:
-            left, top = at if at and not isinstance(at[0], (list, tuple)) else (0, 0)
-            at = [(left + column * cell, top + row * cell)
-                  for row, line in enumerate(grid) for column, mark in enumerate(line)
-                  if mark == "#"]
-            if not at:
-                raise SceneError(f"{name!r}'s grid has no # in it, so there is nothing to draw")
-            size = size or (cell, cell)
         if rect is not None or rects is not None:
             items = [rect] if rect is not None else rects
             self.entries[name] = {"look": look, "layer": layer, "items": items,

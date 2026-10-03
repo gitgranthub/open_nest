@@ -97,7 +97,7 @@ def test_the_kit_imports_nothing_but_pygame_and_the_standard_library() -> None:
     imported |= {node.module.split(".")[0] for node in ast.walk(tree)
                  if isinstance(node, ast.ImportFrom) and node.module}
     assert imported <= {"pygame", "random", "pathlib"}
-    assert looks.kit_version() == 3
+    assert looks.kit_version() == 4
 
 
 def test_colours_by_name_hex_and_numbers(kit) -> None:

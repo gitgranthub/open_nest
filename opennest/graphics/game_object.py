@@ -35,7 +35,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from opennest.graphics import looks, source
+from opennest.graphics import looks, maze, source
 from opennest.graphics.looks import Look, LookError, quoted
 
 #: The kit, as it goes into a project.
@@ -178,9 +178,10 @@ def _run(project, args: dict, pictures, kit_text, message=("", ()),
     work.pictured = pictured
     if kit_now == "ours":
         # A kit changed by hand is never replaced, so it is drawn with what it can do: one
-        # look per copy arrived in version 3.
+        # look per copy arrived in version 3, a grid -- a maze -- in version 4.
         present = (project.directory / KIT_PATH).read_text(encoding="utf-8")
         work.lists = (looks.kit_version(present) or 0) >= 3
+        work.grids = (looks.kit_version(present) or 0) >= 4
     text, result = work.apply()
     if needs_scene:
         text = _imports(text, source.read(text))
@@ -413,6 +414,10 @@ class _Work:
         self.lists = True
         #: What earlier calls for this message gave a picture to.
         self.pictured: frozenset[str] = frozenset()
+        #: Whether the project's kit can lay copies out from a grid (version 4).
+        self.grids = True
+        #: Whether this call's collect rule is a maze's goal.
+        self.maze_goal = False
         self.lines = text.split("\n")
         self.width, self.height = _screen_size(facts)
         self.var = scene.variable
@@ -429,6 +434,11 @@ class _Work:
 
     def apply(self) -> tuple[str, dict]:
         player = self.facts.get("player")
+        if self._means_maze():
+            if player and self._means_player(player):
+                raise Refused("A maze is its walls, not the player: call game_object with "
+                              "name walls and layout maze. Nothing was changed.", "not_a_look")
+            return self._maze(player)
         if player and self._means_player(player):
             return self._player(player)
         entry = self._existing_entry()
@@ -736,6 +746,14 @@ class _Work:
             return True
         words = {w for w in re.split(r"[^a-z0-9]+", Path(picture).stem.lower()) if len(w) > 2}
         if self._targets_player:
+            owner = self._picture_owner(words)
+            if owner and re.search(
+                    rf"\b(?:find|reach|catch|collect|get to|chase|rescue|save|look for)\b"
+                    rf"(?:\s+\w+){{0,3}}?\s+{re.escape(owner)}s?\b", (self.said or "").lower()):
+                # "a maze game to find the monster I added" -- the monster is what the
+                # player looks for, not the player (the 8B, Maze_test01 replay).
+                self.owner = owner
+                return False
             # Any picture may be the player ("use my eagle picture as the player") -- but
             # not one named for another thing the game already has, unless they say so.
             # Measured on the test04 replay: "I added the monster image now ... the player
@@ -1024,6 +1042,316 @@ class _Work:
         result = self._report("changed", look, entry, keywords)
         self._said_of_game_code(items, result)
         return edit.text(), result
+
+    # -- a maze --------------------------------------------------------------------------
+
+    _MAZE_WORDS = ("maze", "labyrinth")
+
+    def _means_maze(self) -> bool:
+        """``layout: maze`` -- or a maze asked for the way a model reaches for it: measured
+        on the Maze_test01 confirmations, with layout described only beside the message,
+        both models sent ``drawing: "maze"``; and a thing named "maze" with no look."""
+        args = self.args
+        if str(args.get("layout") or "").strip().lower() in self._MAZE_WORDS:
+            return True
+        if str(args.get("drawing") or "").strip().lower() in self._MAZE_WORDS:
+            return True
+        return self.name in self._MAZE_WORDS and not any(
+            args.get(key) for key in ("picture", "shapes", "drawing"))
+
+    #: How big a maze's squares are, and how much room the player has in a path.
+    MAZE_CELL = 40
+    MAZE_ROOM = 12
+
+    def _maze(self, player: str | None) -> tuple[str, dict]:
+        """``layout: maze`` -- walls laid out as a maze seen from above, solid, with the
+        player at its start and its end said in the result (the owner's Maze_test01).
+
+        What is written is the child's to read and change: ``MAZE`` at the top of the game,
+        one string a row, "#" a wall; one ``scene.add(..., grid=MAZE, ...)``; and the rule
+        that puts the player back when it walks into a wall. A road or ground goes -- a maze
+        is seen from above -- and the player's start moves to the maze's start."""
+        if player is None:
+            raise Refused("A maze needs a player the arrow keys move, and this game has none "
+                          "-- edit_file first. Nothing was changed.", "no_player")
+        if not self.grids:
+            raise Refused("This project's src/scene.py was changed by hand and cannot lay out "
+                          "a grid, so Open Nest can't make a maze in it. Nothing was changed.",
+                          "kit_changed")
+        edit = source.Edit(self.text)
+        tree = self.scene.tree
+        cell = self.MAZE_CELL
+        constants = self.facts.get("constants") or {}
+        size_name = self.facts.get("player_size")
+        box = getattr(constants.get(size_name), "value", None) if size_name else None
+        room = cell - self.MAZE_ROOM
+        if isinstance(box, int) and box > room:
+            if size_name and self._only_the_rect_uses(size_name, player):
+                const = constants[size_name]
+                line = self.lines[const.line]
+                edit.replace(const.line, const.line,
+                             [line[:const.start] + str(room) + line[const.end:]])
+                self.notes.append(f"{size_name} went from {box} to {room}, so the player fits "
+                                  f"the maze's paths")
+                box = room
+            else:
+                cell = box + self.MAZE_ROOM
+        columns, rows = self.width // cell, self.height // cell
+        columns, rows = columns - (columns % 2 == 0), rows - (rows % 2 == 0)
+        left, top = (self.width - columns * cell) // 2, (self.height - rows * cell) // 2
+        before = source.maze_layout(self.scene)
+        seed = sum(map(ord, f"{self.project.name}{before[1] if before else ''}"))
+        grid = maze.carve(columns, rows, seed)
+        begin, finish = maze.start(grid), maze.end(grid)
+        # The layout itself, at the top with the other things to change.
+        name = "MAZE"
+        constant = ["MAZE = [  # the maze: \"#\" is a wall, a space is a path",
+                    *(f'    "{row}",' for row in grid), "]"]
+        spans = source.assignments_of(tree, name)
+        if spans:
+            edit.replace(spans[0][0], spans[0][1], constant)
+        else:
+            end = self.facts.get("constants_end")
+            edit.insert(end + 1 if end is not None else self.facts.get("setup_line"),
+                        constant)
+        # The walls: a plain block unless they were given a picture or shapes. ("drawing":
+        # "maze" asked for the maze, not a look.)
+        if str(self.args.get("drawing") or "").strip().lower() in self._MAZE_WORDS:
+            self.args = {k: v for k, v in self.args.items() if k != "drawing"}
+        look = self.look(required=False)
+        if look is None or look.kind == "drawing":
+            fill = self.args.get("color", self.args.get("colour")) or "slategray"
+            if look is not None:
+                self.notes.append(f"a maze's walls are blocks, so it is not a {look.drawing} "
+                                  f"drawing -- a picture makes them look like something")
+            look = Look("colour", fill=looks.colour(fill, self.notes))
+        floor = getattr((self.facts.get("constants") or {}).get(
+            self.facts.get("background") or ""), "value", None)
+        shade = looks.rgb(look.fill) if look.kind == "colour" else None
+        if isinstance(floor, tuple) and len(floor) == 3 and shade and \
+                abs(_luminance(shade) - _luminance(floor)) < 60:
+            # Black walls on the starter's near-black floor (the 4B, Maze_test01 replay):
+            # a maze nobody can see. The walls are made to show.
+            light = _luminance(floor) < 128
+            look = Look("colour", fill=looks.colour("lightgray" if light else "darkgray",
+                                                     self.notes))
+            self.notes.append(f"{fill} walls would not show on this background, so they are "
+                              f"{'light' if light else 'dark'} gray")
+        keywords = [("grid", name), ("cell", str(cell)), ("at", f"({left}, {top})"),
+                    ("hitbox", f"({cell}, {cell})"), ("layer", quoted("scenery"))]
+        entry = next((self.scene.entries[form] for form in _forms(self.name)
+                      if form in self.scene.entries), None)
+        if entry is None and before is not None:
+            # One maze: asked for again under another name ("maze" after "walls", the 8B
+            # on the Maze_test01 replay), it is the same maze made again.
+            entry = before[0]
+        if entry is not None:
+            self.name = entry.name
+        # What was tried as walls before -- the 4B's "maze_wall", a building on the road --
+        # is the maze now.
+        tried = [e for e in self.scene.entries.values() if e is not entry and
+                 "grid" not in e.keywords and not e.wraps and
+                 any(word in e.name for word in ("wall", "maze"))]
+        for old in tried:
+            edit.drop(old.first, old.last)
+            if old.name in self.scene.rules:
+                edit.drop(*self.scene.rules[old.name])
+        if tried:
+            self.notes.append(f"{', '.join(e.name for e in tried)} went: the maze is the "
+                              f"walls now")
+        target = (entry.target if entry else self.name) if self.name.isidentifier() and (
+            entry is not None or self.name not in source.names_used(tree)) else None
+        statement = source.call_text(self.var, self.name, look.code(), keywords, target)
+        if entry is not None:
+            edit.replace(entry.first, entry.last, statement)
+        else:
+            edit.insert(self._position(after_names=(), layer="scenery"), statement)
+        # Seen from above: no road or ground along the bottom, nothing standing on one.
+        bands = [e for e in self.scene.entries.values()
+                 if e.look_class in ("Road", "Ground") and e.name != self.name]
+        for band in bands:
+            edit.drop(band.first, band.last)
+            if band.name in self.scene.rules:
+                edit.drop(*self.scene.rules[band.name])
+        gone = {band.name for band in bands}
+        dropped = gone | {old.name for old in tried}
+        for other in self.scene.entries.values():
+            if other.name not in dropped and other is not entry and \
+                    other.literals.get("on") in dropped:
+                kept = [(k, v) for k, v in other.keywords.items() if k != "on"]
+                edit.replace(other.first, other.last, source.call_text(
+                    self.var, other.name, other.look, kept, other.target))
+        if gone:
+            self.notes.append(f"{', '.join(sorted(gone))} went: a maze is seen from above, "
+                              f"and has no road or ground along its bottom")
+        if before is not None:
+            # A new maze has its end somewhere else: what was at the old end -- the goal --
+            # goes to the new one, never left inside what is a wall now (the Maze_test01
+            # replay: "create a maze" again, and the monster stayed where the end had been).
+            _old, old_grid, old_cell, (old_left, old_top) = before
+            old_end = maze.end(old_grid)
+            ox, oy = old_left + old_end[0] * old_cell, old_top + old_end[1] * old_cell
+            for other in self.scene.entries.values():
+                spot, span = other.literals.get("at"), other.literals.get("size")
+                if other is entry or other.name in dropped or not (
+                        isinstance(spot, tuple) and isinstance(span, tuple)):
+                    continue
+                if ox <= spot[0] and spot[0] + span[0] <= ox + old_cell + 1 and \
+                        oy <= spot[1] and spot[1] + span[1] <= oy + old_cell + 1:
+                    nx = left + finish[0] * cell + spot[0] - ox
+                    ny = top + finish[1] * cell + spot[1] - oy
+                    kept = [(k, f"({nx}, {ny})" if k == "at" else v)
+                            for k, v in other.keywords.items()]
+                    edit.replace(other.first, other.last, source.call_text(
+                        self.var, other.name, other.look, kept, other.target))
+                    self.notes.append(f"{other.name} went to the new maze's end")
+        # The player starts at the maze's start, and so does "back to the start".
+        sx = left + begin[0] * cell + (cell - (box if isinstance(box, int) else room)) // 2
+        sy = top + begin[1] * cell + (cell - (box if isinstance(box, int) else room)) // 2
+        old_start = source.rect_start(tree, player)
+        self._move_start(edit, player, (sx, sy), old_start)
+        for first, last in self.scene.rules.values():
+            for index in range(first, last + 1):
+                line = self.lines[index]
+                if re.search(r"\b\w+\.respawn\(\)", line) and "score" in "\n".join(
+                        self.lines[first:last + 1]):
+                    # Collected in a maze: the player starts again; the goal stays put.
+                    edit.replace(index, index, [re.sub(
+                        r"\b\w+\.respawn\(\)", f"{player}.topleft = ({sx}, {sy})", line)])
+        self._block(edit, self.name, player, start_moved=True)
+        result = self._report("changed" if entry is not None else "added", look, None,
+                              keywords)
+        result["layout"] = (f"a maze {columns} x {rows} squares of {cell} pixels, seen from "
+                            f"above, written as MAZE at the top of the game -- # is a wall")
+        result["touch"] = "solid: the player cannot walk through the walls"
+        result["player"] = f"starts at the maze's start, top left, at ({sx}, {sy})"
+        result["end"] = [left + finish[0] * cell, top + finish[1] * cell]
+        result["next"] = ("put what they are looking for at the maze's end: game_object with "
+                          "its name and at \"maze end\"")
+        result.pop("placed", None)
+        return edit.text(), result
+
+    def _move_start(self, edit, player: str, spot: tuple[int, int], old: str | None) -> None:
+        """The player's ``pygame.Rect(...)`` starts at ``spot`` -- and the rules that send it
+        back to where it started send it there."""
+        for node in self.scene.tree.body:
+            if isinstance(node, ast.Assign) and any(
+                    isinstance(t, ast.Name) and t.id == player for t in node.targets) and \
+                    isinstance(node.value, ast.Call) and len(node.value.args) == 4:
+                rest = ", ".join(ast.unparse(a) for a in node.value.args[2:])
+                func = ast.unparse(node.value.func)
+                edit.replace(node.lineno - 1, node.end_lineno - 1,
+                             [f"{player} = {func}({spot[0]}, {spot[1]}, {rest})"])
+                break
+        if not old:
+            return
+        for first, last in self.scene.rules.values():
+            for index in range(first, last + 1):
+                if old in self.lines[index] and f"{player}.topleft" in self.lines[index]:
+                    edit.replace(index, index, [self.lines[index].replace(
+                        old, f"({spot[0]}, {spot[1]})")])
+        self.notes.append(f"the player starts at the maze's start now, at ({spot[0]}, "
+                          f"{spot[1]})")
+
+    def _block(self, edit, name: str, player: str | None, *, start_moved=False) -> None:
+        """``touch: block`` -- the thing is solid: walking into it puts the player back
+        where it was before it moved. Written round the game's own movement code."""
+        if player is None:
+            self.notes.append("there is no player the arrow keys move, so nothing walks into "
+                              "it")
+            return
+        arrows = self.facts.get("arrow_ifs")
+        if not arrows:
+            self.notes.append("the game moves the player some other way, so walking into it "
+                              "was left to the game -- edit_file changes that")
+            return
+        existing = self.scene.rules.get(name)
+        if existing:
+            edit.drop(*existing)
+        indent = self.facts.get("indent")
+        was = f"{player}_was"
+        loop = source.main_loop(self.scene.tree)
+        holds = [stmt for stmt in loop.body if isinstance(stmt, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == was for t in stmt.targets)]
+        if not holds:
+            edit.insert(min(line for line, _ in arrows),
+                        [f"{indent}{was} = {player}.topleft  # where it was before it moves"])
+        lines = [line for line, _ in arrows]
+        after = self.facts.get("clamp")
+        if after is None:
+            last = max(lines)
+            node = next((n for n in loop.body if n.lineno - 1 == last), None)
+            after = (node.end_lineno - 1) if node is not None else last
+        edit.insert(after + 1, [
+            f"{indent}{source.RULE_MARK}{name.replace('_', ' ')} are solid: walking into "
+            f"them puts the player back.",
+            f"{indent}if {self.var}.touching({player}, {quoted(name)}):",
+            f"{indent}    {player}.topleft = {was}"])
+
+    def _on_the_paths(self, spots, size):
+        """In a maze, a thing given a place goes on the open square nearest it, at a
+        square's size -- never inside a wall. Measured on the Maze_test01 replay: the 8B
+        put ten coins on a diagonal through the walls, and the monster at a picture's
+        full size, over them."""
+        _entry, grid, cell, (left, top) = source.maze_layout(self.scene)
+        squares = sorted(maze.open_squares(grid))
+        room = cell - 6
+        if max(size) > room:
+            scale = room / max(size)
+            size = (max(4, round(size[0] * scale)), max(4, round(size[1] * scale)))
+        many = isinstance(spots, (list, tuple)) and spots and isinstance(spots[0], (list, tuple))
+        wanted = [_pair(s) for s in spots] if many else [_pair(spots)]
+        placed, used = [], set()
+        for spot in wanted:
+            if spot is None:
+                continue
+            free = [sq for sq in squares if sq not in used] or squares
+            square = min(free, key=lambda sq: (left + sq[0] * cell + cell / 2 - spot[0]) ** 2
+                         + (top + sq[1] * cell + cell / 2 - spot[1]) ** 2)
+            used.add(square)
+            placed.append([left + square[0] * cell + (cell - size[0]) // 2,
+                           top + square[1] * cell + (cell - size[1]) // 2])
+        if not placed:
+            return spots, size
+        self.notes.append("it is on the maze's paths, a square's size")
+        return (placed if many else placed[0]), size
+
+    def _drop_hold(self, edit, name: str) -> None:
+        """A solid thing's rule gone: its "where the player was" line goes too, once no
+        other solid thing needs it."""
+        player = self.facts.get("player")
+        loop = source.main_loop(self.scene.tree) if player else None
+        if loop is None:
+            return
+        others = [rule for key, rule in self.scene.rules.items() if key != name and
+                  "_was" in "\n".join(self.lines[rule[0]:rule[1] + 1])]
+        if others:
+            return
+        for stmt in loop.body:
+            if isinstance(stmt, ast.Assign) and any(
+                    isinstance(t, ast.Name) and t.id == f"{player}_was" for t in stmt.targets):
+                edit.drop(stmt.lineno - 1, stmt.end_lineno - 1)
+
+    def _maze_spot(self, which: str, size: tuple[int, int]):
+        """("maze end" or "maze start") -> ((x, y), size) inside that square of the scene's
+        maze, the size made to fit it -- or None."""
+        layout = source.maze_layout(self.scene)
+        if layout is None:
+            self.notes.append(f"there is no maze in the scene for {which!r}, so it was placed "
+                              f"without it")
+            return None
+        _entry, grid, cell, (left, top) = layout
+        square = maze.start(grid) if "start" in which.lower() else maze.end(grid)
+        if square is None:
+            return None
+        room = cell - 6
+        if max(size) > room:
+            scale = room / max(size)
+            size = (max(4, round(size[0] * scale)), max(4, round(size[1] * scale)))
+        x = left + square[0] * cell + (cell - size[0]) // 2
+        y = top + square[1] * cell + (cell - size[1]) // 2
+        self.notes.append(f"it is at the maze's {'start' if 'start' in which else 'end'}")
+        return (x, y), size
 
     # -- a list the game already draws ---------------------------------------------
 
@@ -1489,8 +1817,15 @@ class _Work:
             size = self._sensible(size, look, drawing)
         size = (max(4, min(self.width, size[0])), max(4, min(self.height, size[1])))
         size = self._picture_shaped(size, look)
-        keywords.append(("size", f"({size[0]}, {size[1]})"))
         spots = args.get("at")
+        if isinstance(spots, str):
+            # "maze end": where the goal of a maze goes (``_maze``'s result says so).
+            placed = self._maze_spot(spots, size)
+            spots, size = (list(placed[0]), placed[1]) if placed else (None, size)
+        elif spots and drawing not in ("sky", "cloud") and \
+                source.maze_layout(self.scene) is not None:
+            spots, size = self._on_the_paths(spots, size)
+        keywords.append(("size", f"({size[0]}, {size[1]})"))
         on = self._on_target()
         standing = drawing in STANDING or (look.kind in ("picture", "pictures") and
                                            looks.infer_drawing(self.name) in STANDING)
@@ -1661,10 +1996,24 @@ class _Work:
         """An existing thing's keywords, with only what Gary gave now changed."""
         args = self.args
         current = dict(entry.keywords)
+        if "grid" in current:
+            # A maze's walls: their layout is the maze. Measured on the Maze_test01 replay,
+            # the 4B sent the walls a size and "at": "maze end" copied from a result, and
+            # the maze became one block at its own end. A look, a layer or what touching
+            # them does can change; where they are is layout maze's.
+            if any(args.get(key) not in (None, "", [], 0) for key in ("size", "at", "count")):
+                self.notes.append("the walls are laid out as the maze, so their places and "
+                                  "size stayed -- layout maze makes a new one")
+            kept = [(key, current[key]) for key in ("grid", "cell", "at", "hitbox")
+                    if key in current]
+            return kept + [("layer", quoted(self._layer(entry, entry.layer)))]
         probe = look or _look_of(entry)
         fresh = dict(self._placement(probe))
         given = {key for key in ("size", "at", "on", "count") if args.get(key) not in
                  (None, "", [], 0)}
+        if isinstance(args.get("at"), str) or ("at" in given and "grid" not in current and
+                                               source.maze_layout(self.scene) is not None):
+            given.add("size")              # a maze's square decides how big it can be
         # A sky and a band are placed by rule, whatever they were given before.
         forced = probe.kind == "drawing" and probe.drawing in ("sky",) + BANDS
         merged: list[tuple[str, str]] = []
@@ -1718,11 +2067,29 @@ class _Work:
 
     def _rule(self, edit, name: str, *, items: str | None = None) -> None:
         touch = self.args.get("touch")
-        if touch not in ("avoid", "collect", "nothing", "shoot"):
+        if touch not in ("avoid", "collect", "nothing", "shoot", "block"):
             return
+        entry = self.scene.entries.get(name)
+        if touch == "avoid" and entry is not None and "grid" in entry.keywords:
+            # A maze's walls are solid; "avoid" on them is the 4B's habit (the Maze_test01
+            # replay), and back-to-the-start on every brush with a wall is no maze.
+            self.notes.append("the maze's walls stay solid -- touch nothing makes them "
+                              "passable")
+            touch = "block"
+        if touch == "block" and entry is not None and name in self.scene.rules and \
+                "_was" in "\n".join(self.lines[self.scene.rules[name][0]:
+                                                self.scene.rules[name][1] + 1]):
+            return                     # solid already
         player = self.facts.get("player")
         if touch == "shoot":
             self._shot(edit, name, player, items)
+            return
+        if touch == "block":
+            if items:
+                self.notes.append(f"{items} are the game's own code, so walking into them was "
+                                  f"left to it -- edit_file changes that")
+                return
+            self._block(edit, name, player)
             return
         if player is None:
             self.notes.append("there is no player the arrow keys move, so nothing happens "
@@ -1731,6 +2098,7 @@ class _Work:
         existing = self.scene.rules.get(name)
         if existing:
             edit.drop(*existing)
+            self._drop_hold(edit, name)
         if touch == "nothing":
             return
         if items and self._already_touched(items):
@@ -1751,6 +2119,18 @@ class _Work:
                      f"the start.",
                      f"{indent}if {var}.{touch_call}({player}, {quoted(name)}):",
                      f"{indent}    {player}.topleft = {start}"]
+        elif source.maze_layout(self.scene) is not None:
+            # In a maze, reaching it is the end of a run: a point, and the player starts
+            # the maze again -- the thing stays at the end (the owner's Maze_test01).
+            start = source.rect_start(self.scene.tree, player) or \
+                f"({self.width // 2}, {self.height // 2})"
+            block = [f"{indent}{source.RULE_MARK}reaching {name} scores a point, and the "
+                     f"player starts the maze again.",
+                     f"{indent}if {var}.{touch_call}({player}, {quoted(name)}):",
+                     f"{indent}    score += 1",
+                     f"{indent}    {player}.topleft = {start}"]
+            self._score(edit)
+            self.maze_goal = True
         else:
             one = _singular(name)
             if one in source.names_used(self.scene.tree) or not one.isidentifier():
@@ -1903,6 +2283,9 @@ class _Work:
         touch = self.args.get("touch")
         if touch == "avoid":
             result["touch"] = "touching it sends the player back to the start"
+        elif touch == "collect" and self.maze_goal:
+            result["touch"] = ("reaching it scores a point, and the player starts the maze "
+                               "again")
         elif touch == "collect":
             result["touch"] = "touching one scores a point, and it goes round again"
         elif touch == "shoot":
@@ -2032,6 +2415,10 @@ def _pair(value) -> tuple[int, int] | None:
             isinstance(v, (int, float)) and not isinstance(v, bool) for v in value):
         return (round(value[0]), round(value[1]))
     return None
+
+
+def _luminance(rgb) -> float:
+    return 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
 
 
 def _clamp_spot(spot, size, width, height) -> tuple[int, int]:
