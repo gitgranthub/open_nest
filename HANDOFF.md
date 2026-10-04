@@ -1,5 +1,9 @@
 # Handoff — start here
 
+**[WHATS_NEW.md](WHATS_NEW.md) is the latest work in plain words, on one page.** It is
+rewritten, not appended to, at the end of every pass, so it stays short. This file is the
+full reference; [ONBOARDING.md](ONBOARDING.md) is the short way in.
+
 ## Where it stands (2026-10-03)
 
 **Phase 13 is finished and pushed on `phase-13-live-preview`** (stacked on the Phase 12
