@@ -5330,3 +5330,44 @@ the ignored `spikes/`).
 - **Open Nest's own sentences are never Gary's.** A reply carrying them was copied.
 - **A model's weakness is catalogue data** (`struggles_with`), measured, so a remote
   catalogue can correct it and no code names a model.
+
+### 33G. The model or the setup? The same games, one reply, no Open Nest loop
+
+Asked by the owner after §33: is "Gary cannot build a whole game" the model or Open Nest?
+`benchmarks/game_builds/one_shot.py` asks the bare model, as any coding assistant would
+be asked: one short system prompt, five of §33's requests with their follow-ups folded
+in, one reply of up to 4000 tokens, temperature 0. The code is run by Open Nest's own
+playtest (the app's sandbox and harness) and its last frame looked at. With `--repair`, a
+crash or a frozen picture goes back up to twice with the app's own playtest feedback
+(`results/oneshot_*_repair.json`).
+
+| | cat | space | platform | side-scroller | 3D block world |
+|---|---|---|---|---|---|
+| Gary Fast, one reply | ✓ | ✗ unclosed bracket | ✗ 502 lines, cut off | ✗ "得多" in the code | ✗ cut off, garbage |
+| Gary Fast, + repair | ✓ | ✓ lives, score | ✗ (twice more) | ~ runs, a green screen | ✗ frozen |
+| Gary Smart, one reply | ✓ | ✓ stars, lives | ~ no key response | ✗ `BLACK` undefined | ✗ frozen |
+| Gary Smart, + repair | ✓ | ✓ | ~ | ✓ ground, trees, coins, jump, score | ✗ frozen (twice more) |
+
+Each game took 20-40 s a reply (both running at once) and 108-180 lines.
+
+- **For Gary Smart the limit is mostly Open Nest's setup.** Written whole and repaired
+  from the playtest, three of the four 2D games were the game asked for, in a minute or
+  two; through the Workbench, none of those was built from its first message (§33D). There
+  it works by exact-text edits on the starter: 47 of its 72 `edit_file` calls in the final
+  builds were refused (27 text not in the file, 12 no change, 9 broken Python), and its ten
+  whole-file rewrites are refused by design (`write_file` never overwrites -- Phase 2's
+  rule, from a 4B returning broken Python).
+- **For Gary Fast the limit is mostly the model.** One reply gave one working game of five;
+  the rest broke the way a small model's long output does (a stray Chinese word, a runaway
+  500-line repetition, an unclosed bracket). Repair rescued the space game.
+- **3D is beyond both**, written whole or repaired: Gary Smart wrote a real perspective
+  projection with a turning camera, 150-180 lines, and it never drew a moving picture. The
+  starter (§33C) stands.
+- **Not tried here**: a cloud model (keys dead). §28K's Luna built the eagle game whole
+  from one sentence through the *incremental* tools, which no local model has done.
+
+What it points at, not built: a fresh game written whole -- only while the project is
+still the untouched starter, so nothing of the child's is lost -- then the playtest and
+repair, for a model that does not struggle with games. That is a change to a measured
+safety rule and is the owner's call.
+
