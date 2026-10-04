@@ -5,8 +5,9 @@ running on a **small local model** (Gary Fast is Qwen3-VL 4B), builds and runs i
 design choices that look odd were measured against that model. Check
 [SPIKES.md](SPIKES.md) before "fixing" one.
 
-Read next: [WHATS_NEW.md](WHATS_NEW.md) (the latest work), then [HANDOFF.md](HANDOFF.md),
-the full reference and the entry point for every session.
+Read next: [WHATS_NEW.md](WHATS_NEW.md) (the latest work), then [HANDOFF.md](HANDOFF.md)
+(the rules, and the entry point for every session).
+[HANDOFF_ARCHIVE.md](HANDOFF_ARCHIVE.md) has the full history behind them.
 
 ## Run it
 
