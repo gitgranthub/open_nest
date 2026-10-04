@@ -517,8 +517,18 @@ def shapes_look(shapes, size, at, notes: list[str], constants=()) -> Look | None
         dx, dy = x1, y1
         notes.append("its shapes were given as places on the screen, so Open Nest moved "
                      "them into its own box")
+    if box is None and at is not None and (at[0] or at[1]) and x1 >= at[0] - 1 and \
+            y1 >= at[1] - 1:
+        # No size, and the shapes start where the thing is placed: places on the screen
+        # again. Measured on the game builds (SPIKES.md section 33): Gary Smart's mountains
+        # "at [0, 300]" with a rectangle "[0, 300, 640, 100]" became a 640x400 box placed
+        # at y 300 -- the mountains drawn at y 600, off the screen, and the trees the same.
+        dx, dy = at
+        notes.append("its shapes were given as places on the screen, so Open Nest moved "
+                     "them into its own box")
     if box is None:
-        box = (max(1, math.ceil(x2 - min(0.0, x1))), max(1, math.ceil(y2 - min(0.0, y1))))
+        box = (max(1, math.ceil(x2 - dx - min(0.0, x1 - dx))),
+               max(1, math.ceil(y2 - dy - min(0.0, y1 - dy))))
     elif x2 - dx > box[0] + 1 or y2 - dy > box[1] + 1:
         grown = (max(box[0], math.ceil(x2 - dx)), max(box[1], math.ceil(y2 - dy)))
         notes.append(f"its shapes reach past its size, so its box is {grown[0]}x{grown[1]}")

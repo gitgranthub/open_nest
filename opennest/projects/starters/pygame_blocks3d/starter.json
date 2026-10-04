@@ -1,0 +1,12 @@
+{
+  "id": "pygame_blocks3d",
+  "profile": "games",
+  "name": "3D Block World",
+  "description": "A world of 1 metre blocks you walk through in first person, with W A S D.",
+  "_why_note": "The owner's test05 (2026-10-04): asked for 'a simple, block 3D game ... made by 1 meter square cubes', Gary Fast gave one window-sized rectangle, and the Games prompt itself told Gary to build 'the closest 2D version'. A first-person renderer is more than a small model can write through edit_file, and it is ~200 lines of plain pygame Open Nest can ship and test -- the same reasoning as every starter: the foundation is files on disk, and what Gary is for is changing it. Everything a child would change is a named value at the top: WORLD (the map, one letter a block), BLOCKS, SKY, GROUND, STARS, PLANETS, HANDS, the speeds. benchmarks/game_builds, SPIKES.md section 33.",
+  "entry_point": "game.py",
+  "version": 1,
+  "files": [
+    "game.py"
+  ]
+}

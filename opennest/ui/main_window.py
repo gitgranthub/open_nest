@@ -13,9 +13,16 @@ from opennest.agent.controller import AgentController
 from opennest.agent.tools import Toolbox
 from opennest.ai import images
 from opennest.ai.provider import ProviderError
-from opennest.ai.router import build_provider, get_entry, startup_model_id, unmet_requirements
+from opennest.ai.router import (
+    build_provider,
+    get_entry,
+    model_advice,
+    startup_model_id,
+    unmet_requirements,
+)
 from opennest.fastpath.router import FastPathRouter
 from opennest.memory.manager import MemoryManager
+from opennest.models import machine as machine_info
 from opennest.projects.manager import Project, ProjectError, create_project
 from opennest.projects.profiles import Profile
 from opennest.security import keychain, permissions
@@ -66,6 +73,8 @@ class MainWindow(QMainWindow):
 
         self._provider = None
         self._loader_thread = None
+        #: This Mac, read once when a decision first needs it (``models.machine``).
+        self._machine = None
         #: True while a project is closing (``_close_project``), which can wait for a
         #: turn to finish with the event loop running.
         self._closing = False
@@ -235,6 +244,7 @@ class MainWindow(QMainWindow):
         chosen = new_project.ask(self, profile)
         if chosen is None:
             return
+        switch_to = self._advise_model(profile)
         try:
             # The dialog always decides, so PROFILE_DEFAULT never reaches here: by this
             # point "empty" is a choice the child made rather than one nobody made.
@@ -251,6 +261,30 @@ class MainWindow(QMainWindow):
         # prompts": the chosen one is filled into the message box, not sent, so they can
         # add to it first.
         self._open_project(project, starter_idea=chosen.starter_idea)
+        if switch_to and self._workbench is not None:
+            # Through the picker's own path: the cloud warning, loading, and putting the
+            # picker back if anything refuses.
+            self._switch_model(switch_to)
+
+    def _advise_model(self, profile: Profile) -> str | None:
+        """When the model in use struggles with this kind of project, say so first.
+
+        The owner's ruling after the game builds pass (SPIKES.md section 33): a Game begun
+        on Gary Fast says Gary Fast will struggle to build a usable game, and offers Gary
+        Smart or a cloud model where this Mac can use one. The model's ``struggles_with``
+        decides (``router.model_advice``). Returns the model chosen instead, or None.
+        """
+        info = getattr(self._provider, "info", None)
+        current = getattr(info, "id", None) or startup_model_id(
+            self.installation.preferred_model)
+        if self._machine is None:
+            self._machine = machine_info.detect()
+        advice = model_advice(current, profile, self._machine,
+                              allow_cloud=self.controls.cloud_allowed(),
+                              credentials=self.credentials)
+        if advice is None:
+            return None
+        return consent.advise_model(self, advice)
 
     def _open_project(self, project: Project, *, starter_idea: str | None = None) -> None:
         if self._provider is None:

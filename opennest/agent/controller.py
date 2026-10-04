@@ -76,6 +76,7 @@ from opennest.assets import look
 from opennest.assets import manager as assets
 from opennest.execution import playtest
 from opennest.execution.python_runner import RunResult
+from opennest.graphics import block_world
 from opennest.memory.manager import MemoryManager
 from opennest.projects import starters as starter_kits
 from opennest.projects.manager import (
@@ -198,12 +199,17 @@ def _claim_phrases() -> tuple[str, ...]:
 
 #: Phrases a model uses when it believes it edited something. Used to catch the failure
 #: above deterministically rather than trusting the prompt to have fixed it.
-_CLAIMED_CHANGE = _claim_phrases() + (
+_CLAIMED_CHANGE = tuple(dict.fromkeys(_claim_phrases() + (
     # Said without "I": Qwen3 8B, asked "Tell me what changed the most." in a turn that
     # changed nothing, answered "The most significant change was adding the code to plot
     # ..." (the stress pass, SPIKES.md section 29).
     "change was adding", "change was making", "change was creating", "change was writing",
-    "change was updating", "change was changing", "the change i made", "the changes i made")
+    "change was updating", "change was changing", "the change i made", "the changes i made",
+) + tuple(
+    # ...and "The only change made was removing the orange clock." (Gary Smart, the game
+    # builds, SPIKES.md section 33), in a turn that changed nothing: every verb above.
+    f"change{made} was {progressive}" for _past, _participle, progressive in _CHANGE_VERBS
+    for made in (" made", ""))))
 #: ...of which these say the work is happening now.
 _CLAIMED_UNDERWAY = tuple(phrase for phrase in _CLAIMED_CHANGE
                           if phrase.startswith(("i'm ", "i am ")))
@@ -405,6 +411,8 @@ class Turn:
     #: Files Open Nest itself created before anyone worked on the message, because the
     #: project had nothing to build on yet (``_set_up_if_empty``). Not Gary's change.
     scaffolded: tuple[str, ...] = ()
+    #: Whether Open Nest started the game again as the 3D Block World this turn.
+    block_world_started: bool = False
     #: Said first, before everything else: what Open Nest set up, or which step of a plan
     #: this is and what changed underneath it.
     opening: str = ""
@@ -481,6 +489,14 @@ def build_system_prompt(
     if guidance:
         parts.append(guidance)
     return "\n\n".join(parts)
+
+
+#: The sentences Open Nest writes around a plan (``_reduce``, ``_framed``). In a model's
+#: reply they can only have been copied from the conversation.
+_OPEN_NEST_PLAN = re.compile(
+    r"Here['\u2019]s a way to build it, one step at a time:|To build more on it, one step at a "
+    r"time:|That was a lot to build in one go, so I split it into steps:|Want me to start "
+    r"with the first one\?")
 
 
 def _wishes_block(wishes: Sequence[str]) -> str:
@@ -751,6 +767,10 @@ class AgentController:
         #: The words (and pictures) Open Nest has already told the child how to make a
         #: picture for in this conversation -- said once, not every turn.
         self._offered_pictures: set[str] = set()
+        #: A 3D game asked for in a game that was already built flat (so it was kept),
+        #: and whether the child has been told how to start a 3D one. Once a conversation.
+        self._wants_3d = False
+        self._told_3d = False
         #: Saved versions. Named `versions`, not `history`, because `self.history` is
         #: already the message list -- conflating the two silently broke checkpointing.
         #: Optional so tests and headless use do not require Git.
@@ -1037,6 +1057,7 @@ class AgentController:
         # Before anyone works on it: a project with nothing to build on gets its
         # starting files, so neither a recipe nor Gary edits a file that does not exist.
         self._set_up_if_empty(turn, text)
+        self._set_up_block_world(turn, text)
         if turn.routed:
             # Blank asked for something it cannot do: said, and nothing built.
             self.history.append(Message(role="assistant", content=turn.text))
@@ -1056,7 +1077,10 @@ class AgentController:
         # for the rest and they are answered below as before.
         analysis = answering and evidence.family(self.project) == "research"
         outcome = "gary"
-        if self.fastpath is not None and (not answering or analysis):
+        # A block world has none of the shapes a game recipe is written for: its player is
+        # the camera, its things are letters in WORLD (``graphics.block_world``).
+        in_3d = block_world.of_project(self.project)
+        if self.fastpath is not None and (not answering or analysis) and not in_3d:
             outcome = self._fast_path(turn, text, previous, attachments, on_text)
         if outcome == "handled":
             turn.by_recipe = True
@@ -1106,6 +1130,15 @@ class AgentController:
             if _FROM_ABOVE.search(text) and "game_object" in self.toolbox.allowed and \
                     not self._has_maze():
                 notes.append(TOP_DOWN)
+            if in_3d:
+                # Instead of the 2D game's guidance, never beside it: "the closest 2D
+                # version" and "call game_object" are both wrong here.
+                notes = [block_world.GUIDE.format(entry=f"src/{self.project.manifest.entrypoint}")]
+                if turn.block_world_started:
+                    notes.append(block_world.JUST_STARTED)
+            elif block_world.ASKS_FOR_3D.search(text) and block_world.offered(
+                    self.project.profile):
+                self._wants_3d = True
             if notes:
                 self.history[-1] = replace(self.history[-1], content="\n\n".join(
                     [self.history[-1].content, *notes]))
@@ -1139,13 +1172,29 @@ class AgentController:
         """
         self._settle_plan(turn)
         broken = self._pictures_this_turn_broke(turn)
-        how = self._picture_how_to(turn)
+        how = self._picture_how_to(turn) or self._three_d_how_to()
         turn.text = "\n\n".join(part for part in (turn.opening, turn.text, broken, how,
                                                    turn.plan_note) if part)
         self._settle_history(start, turn.text)
         self._record_outcome(turn)
         if not turn.hit_call_limit:
             self._roll_over_if_needed(turn)
+
+    def _three_d_how_to(self) -> str:
+        """How to get a 3D game, when one was asked for in a game already built flat.
+
+        A 3D game is a starter (``graphics.block_world``), and Open Nest only starts a
+        game again while it is still the untouched Basic Game -- never over the child's
+        work. So past that point Gary builds the closest flat version (``WHOLE_GAME``) and
+        the child is told, once, where the 3D one is.
+        """
+        if not self._wants_3d or self._told_3d:
+            return ""
+        self._wants_3d, self._told_3d = False, True
+        return ("A game you walk through in 3D starts from Open Nest's 3D Block World. "
+                "This game was already made flat, so I kept it. For a 3D one, go back to "
+                "the Flight Deck, start a new Game project and choose 3D Block World "
+                "under How it starts.")
 
     def _picture_how_to(self, turn: Turn) -> str:
         """How to make a picture for a thing only a picture would draw well -- or "".
@@ -1386,6 +1435,8 @@ class AgentController:
                 if len(becomes) != 1:
                     return            # nothing named, or several at once: Gary asks
                 _pattern, starter_id, extras, began = becomes[0]
+                if starter_id == "pygame_basic" and block_world.ASKS_FOR_3D.search(text):
+                    starter_id, began = block_world.STARTER_ID, "as a 3D game"
                 starter = starter_kits.get_starter(starter_id)
                 target = project.entrypoint_path
                 source = starter.directory / starter.entry_point
@@ -1400,7 +1451,11 @@ class AgentController:
                 project.manifest.starter_version = starter.version
                 project.save()
             else:
-                starter = starter_kits.default_starter(project.profile)
+                # A 3D game begins from the block world (``_set_up_block_world``).
+                starter = starter_kits.get_starter(block_world.STARTER_ID) if (
+                    block_world.offered(project.profile)
+                    and block_world.ASKS_FOR_3D.search(text)) \
+                    else starter_kits.default_starter(project.profile)
                 if starter is None:
                     return
                 written = add_starter(project, starter.id)
@@ -1418,11 +1473,59 @@ class AgentController:
                 self.toolbox.report(Step("changed", f"created {relative}", path=relative,
                                          content=content, created=True))
         turn.scaffolded = tuple(paths_written)
+        turn.block_world_started = starter.id == block_world.STARTER_ID
         description = starter.description[:1].lower() + starter.description[1:]
         began = began or f"from the {starter.name}"
         turn.opening = " ".join(part for part in (
             turn.opening,
             f"There was nothing in the project yet, so I started it {began}: {description}",
+        ) if part)
+        self.refresh_state()
+
+    def _set_up_block_world(self, turn: Turn, text: str) -> None:
+        """Start the game again as the 3D Block World, when 3D is asked for first thing.
+
+        The owner's test05 (2026-10-04, Gary Fast): "create a simple, block 3D game.
+        Where the world is made by 1 meter square cubes." in a game that was still the
+        Basic Game -- and three turns later one rectangle the size of the window. A
+        first-person world is a starter (``graphics.block_world``), so while the game is
+        the Basic Game byte for byte, nothing the child made is in the way and Open Nest
+        swaps it, the way ``_set_up_if_empty`` fills an empty project. Saved as a version
+        like any change, so Undo brings the square back. A game changed in any way is
+        never replaced; ``_three_d_how_to`` says where the 3D one is instead.
+        """
+        project = self.project
+        if turn.scaffolded or is_question(text) or not block_world.ASKS_FOR_3D.search(text):
+            return
+        if not (block_world.offered(project.profile) or project.profile.id == "blank"):
+            return
+        path = project.entrypoint_path
+        try:
+            basic = starter_kits.get_starter("pygame_basic")
+            if path.read_text(encoding="utf-8") != (
+                    basic.directory / basic.entry_point).read_text(encoding="utf-8"):
+                return
+            kit = starter_kits.get_starter(block_world.STARTER_ID)
+            path.write_text((kit.directory / kit.entry_point).read_text(encoding="utf-8"),
+                            encoding="utf-8")
+        except (OSError, UnicodeDecodeError, starter_kits.StarterError):
+            return
+        project.manifest.starter_id = kit.id
+        project.manifest.starter_version = kit.version
+        project.save()
+        relative = f"src/{project.manifest.entrypoint}"
+        self.toolbox.report(Step("recipe", "setting up a 3D game"))
+        content = self.toolbox._file_text(relative)
+        if content is not None:
+            self.toolbox.report(Step("changed", f"changed {relative}", path=relative,
+                                     content=content))
+        turn.scaffolded = (relative,)
+        turn.block_world_started = True
+        description = kit.description[:1].lower() + kit.description[1:]
+        turn.opening = " ".join(part for part in (
+            turn.opening,
+            f"You asked for a 3D game, so I started it as the {kit.name}: {description} "
+            f"W and S walk, A and D turn, and walking into a gold block picks it up.",
         ) if part)
         self.refresh_state()
 
@@ -1617,8 +1720,13 @@ class AgentController:
         into three new steps and the plan's other two were silently dropped."""
         budget = getattr(self, "_budget", None)
         left = budget.remaining if budget is not None else 0
+        # Nor in a 3D Block World. Measured on the game builds (SPIKES.md section 33): the
+        # turn Open Nest set one up, a plan read "I haven't built any of that yet" beneath
+        # "I started it as the 3D Block World"; later, asked for the sky, the W A S D and
+        # the hands it already had, Gary Fast's plan was to add them. Its plans are for a
+        # game it is not.
         return (not turn.reduced and not turn.gary_from and turn.plan_step is None
-                and left >= 2)
+                and left >= 2 and not block_world.of_project(self.project))
 
     def _reduce(self, turn: Turn, text: str, on_text, corrected: bool, *,
                 too_big: bool = False) -> Turn:
@@ -1704,7 +1812,11 @@ class AgentController:
         steps = []
         for line in (reply.text or "").split("\n"):
             step = re.sub(r"^\s*(?:[-*\u2022]|\d+[.)])\s*", "", line).strip().strip('"')
-            if 2 <= len(step.split()) <= 20 and len(step) <= 140:
+            # Each step once. Measured on the game builds (SPIKES.md section 33): Gary Fast
+            # planned "add mountains far away behind everything" as that sentence three
+            # times, and the child was offered it as steps 1, 2 and 3.
+            if 2 <= len(step.split()) <= 20 and len(step) <= 140 and \
+                    step.rstrip(".").casefold() not in (done.casefold() for done in steps):
                 steps.append(step.rstrip("."))
         return steps[:3]
 
@@ -2218,6 +2330,14 @@ class AgentController:
         asked = getattr(self, "_last_request", None) or ""
         if text and echoes(text, asked):
             text = self._what_it_has_now(turn) if not turn.answered else self._as_it_is_text()
+        elif text and _OPEN_NEST_PLAN.search(text) and not turn.reduced:
+            # **Open Nest's own plan, said as Gary's.** Measured on the game builds
+            # (SPIKES.md section 33): asked "add coins to collect and a score", Gary Fast
+            # changed nothing and answered with the plan Open Nest wrote the turn before,
+            # word for word -- about scrolling trees -- which the reply filters then cut
+            # into "1. ... 2. 3. ...". Those sentences are only ever Open Nest's.
+            text = self._what_it_has_now(turn) if self._changed_anything(turn) \
+                else self._nothing_changed_text(turn)
         if re.fullmatch(r"\s*I found a problem\.\s*I'm fixing it\.\s*", text or "") and \
                 not turn.repair_attempts and all(
                     test.verdict == playtest.PASSED for test in turn.playtests):
@@ -2952,6 +3072,21 @@ class AgentController:
             for name, result in turn.tool_results[turn.gary_from:]
             if not result.ok
         }
+        if turn.block_world_started:
+            # Open Nest made the 3D game this turn; Gary's own extra changes did not land.
+            return block_world.READY
+        if block_world.of_project(self.project) and turn.plan_step is None:
+            try:
+                has = block_world.summary_for_child(
+                    self.project.entrypoint_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError):
+                has = ""
+            first = ("I haven't changed that yet. My edit didn't match the file cleanly, so "
+                     "I left it alone." if refused & {"edit_file", "write_file"}
+                     else "I haven't changed anything yet.")
+            now = f" Right now the 3D world has {has}." if has else ""
+            return (f"{first}{now} Tell me what you'd like different -- the sky, the blocks "
+                    f"and where they go, or how fast you walk.")
         if turn.plan_step is not None:
             # A plan's step: what is next is the plan's to say ("Want me to try it
             # again?"), so no second way forward -- and no "try one small piece first",

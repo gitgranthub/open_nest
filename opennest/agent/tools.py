@@ -27,6 +27,7 @@ from pathlib import Path
 from opennest.assets import kinds
 from opennest.execution import arduino, outputs, playtest
 from opennest.execution.python_runner import RunResult, run_project, stop_project
+from opennest.graphics import block_world
 from opennest.projects.manager import Project, plays_in_panel, source_fingerprint
 from opennest.security.sandbox import PathNotAllowed, resolve_in_project
 
@@ -351,6 +352,11 @@ class Toolbox:
         tools = tuple(self.project.profile.tools)
         if "game_object" not in tools and offers_graphics(self.project):
             tools += ("game_object",)
+        if "game_object" in tools and block_world.of_project(self.project):
+            # A 3D Block World is not a scene of shapes: everything game_object writes is
+            # 2D scene code, and what the child sees is WORLD and BLOCKS at the top of the
+            # game, changed with edit_file (``graphics.block_world``).
+            tools = tuple(tool for tool in tools if tool != "game_object")
         return tools
 
     def dispatch(self, name: str | None, arguments: dict | str | None) -> ToolResult:

@@ -96,6 +96,27 @@ def confirm_cloud_use(parent, info: ModelInfo) -> bool:
     return box.clickedButton() is use
 
 
+def advise_model(parent, advice) -> str | None:
+    """Say that the model struggles with this kind of project, and offer what can help.
+
+    ``advice`` is :func:`opennest.ai.router.model_advice`'s. Returns the id of the model
+    chosen instead, or None to keep the one in use -- always allowed, because on an 8 GB
+    Mac with cloud off there may be nothing else, and a game it struggles with is still
+    a game. Choosing a cloud model here still goes through :func:`confirm_cloud_use`.
+    """
+    box = QMessageBox(parent)
+    box.setWindowTitle(APP_NAME)
+    box.setIcon(QMessageBox.Icon.Information)
+    box.setText(advice.headline)
+    box.setInformativeText("\n\n".join([advice.explanation, *advice.parent_steps]))
+    offered = {box.addButton(f"Use {name}", QMessageBox.ButtonRole.AcceptRole): model_id
+               for model_id, name in advice.choices[:3]}
+    keep = box.addButton(f"Keep {advice.model_name}", QMessageBox.ButtonRole.RejectRole)
+    box.setDefaultButton(next(iter(offered), keep))
+    box.exec()
+    return offered.get(box.clickedButton())
+
+
 def ask_parent_pin(parent, credentials: keychain.Credentials | None = None,
                    *, reason: str = "") -> bool:
     """Check the parent PIN. True when it matched, or when no PIN is configured.

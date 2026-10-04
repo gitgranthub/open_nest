@@ -5117,3 +5117,216 @@ model that can see looked at the picture"). The wizard walk's docstring said it 
   `sees_images` False, nothing recorded as seen.
 - **A replaced model is `deprecated`, not deleted**: no family's model stops working and
   nothing is downloaded twice.
+
+## 33. Can Gary build the game a child asks for? -- the game builds pass
+
+The owner's test05 (2026-10-04, a Game project on Gary Fast): "create a simple, block 3D
+game. Where the world is made by 1 meter square cubes.", then "we should see a sky and
+ground and landscaper made by these 1 meter blocks.... so I can use W, S, A and D to
+navigate forward and around this 3D world. The orange clock should not be there and we
+should see a simple pait of hands as the first person view", then "the world should be
+made of blocks". The game at the end: a sky, a ground strip, one rectangle the size of the
+window and the orange starter square, with "The game is playable now." after every turn.
+The owner's question: can Gary Fast really help code a game -- a 3D first-person block
+world, or any kind -- and if not, should Open Nest say so when a game is begun on it and
+point at Gary Smart or a cloud model? Test blank starts and the preset builds, changing
+characters, backgrounds, a side-scroller, a basic 3D walk in space; fix what can be fixed,
+warn about the rest.
+
+### 33A. The builds
+
+`benchmarks/game_builds/build_walk.py` is `owner_test04/replay.py`'s driving (its
+`run_step`, the real Workbench wired as MainWindow wires it) over eight threads, each step
+with what following it means **written down before anything ran** (`expect`):
+
+| thread | start | the child's messages |
+|---|---|---|
+| blank_cat | Blank | WORKORDER_01 §26's own "Make a game where a cat catches falling pizzas.", then faster and a score |
+| empty_space | Games, Start Empty | the Space Game card's "Make a space game", then asteroids to dodge |
+| card_platform | Games, Basic Game | the Platform Game card's "Make a platform game", then a gap to jump |
+| characters | Basic Game | a blue circle; the owner's monster picture as the player; bigger; a red enemy that chases |
+| backgrounds | Basic Game | a night sky with stars; mountains far behind; trees along the ground; a sunny day instead |
+| sidescroll | Basic Game | run right and jump over rocks; the trees and ground scroll; coins and a score |
+| block3d | Basic Game | the owner's test05, message for message, typos kept |
+| space3d | Basic Game | a 3D walk in space with planets and stars; W A S D and the arrows |
+
+and, once the block world existed, `block3d_more`: a 3D block world, then night with
+stars, a tall red tower, walking faster. `summarise.py` lays a run out beside the
+expectations; grading was by hand from each step's frame, scene, source and reply.
+
+**Cloud was not measured.** Both keys in the Keychain were refused by the services --
+Anthropic "API key is invalid", OpenAI "Your API key has been invalidated" -- so every
+number here is Gary Fast's or Gary Smart's. (Open Nest said so to the child correctly:
+"That AI service did not accept the API key. A parent can check or replace it in
+Settings".)
+
+### 33B. Before: what each model did
+
+Graded per step against `expect` -- **✓** did it and the game runs, **~** part of it,
+**✗** not done, wrong, or broken. 22 Gary steps a model (`results/fast_v1.json`,
+`results/smart_v1.json`, the code as committed at `c8f2328`):
+
+| | ✓ | ~ | ✗ |
+|---|---:|---:|---:|
+| Gary Fast | 6 | 3 | 13 |
+| Gary Smart | 5 | 2 | 15 |
+
+- **Both** did single, concrete changes: the blue circle, the monster picture, bigger, a
+  night sky (Gary Fast: 50 stars), trees, a sunny day (Gary Smart). Both failed every
+  whole game asked for in one sentence -- the cat game, the platform game, the
+  side-scroller -- and **neither drew anything 3D in any turn**: Gary Fast tried six
+  whole-file rewrites on test05's first message (all refused, 293 s), then put a 2D sky and
+  ground in; Gary Smart made the player "a simple orange rounded box" and ten boxes above
+  the ground. The owner's game was reproduced on both models.
+- **Gary Smart is not better at games here.** It is better at some steps (the backgrounds,
+  the cat's speed and score), worse at others (its space game was a 30x30 rectangle after
+  five whole-file rewrites and 424 s; its side-scroller ended crashed), and two to three
+  times slower a step. §23G measured the same of Qwen3 8B against Qwen3 4B, before the
+  scene layer existed.
+
+### 33C. What was Open Nest's, and what changed
+
+**3D was Open Nest's ceiling, not the model's.** The whole-game guidance said "If it needs
+3D or first person, build the closest 2D version" -- to every model. And a first-person
+renderer through `edit_file` is beyond both local models (above), while it is about two
+hundred lines of plain pygame Open Nest can ship and test. Prototyped first: a ray every
+four pixels, block stacks drawn far to near with their tops and 1-metre edges, 600-1400
+frames a second uncapped on this Mac.
+
+- **`pygame_blocks3d`, the 3D Block World starter** (`projects/starters/`), offered in New
+  Project's "How it starts" beside the Basic Game, which stays the default: first person,
+  W/S walk, A/D and the arrows turn, two hands, gold blocks to walk into for a point,
+  everything a child would change named at the top -- `WORLD` (the map from above, one
+  letter a block), `BLOCKS` (name, colour, height), `SKY`, `GROUND`, `PLANETS`, `HANDS`,
+  the speeds, `COLLECT`. It passes the real playtest (100 frames, responds to the arrows
+  and W A S D) in every sky and ground.
+- **Shaped for a small model, measured:** a sky first took two coordinated edits (`STARS`
+  and a dark `SKY`) and Gary Fast made one -- stars on a blue day sky, planets on a day
+  sky. Now `SKY = "day"`, `"sunset"`, `"night"` or `"space"` (night and space bring their
+  stars and less light) and `GROUND = "grass"`, `"sand"`, `"snow"` or `"moon"`: one word,
+  and both models then made night in one edit. Gary Fast set `WALK_SPEED` from 3.0 to 1.0
+  and said "Now you move faster"; the line now says "a bigger number walks faster".
+- **A 3D ask gets the 3D world** (`graphics/block_world.py`, `ASKS_FOR_3D`: 3D, 3-D, three
+  dimensional, Minecraft, voxel, block world -- not "first person" alone, so test04's
+  first-person shooter keeps its 2D night forest of the child's own pictures, §30):
+  an empty project, or a Blank one named a game, starts from it; a game that is still the
+  untouched Basic Game is swapped for it (`_set_up_block_world`, a saved version, so Undo
+  brings the square back). A game the child has changed is never replaced -- they are
+  told once where the 3D world is (New Project, How it starts).
+- **In a block world:** the Fast Path steps aside (its recipes are for a player rect), so
+  does `game_object` (`Toolbox.allowed`; everything it writes is 2D scene code), and so do
+  plans -- a 4B's plans were "add lighting", "let the player place and remove blocks", and,
+  asked for the sky, W A S D and hands it already had, "add them". Beside every request
+  Gary is told what the world is and which names to change (`block_world.GUIDE`, "change
+  only what they asked for; if the world already has it, say so"); the checked facts are
+  the world's own (`block_world.facts`: its size, blocks by kind, gold to find, sky,
+  ground, hands), never the 2D readings, which called its speeds "things" and its blocks
+  "undrawn". When nothing changed, Open Nest says what the world has
+  (`summary_for_child`), and on the turn it was set up, that it is ready to play.
+
+**The Platform Game card was the dodging game.** On Gary Fast, Open Nest's own card
+sentence "Make a platform game" was taken by the `make_avoid_game` recipe at once -- five
+falling asteroids -- and on Gary Smart "make it a side scrolling game where I run to the
+right and jump over rocks" the same. Both whole-game recipes now have `not_words` for a
+game of another kind (platform, jump, maze, race, quiz, puzzle, shooter, 3D, first person,
+side-scroll, adventure, RPG, Minecraft); none of the three labelled whole-game requests
+names one.
+
+**Words Open Nest put on screen:**
+- A plan's steps once each: "Add mountains far away behind everything" was steps 1, 2 and
+  3 (`_plan_steps`).
+- Asked "add coins to collect and a score", Gary Fast answered with Open Nest's plan from
+  the turn before, word for word, and the reply filters cut it into "1. ... 2. 3. ...".
+  Open Nest's own plan sentences in a reply are replaced by what is true
+  (`_OPEN_NEST_PLAN`): over the 229 drafts kept by every walk, it fires on that one.
+- "The only change made was removing the orange clock." (Gary Smart, nothing changed)
+  passed the claim check, which knew "change was adding" and five more: every change verb
+  now, with and without "made" -- over 2836 kept texts it finds that reply and nothing
+  else.
+
+**The scene layer drew Gary Smart's mountains and trees off the screen.** A rectangle
+"[0, 300, 640, 100]" with "at [0, 300]" and no size became a 640x400 box placed at y 300:
+the mountain at y 600, the trees at y 800, and the reply "Now you should see trees at the
+bottom of the screen". The screen-places repair existed only when a size was given; now
+without one too (`looks.shapes_look`) -- over the 38 kept calls with shapes it changes
+those two and nothing else.
+
+**And the warning the owner asked for.** `models.json` marks a model `struggles_with`
+(validated, a list of project kinds) -- Gary Fast: `["games"]`, measured here, never a
+name in code. Beginning a Game with such a model (`MainWindow._advise_model`,
+`router.model_advice`, `consent.advise_model`) shows: "Gary Fast struggles to build a game
+that works. A whole game is more than Gary Fast can build reliably: it often leaves one
+half-made. For a game, use at least Gary Smart or a cloud model." -- then only what this
+Mac can use: "Use Gary Smart" when it is installed and fits the memory, "Use Claude" /
+"Use OpenAI" when a parent's switch is on and a key is saved, otherwise the step for a
+parent ("A parent can download Gary Smart in Settings", "A parent can turn on Cloud AI and
+add a key in Settings") or the reason ("Gary Smart cannot run on this Mac: it needs about
+16 GB of memory. This Mac has 8 GB."). "Keep Gary Fast" is always there: on an 8 GB Mac with
+cloud off there is nothing else, and a game it struggles with is still a game. A switch
+goes through the picker's own path (the cloud warning, loading, the picker put back on a
+refusal). No parameter counts: DESIGN_DOC §4.
+
+### 33D. After
+
+The same eight threads and `block3d_more`, on the final code, both models at once
+(`results/fast_final.json`, `results/smart_final.json`; `fast_v2`/`v3` and `smart_v2`/`v3`
+are the rounds between, kept as found):
+
+| | before ✓ / ~ / ✗ (22 steps) | after ✓ / ~ / ✗ | changing the 3D world (after) | the 26 turns, both running at once |
+|---|---|---|---|---|
+| Gary Fast | 6 / 3 / 13 | **11 / 6 / 5** | night ✓, a red tower ✗, walk faster ✗ (lowered it) | 33 min, median 66 s a turn |
+| Gary Smart | 5 / 2 / 15 | **8 / 10 / 4** | night ✓, a red tower ✗, walk faster ✓ | 62 min, median 65 s a turn |
+
+- **test05**: on both models the first message is the 3D world -- sky, ground, blocks, two
+  hands, W A S D, gold to find -- in 10 to 100 s. The second (all of which the world already
+  had): Gary Fast changed nothing and Open Nest said what it has ("Right now the 3D world
+  has a day sky, grass ground, blocks of stone, wood and grass to walk among, 3 gold blocks
+  to find, two hands and W A S D to walk and turn"); Gary Smart said "The only change made
+  was removing the orange clock" -- this run started before that phrase was checked; it is
+  caught now (`test_a_change_said_as_the_change_made_is_checked`). The third: both, "the
+  world is already made of blocks".
+- **The 3D walk in space**: Gary Smart set `SKY = "space"` and `GROUND = "moon"` itself;
+  Gary Fast left the day sky and said the controls were already there (true).
+- **The side-scroller** went from three turns of nothing (Gary Fast) and a dodging game
+  that ended crashed (Gary Smart) to something each step: Gary Fast's coin counts
+  ("Score: 1"), Gary Smart has a sky, a road, a rock, trees and a coin. Neither scrolls or
+  jumps.
+- **The Platform Game card** is no longer the dodging game: Gary Fast offers a plan (three
+  refused whole-file rewrites first), Gary Smart a floor with a gap and no jump.
+- **The backgrounds**: Gary Smart's mountains and trees are on screen -- a grey band, and
+  one tree stretched to the width it gave.
+- **Unchanged, model-only**: no cat in the cat game on either model; Gary Smart's space game
+  still a square among static asteroids; "a red enemy that chases me" slides left on both,
+  and Gary Fast says "chasing you"; Gary Fast's sunny day is a white sky; Gary Smart's turn
+  repeating its own last reply, word for word, is left to it (only Open Nest's own
+  sentences are caught: the general version would have replaced informative restatements
+  in the maze replays).
+
+**The real window**: the Phase 12 app walk under cocoa, **43/43** -- the 42 before and the
+warning, answered "Keep Gary Fast" (`results/app_walk_game_builds.txt`; the walk lives in
+the ignored `spikes/`).
+
+### 33E. What this does not establish
+
+- **Cloud.** Unmeasured here: both keys are dead. §28K measured Luna building the eagle
+  game whole, from the first sentence, through the same layer, and §29 Luna and Sonnet
+  building Blank games; the warning's "or a cloud model" rests on those.
+- **One run a thread a model**, at temperature 0, which MLX does not make repeatable.
+- **An 8 GB Mac**, still. The block world's frame cost was measured on an M4 Pro.
+- **The red tower.** Neither model added a new kind of block to `WORLD` in any run: two
+  exact edits in one turn. Recorded, not chased.
+- **Gary Smart against Gary Fast is not settled by this pass**, and the warning names Gary
+  Smart because the owner did: on these builds it was about even with Gary Fast at 2D
+  games -- fewer outright failures, fewer steps fully done -- better at changing the 3D
+  world, and about twice as slow. A parent told to download 5.8 GB for games should not
+  expect whole games from it.
+
+### 33F. Rules this pass adds
+
+- **A foundation a small model cannot write is a starter, not a prompt.** 3D was "the
+  closest 2D version" for every model until Open Nest shipped one.
+- **Design a kit's knobs for one edit.** A look that takes two coordinated edits gets one
+  of them from a 4B; a word ("night") gets done. Say which way a number goes beside it.
+- **Open Nest's own sentences are never Gary's.** A reply carrying them was copied.
+- **A model's weakness is catalogue data** (`struggles_with`), measured, so a remote
+  catalogue can correct it and no code names a model.

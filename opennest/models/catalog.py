@@ -110,6 +110,10 @@ class ModelEntry:
     #: shown with a tick beside the model in setup. Words, never behaviour: what the
     #: application does follows ``capabilities`` and the ``supports_*`` flags.
     good_for: tuple[str, ...] = ()
+    #: Kinds of project (profile ids) this model was measured to struggle with, so Open
+    #: Nest says so when one is begun with it (``router.model_advice``). Measured, never
+    #: guessed: Gary Fast's "games" is the game builds pass, SPIKES.md section 33.
+    struggles_with: tuple[str, ...] = ()
     #: Where this entry came from: "bundled" or "remote". Carried so a person can be
     #: told, and so a test can prove the layering did what it claims.
     source: str = "bundled"
@@ -233,6 +237,11 @@ def _entry_is_valid(item: object) -> bool:
             for word in good_for):
         return False
 
+    struggles = item.get("struggles_with", [])
+    if not isinstance(struggles, list) or len(struggles) > _MAX_GOOD_FOR or any(
+            not isinstance(kind, str) or not _MODEL_KEY.match(kind) for kind in struggles):
+        return False
+
     options = item.get("provider_options")
     return options is None or isinstance(options, dict)
 
@@ -289,6 +298,7 @@ def build_entry(item: dict, *, source: str = "bundled") -> ModelEntry:
         recommended_memory_gb=float(item.get("recommended_memory_gb") or 0),
         status=item.get("status", "supported"),
         good_for=tuple(word.strip() for word in item.get("good_for", ())),
+        struggles_with=tuple(item.get("struggles_with", ())),
         source=source,
     )
 

@@ -227,3 +227,5 @@ spikes/
 # The owner test04 replays draw the owner's own pictures (assets/test_builds, not in git):
 # their frames stay on the machine that ran them.
 benchmarks/owner_test04/results/*/
+# ...and so do the game builds' frames (the characters thread uses the owner's monster).
+benchmarks/game_builds/results/*/

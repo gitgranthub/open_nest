@@ -25,6 +25,8 @@
       "license": "apache-2.0",
       "description": "Sees pictures and screenshots, writes code, and helps with everyday questions",
       "good_for": ["coding", "images", "screenshots", "documents", "general questions"],
+      "struggles_with": ["games"],
+      "_struggles_note": "Measured on the game builds pass (benchmarks/game_builds, SPIKES.md section 33): eight game builds through the real Workbench, Gary Fast against Gary Smart. When a Game project is begun with a model that struggles with games, Open Nest says so and offers what this Mac can use instead (router.model_advice) -- the owner's ruling, 2026-10-04.",
       "family": "Qwen",
       "parameters": "4B",
       "quantization": "4bit",

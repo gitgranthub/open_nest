@@ -18,7 +18,8 @@
         "pillow"
       ],
       "starters": [
-        "pygame_basic"
+        "pygame_basic",
+        "pygame_blocks3d"
       ],
       "starter_default": "pygame_basic",
       "entrypoint": "game.py",

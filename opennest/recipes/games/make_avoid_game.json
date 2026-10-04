@@ -5,6 +5,10 @@
   "needs_words": [
     "\\bgames?\\b"
   ],
+  "not_words": [
+    "\\b(?:platform(?:er|s)?|jump(?:s|ing)?|maze|labyrinth|rac(?:e|es|er|ing)|quiz|trivia|puzzle)\\b",
+    "\\b(?:shoot(?:er|ing|s)?|3[- ]?d|three[- ]dimension\\w*|first[- ]person|side[- ]?scroll\\w*|adventure|rpg|minecraft)\\b"
+  ],
   "requires": [
     "loop",
     "fill",
@@ -44,5 +48,5 @@
   ],
   "teach": "The things are made once above the loop and moved every frame inside it, the scene draws them, and a collision check sends you back when one hits.",
   "whole": true,
-  "_note": "needs_words: a whole game is only built when the child asks for a game. Measured (SPIKES.md section 25N): as one part of a longer message, 'add some walls i have to get around' was read as this recipe at 1.00."
+  "_note": "needs_words: a whole game is only built when the child asks for a game. Measured (SPIKES.md section 25N): as one part of a longer message, 'add some walls i have to get around' was read as this recipe at 1.00. not_words: a whole game of another kind is not this one. Measured on the game builds (SPIKES.md section 33): on Gary Fast, Open Nest's own Platform Game idea card -- 'Make a platform game' -- was built as the dodging game at once, five asteroids falling on a platformer. None of the three labelled whole-game requests names one of these words."
 }

@@ -15,9 +15,15 @@ phase handoff. WHATS_NEW.md is rewritten at the end of every pass.
 - **Built through Phase 13, on `phase-13-live-preview`.** It has seven project types and a
   nine-step setup wizard. Local AI is Gary Fast or Gary Smart (Qwen3-VL, both see
   pictures), with optional cloud AI. The game plays inside the Workbench and has a scene
-  layer. The Fast Path handles common requests with recipes. There is invisible version
-  history with Undo, project memory, and GitHub backup. **1750 tests pass, ruff is
-  clean.**
+  layer, and a 3D Block World starter for 3D games. The Fast Path handles common
+  requests with recipes. There is invisible version history with Undo, project memory,
+  and GitHub backup. **1797 tests pass, ruff is clean.**
+- **The game builds pass (SPIKES §33, WHATS_NEW.md).** Neither local model builds a whole
+  game from one sentence, and before it neither drew anything 3D. A 3D ask now gets the
+  3D Block World. Beginning a Game on Gary Fast warns that it struggles with games
+  (`struggles_with` in `models.json`). Gary Smart measured about even with Gary Fast at
+  2D games, and better at changing the 3D world. Cloud was unmeasured: both saved keys
+  were refused.
 - Branches are stacked, one per phase, and nothing is merged to `main`. Branch Phase 14
   from `phase-13-live-preview`.
 - **Phase 12 is still formally open.** Its definition of done, "a child asks for a game
@@ -26,25 +32,34 @@ phase handoff. WHATS_NEW.md is rewritten at the end of every pass.
 
 **What is next**
 
-1. **The owner re-runs test04 and the maze on Gary Fast.** On a Mac set up before the
+1. **The owner tries the game builds pass**: a 3D game ("create a simple, block 3D
+   game", test05), the warning when a Game is begun on Gary Fast, the Platform Game card.
+   Two calls for the owner: whether Gary Smart should get the warning too (it was about
+   even at 2D games, SPIKES §33B/§33D), and new cloud keys (`.env`, as before) so
+   `benchmarks/game_builds/build_walk.py <label> claude-sonnet` can measure a cloud Gary.
+2. **The owner re-runs test04 and the maze on Gary Fast.** On a Mac set up before the
    vision pass, the first launch after `git pull` reinstalls the requirements (network
    needed), and Gary Fast is downloaded from Settings. **An 8 GB Mac is still
    unmeasured.**
-2. **The background cut-out.** `Picture(path, see_through=True)` in the kit: the corner
+3. **The background cut-out.** `Picture(path, see_through=True)` in the kit: the corner
    colour's connected area made transparent with `pygame.mask`. Raise `VERSION` to 5,
    add v4's SHA-256 to `looks.EARLIER_KITS` with a v4 fixture, and add `see_through` to
    `game_object`. Because that changes the tool's description, re-run
    `benchmarks/graphics/tool_choice.py` first.
-3. **Phase 14, Publish Version**, as the owner reshaped it (PHASE_13_HANDOFF §6,
+4. **Phase 14, Publish Version**, as the owner reshaped it (PHASE_13_HANDOFF §6,
    PHASE_12_HANDOFF §7). Not started; the sunglasses wait for it.
-4. **Hardening** (SPIKES §28N). The playtest sees under 2 s of a game, so a crash behind
+5. **Hardening** (SPIKES §28N). The playtest sees under 2 s of a game, so a crash behind
    a timer is missed. Gary can repeat one refused call until the budget runs out.
-5. **Known limits, recorded:**
+6. **Known limits, recorded:**
    - Gary Fast's whole-game turn tries to rewrite the file first.
    - Gary Smart ignores the child's monster picture.
    - Cloud providers send no pixels.
    - The models' layouts are uneven.
    - A Blank project cannot become a Website or Arduino project in place.
+   - Whole games in one sentence (a platformer, a side-scroller, the cat game) fail on
+     both local models; Open Nest offers a plan.
+   - In the 3D world, neither model adds a new kind of block to `WORLD`, and Gary Fast
+     lowered `WALK_SPEED` when asked to walk faster.
 
 ## 1. Where the project is
 
@@ -159,6 +174,10 @@ benchmarks/      measurement drivers and kept results (replays, tool choice, Fas
 - A kit change is three things: `VERSION` raised, the old SHA-256 in
   `looks.EARLIER_KITS`, and a fixture.
 - Draw after `scene.draw()`, never between the fill and it.
+- **A 3D game is the 3D Block World starter** (`graphics/block_world.py`). It is
+  recognised from its code (`WORLD`, `BLOCKS`, `FIELD_OF_VIEW`). `game_object`, the Fast
+  Path and plans step aside in it. A game the child changed is never swapped for it. Its
+  knobs are one edit each (`SKY = "night"`); a look that took two edits got one from a 4B.
 
 **Sandbox, macOS, toolchains**
 - Seatbelt does not nest. `run_project` fails closed; never weaken it to pass a test.
@@ -194,6 +213,8 @@ benchmarks/      measurement drivers and kept results (replays, tool choice, Fas
   model runs where it is installed and is never offered.
 - A capability flag on a model is not a capability of the system: `verified`,
   `supports_images`.
+- `struggles_with` (`models.json`) is measured data: it decides the warning when a kind
+  of project is begun on that model (`router.model_advice`). Never name a model in code.
 - Every machine-dependent decision is handed the `MachineProfile`. Only
   `models.machine.detect()` looks at hardware.
 - Requirements are pinned; bumping one is a deliberate edit. `opennest` may import

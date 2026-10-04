@@ -8,6 +8,7 @@ problem and lets a person choose.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from opennest.ai import provider as provider_module
@@ -23,7 +24,7 @@ __all__ = [
     "ModelEntry", "load_catalogue", "default_model_id", "startup_model_id", "get_entry",
     "local_models",
     "cloud_models", "is_available", "models_that_can_read", "unmet_requirements",
-    "models_for_project", "why_unavailable", "build_provider",
+    "models_for_project", "why_unavailable", "model_advice", "ModelAdvice", "build_provider",
 ]
 
 
@@ -238,6 +239,86 @@ def why_unavailable(
     if not is_available(entry, allow_cloud=True, credentials=credentials):
         return "Needs an API key. A parent can add one in Settings."
     return None
+
+
+@dataclass(frozen=True)
+class ModelAdvice:
+    """What to say when a project is begun with a model measured to struggle with it."""
+
+    #: The model in use, and the kind of project, as a child reads them.
+    model_name: str
+    project_kind: str
+    #: Models that would do better and could be used on this Mac right now, best first:
+    #: (model id, name). Switching to one still goes through the usual consent.
+    choices: tuple[tuple[str, str], ...]
+    #: What a parent could do to make another model possible -- download it, turn cloud
+    #: on, add a key -- or why this Mac cannot.
+    parent_steps: tuple[str, ...]
+
+    @property
+    def headline(self) -> str:
+        return f"{self.model_name} struggles to build a {self.project_kind} that works."
+
+    @property
+    def explanation(self) -> str:
+        return (f"A whole {self.project_kind} is more than {self.model_name} can build "
+                f"reliably: it often leaves one half-made. For a {self.project_kind}, use "
+                f"at least Gary Smart or a cloud model.")
+
+
+def model_advice(model_id: str, profile, machine, *, allow_cloud: bool = False,
+                 credentials=None) -> ModelAdvice | None:
+    """Whether to warn that this model struggles with this kind of project, and how.
+
+    The owner's ruling after the game builds pass (2026-10-04, SPIKES.md section 33):
+    a Game begun on Gary Fast says that Gary Fast will struggle to build a usable game,
+    and points at Gary Smart or a cloud model. The model's ``struggles_with`` decides
+    (``models.json``, measured), never a name in code. What it offers is only what this
+    Mac can really use now -- a local model that is installed and fits its memory, a
+    cloud model with the parent's switch on and a key saved -- and anything else is said
+    as a step for a parent, or as the reason it cannot be. None when there is nothing to
+    say: the model is not marked, or is not in the catalogue.
+
+    ``machine`` is a :class:`~opennest.models.machine.MachineProfile`: only
+    ``models.machine.detect()`` looks at the hardware.
+    """
+    from opennest.models import compatibility  # lazily: it is only needed here
+
+    try:
+        current = get_entry(model_id)
+    except ProviderError:
+        return None
+    if profile.id not in current.struggles_with:
+        return None
+    choices: list[tuple[str, str]] = []
+    steps: list[str] = []
+    cloud_step = ""
+    for entry in load_catalogue():
+        info = entry.info
+        if info.id == model_id or profile.id in entry.struggles_with or \
+                not entry.offered_for_install or unmet_requirements(info, profile):
+            continue
+        if info.requires_internet:
+            if is_available(entry, allow_cloud=allow_cloud, credentials=credentials):
+                choices.append((info.id, info.name))
+            elif not cloud_step:
+                cloud_step = ("A parent can turn on Cloud AI and add a key in Settings."
+                              if not allow_cloud else
+                              "A parent can add a Cloud AI key in Settings.")
+            continue
+        installed = _installed(entry)
+        verdict = compatibility.assess(entry, machine, installed=installed)
+        if verdict.state not in (compatibility.RECOMMENDED, compatibility.CAN_RUN):
+            reason = verdict.reason[:1].lower() + verdict.reason[1:]
+            steps.append(f"{info.name} cannot run on this Mac: it {reason}" if reason.startswith(
+                "needs ") else f"{info.name} cannot run on this Mac. {verdict.reason}")
+        elif installed:
+            choices.append((info.id, info.name))
+        else:
+            steps.append(f"A parent can download {info.name} in Settings.")
+    if cloud_step:
+        steps.append(cloud_step)
+    return ModelAdvice(current.info.name, profile.name.lower(), tuple(choices), tuple(steps))
 
 
 def build_provider(

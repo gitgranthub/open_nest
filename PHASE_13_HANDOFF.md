@@ -844,3 +844,33 @@ Smart's 83 -- told, the owner kept the two Gary models; the setup wizard walk 53
 Phase 12 app walk 42/42 under cocoa, on Gary Fast; looks
 about half a second; peak 3.64 GB (Gary Fast) and 6.34 GB (Gary Smart) on 48 GB. **Not
 measured: an 8 GB Mac.**
+
+## 14. The game builds -- what Gary can build, a 3D world, and a warning
+
+The owner's test05 (2026-10-04, Gary Fast): "create a simple, block 3D game. Where the
+world is made by 1 meter square cubes." Three turns later the game was one rectangle the
+size of the window. Their question: can Gary Fast really build a game? If not, beginning a
+game on it should say to use at least Gary Smart or a cloud model. SPIKES §33 has every
+number; `benchmarks/game_builds/` has the driver and the runs.
+
+**Measured:** eight builds through the real Workbench on both local models, each step's
+goal written before it ran. Both do one concrete change well. Neither builds a whole game
+from one sentence. Before this pass neither drew anything 3D: the whole-game guidance
+told every model to build "the closest 2D version". Gary Smart was about even with Gary
+Fast at 2D games, and two to three times slower. Cloud was not measured: both keys were
+refused.
+
+**What changed:**
+
+| | |
+|---|---|
+| 3D | the `pygame_blocks3d` starter, "3D Block World" in How it starts; a 3D ask in an empty, Blank or untouched Basic Game gets it; in it `game_object`, the Fast Path and plans step aside, Gary is told the world and its names (`graphics/block_world.py`), and the facts are the world's own; one-word sky and ground |
+| the warning | `struggles_with` in `models.json` (Gary Fast: games); `router.model_advice` offers only what this Mac can use; `consent.advise_model`, always with "Keep ..."; the app walk answers it |
+| the cards | the dodging and catching recipes refuse a game of another kind (`not_words`): "Make a platform game" was five falling asteroids on Gary Fast |
+| words | a plan's steps once each; Open Nest's own plan sentences in Gary's reply replaced; "the change made was <verb>ing" checked like "I <verb>ed" |
+| the layer | shapes given as screen places without a size are moved into their box (Gary Smart's mountains and trees were drawn off the screen) |
+
+**Verified:** 1797 tests, ruff clean; the Phase 12 app walk 43/43 under cocoa,
+including the warning; the final builds in SPIKES §33D. **Not measured: cloud, an 8 GB
+Mac.**
+

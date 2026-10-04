@@ -24,6 +24,10 @@ adds:
 - **Gary Fast**: suggested for Macs with 8 GB of memory (3.1 GB download).
 - **Gary Smart**: stronger, for 16 GB or more (5.8 GB download).
 
+A whole game is hard for Gary Fast, so Open Nest says so when a game is begun with it
+and offers Gary Smart or a cloud model where the Mac can use one. A 3D game starts from
+the 3D Block World: a first-person world of blocks you walk through.
+
 Cloud AI (Claude, OpenAI) is optional, off by default, and turned on by a parent. Open
 Nest never switches between local and cloud AI without saying so.
 

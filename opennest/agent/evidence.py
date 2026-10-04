@@ -24,6 +24,7 @@ import contextlib
 from collections.abc import Sequence
 from pathlib import Path
 
+from opennest.graphics import block_world
 from opennest.projects import starters as starter_kits
 from opennest.projects.manager import Project, plays_in_panel, source_fingerprint
 
@@ -363,10 +364,16 @@ def _game_lines(project: Project, source: str, asked=()) -> list[str]:
     from opennest.fastpath.kinds import games
 
     lines = []
-    brief = describe_game(project)
+    world = block_world.is_block_world(source)
+    brief = "" if world else describe_game(project)
     if brief:
         lines.append(f"- In the game right now, read from the code: {brief}")
-    lines += _scene_lines(project, source)
+    if world:
+        # A 3D Block World has no player rect and no scene: the 2D readings below would
+        # call its speeds "things" and its blocks "undrawn" (graphics.block_world).
+        lines += block_world.facts(source, _entry(project), colour_family)
+    else:
+        lines += _scene_lines(project, source)
     controls = games.controls_read(source)
     if controls is None:
         lines.append("- Its controls cannot be read: the code does not parse. Do not guess "
@@ -384,6 +391,8 @@ def _game_lines(project: Project, source: str, asked=()) -> list[str]:
         lines.append(f"- The game loop shows {flips} different pictures each time round "
                      f"(pygame.display.flip is called {flips} times), so what is on screen "
                      f"flickers between them. One flip at the end of the loop is right.")
+    if world:
+        return lines
     for noun in undrawn(source, asked):
         lines.append(f"- The code has {noun} in it, but nothing draws it, so it is not on "
                      f"screen.")
