@@ -52,6 +52,8 @@ RECOVERY = "recovery"
 ROLLOVER = "rollover"
 #: Splitting a request too big for one go into steps (``AgentController._reduce``).
 PLAN = "plan"
+#: Writing a whole new game in one reply, and repairing it (``_write_whole_game``).
+WRITE_GAME = "write_game"
 
 
 class BudgetExhausted(ProviderError):

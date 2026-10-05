@@ -874,3 +874,15 @@ refused.
 including the warning; the final builds in SPIKES §33D. **Not measured: cloud, an 8 GB
 Mac.**
 
+**Then, on the owner's "fix this" (SPIKES §33G-H):** Gary Smart, asked outside the edit tool,
+wrote whole games that worked; inside it, it built none from the first message. So while
+a game is still the untouched starter, a "make a game" message is written whole
+(`_write_whole_game`, `prompts/whole_game.txt`), playtested, repaired from the test up to
+twice, and kept only if it passes -- never for a model that `struggles_with` games. With
+it: a change that breaks a game Open Nest had tested working is put back (`_put_back`);
+asked to use pictures in a game with no scene, Gary is told game_object does it
+(`PICTURES_BY_TOOL`); and a picture put on a game's own rects fits them (it was drawn 42.6
+times too big). A version written on the scene kit was measured (0 of 3) and reverted.
+Every first-message game in the final runs worked; test04's six tree pictures went on the
+written game's trees. 1810 tests, the app walk 43/43.
+

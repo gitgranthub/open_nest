@@ -1644,8 +1644,12 @@ class _Work:
 
     def _list_scale(self, items, look, prefix=None) -> float:
         """How much bigger than each rect the look is drawn, to be ``size``."""
-        wanted = _pair(self.args.get("size")) or (look.box if look and look.kind != "shapes"
-                                                   else None)
+        # A picture's box is its file's own pixels (the owner's monster: 1278 across), not a
+        # size anyone asked for: given none, it fits the game's own rect (scale 1). Measured
+        # on the game builds (SPIKES.md section 33H): put on a written game's 30-pixel
+        # enemies, it was drawn at 42.6 times their size.
+        wanted = _pair(self.args.get("size")) or (
+            look.box if look and look.kind not in ("shapes", "picture") else None)
         if look and look.kind == "drawing" and not wanted:
             wanted = _READY_SIZES.get(look.drawing)
         constants = self.facts.get("constants") or {}

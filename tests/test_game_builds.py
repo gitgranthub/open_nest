@@ -496,3 +496,231 @@ def test_other_kinds_of_project_are_not_warned(window, monkeypatch, installed) -
         _ for _ in ()).throw(AssertionError("warned about a website")))
     win._new_project(get_profile("website"))
     assert len(opened) == 1
+
+
+# ------------------------------------------------- a new game, written whole
+
+#: A small catch game in the shape the whole-game prompt asks for: the numbers at the top,
+#: its things as rects, one game loop at the top level with a fill and a flip. It passes
+#: the real playtest.
+CATCH_GAME = '''"""A cat catches falling pizzas."""
+
+import random
+
+import pygame
+
+WIDTH, HEIGHT = 640, 480
+CAT_SPEED = 6
+PIZZA_SPEED = 4
+
+pygame.init()
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+clock = pygame.time.Clock()
+font = pygame.font.Font(None, 36)
+cat = pygame.Rect(300, 420, 60, 40)
+pizza = pygame.Rect(random.randint(0, WIDTH - 30), 0, 30, 30)
+score = 0
+
+running = True
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            running = False
+    keys = pygame.key.get_pressed()
+    if keys[pygame.K_LEFT]:
+        cat.x -= CAT_SPEED
+    if keys[pygame.K_RIGHT]:
+        cat.x += CAT_SPEED
+    cat.clamp_ip(screen.get_rect())
+    pizza.y += PIZZA_SPEED
+    if pizza.colliderect(cat):
+        score += 1
+        pizza.topleft = (random.randint(0, WIDTH - 30), 0)
+    elif pizza.top > HEIGHT:
+        pizza.topleft = (random.randint(0, WIDTH - 30), 0)
+    screen.fill((20, 20, 40))
+    pygame.draw.rect(screen, (240, 160, 60), cat)
+    pygame.draw.circle(screen, (230, 80, 50), pizza.center, 15)
+    screen.blit(font.render(f"Score: {score}", True, (255, 255, 255)), (10, 10))
+    pygame.display.flip()
+    clock.tick(60)
+
+pygame.quit()
+'''
+
+#: The same game, crashing on its first frame.
+BROKEN_GAME = CATCH_GAME.replace("pizza.y += PIZZA_SPEED", "pizza.y += PIZZA_SPED")
+#: The same game, in a function: it runs, but nothing could add a picture to it later.
+IN_A_FUNCTION = "def main():\n" + "\n".join(
+    "    " + line if line else line for line in CATCH_GAME.split("\n")) + "\nmain()\n"
+
+
+def as_model(provider, model_id: str):
+    from opennest.ai.provider import ModelInfo
+
+    provider.info = ModelInfo(id=model_id, name=model_id, provider="mlx")
+    return provider
+
+
+def block(code: str) -> Reply:
+    return Reply(text=f"```python\n{code}```")
+
+
+def test_a_new_game_is_written_whole_tested_and_kept(project) -> None:
+    """Gary Smart, on the untouched Basic Game: the measured way it builds a game."""
+    controller, provider = make(project, [block(CATCH_GAME),
+                                          Reply(text="A cat catches pizzas. Use the arrows.")])
+    as_model(provider, "qwen3-vl-8b-instruct")
+    turn = controller.send("Make a game where a cat catches falling pizzas.")
+
+    assert project.entrypoint_path.read_text(encoding="utf-8") == CATCH_GAME
+    assert turn.whole_game == "written"
+    assert turn.tool_results[0][0] == "write_file"
+    assert turn.tool_results[0][1].changed_files == ("src/game.py",)
+    assert turn.playtests and turn.playtests[0].verdict == playtest.PASSED
+    # Asked with the whole-game prompt, no tools; then Gary, told it is written, replies.
+    assert provider.tools_offered[0] == []
+    assert "Their idea, in their own words" in provider.calls[0][-1].content
+    told = provider.calls[1]
+    assert any("you have just written this whole game" in (m.content or "") for m in told)
+    assert any(m.tool_calls and m.tool_calls[0].name == "write_file" for m in told)
+    assert "A cat catches pizzas." in turn.text
+
+
+def test_a_game_that_keeps_failing_its_test_leaves_the_starter(project) -> None:
+    before = project.entrypoint_path.read_text(encoding="utf-8")
+    controller, provider = make(project, [block(BROKEN_GAME) for _ in range(3)]
+                                + [Reply(text="Let me try a smaller change.")])
+    as_model(provider, "qwen3-vl-8b-instruct")
+    turn = controller.send("Make a game where a cat catches falling pizzas.")
+    assert project.entrypoint_path.read_text(encoding="utf-8") == before
+    assert turn.whole_game == "kept the starter: crashed"
+    assert not (project.directory / "src" / "scene.py").exists()      # nothing left over
+    # Each failure went back with the test's own words.
+    assert "It stopped with an error" in provider.calls[1][-1].content
+    assert not any(name == "write_file" for name, _ in turn.tool_results)
+
+
+def test_a_repair_that_fixes_it_is_kept(project) -> None:
+    controller, provider = make(project, [block(BROKEN_GAME), block(CATCH_GAME),
+                                          Reply(text="Catch the pizzas.")])
+    as_model(provider, "qwen3-vl-8b-instruct")
+    turn = controller.send("Make a game where a cat catches falling pizzas.")
+    assert turn.whole_game == "written"
+    assert "after 1 repair" in turn.tool_results[0][1].content
+
+
+def test_a_game_hidden_in_a_function_is_asked_for_again(project) -> None:
+    controller, provider = make(project, [block(IN_A_FUNCTION), block(CATCH_GAME),
+                                          Reply(text="Catch the pizzas.")])
+    as_model(provider, "qwen3-vl-8b-instruct")
+    turn = controller.send("Make a game where a cat catches falling pizzas.")
+    assert turn.whole_game == "written"
+    assert "game loop at the top level" in provider.calls[1][-1].content
+
+
+@pytest.mark.parametrize("model,text,changed", [
+    # Gary Fast: measured one working game in five written this way.
+    ("qwen3-vl-4b-instruct", "Make a game where a cat catches falling pizzas.", False),
+    # A change to the game is not a new game.
+    ("qwen3-vl-8b-instruct", "add asteroids to the game", False),
+    # A maze is the scene layer's layout, and 3D is the block world.
+    ("qwen3-vl-8b-instruct", "Make a maze game to find the monster", False),
+    # The game has been changed: never written over.
+    ("qwen3-vl-8b-instruct", "Make a game where a cat catches falling pizzas.", True),
+])
+def test_a_new_game_is_written_whole_only_when_nothing_is_lost(project, model, text,
+                                                                changed) -> None:
+    if changed:
+        source = project.entrypoint_path.read_text(encoding="utf-8").replace(
+            "PLAYER_SPEED = 5", "PLAYER_SPEED = 7")
+        project.entrypoint_path.write_text(source, encoding="utf-8")
+    before = project.entrypoint_path.read_text(encoding="utf-8")
+    controller, provider = make(project, [Reply(text="Here is an idea.")] * 4)
+    as_model(provider, model)
+    turn = controller.send(text)
+    assert turn.whole_game == ""
+    assert all("Their idea, in their own words" not in (call[-1].content or "")
+               for call in provider.calls)
+    assert project.entrypoint_path.read_text(encoding="utf-8") == before
+
+
+def test_a_blank_project_asked_for_a_game_gets_one_written_and_tested(tmp_path) -> None:
+    """Blank has no test after an ordinary change; a game written whole is still tested."""
+    blank = create_project("Blank Cat", "blank", root=tmp_path)
+    controller, provider = make(blank, [block(CATCH_GAME), Reply(text="Catch the pizzas.")])
+    as_model(provider, "qwen3-vl-8b-instruct")
+    turn = controller.send("Make a game where a cat catches falling pizzas.")
+    assert blank.entrypoint_path.read_text(encoding="utf-8") == CATCH_GAME
+    assert turn.whole_game == "written" and turn.playtests[0].verdict == playtest.PASSED
+
+
+# ------------------------------------------- a game that worked is never left broken
+
+def test_a_change_that_breaks_a_working_game_is_put_back(project) -> None:
+    """Measured on the test04 replay after a game was written whole: three turns of
+    hand edits left a game that no longer ran at all."""
+    breaks = ToolCall(name="edit_file", arguments={
+        "path": "src/game.py", "old_text": "pizza.y += PIZZA_SPEED",
+        "new_text": "pizza.y += PIZZA_SPED"})
+    still = ToolCall(name="edit_file", arguments={
+        "path": "src/game.py", "old_text": "PIZZA_SPEED = 4", "new_text": "PIZZA_SPEED = 5"})
+    controller, provider = make(project, [
+        block(CATCH_GAME), Reply(text="A cat catches pizzas."),
+        Reply(tool_calls=[breaks]), Reply(text="Done."),
+        *[Reply(tool_calls=[still]), Reply(text="Fixed.")] * 3,
+        Reply(text="Done."), Reply(text="Done."),
+    ])
+    as_model(provider, "qwen3-vl-8b-instruct")
+    controller.send("Make a game where a cat catches falling pizzas.")
+    assert project.entrypoint_path.read_text(encoding="utf-8") == CATCH_GAME
+
+    turn = controller.send("make the pizzas fall faster")
+    assert turn.playtests and turn.playtests[-1].failed
+    assert turn.put_back
+    assert project.entrypoint_path.read_text(encoding="utf-8") == CATCH_GAME
+    assert turn.text.startswith("That change broke the game: when I tested it, it stopped "
+                                "with an error. So I put the game back")
+    # Gary is told on the next message, so he does not describe the broken change.
+    assert "put back the version from before it" in controller._recent_note
+
+
+def test_nothing_is_put_back_that_nobody_tested(project) -> None:
+    """The Basic Game was never tested this session: a broken change stays, as before,
+    with the give-up that offers going back."""
+    breaks = ToolCall(name="edit_file", arguments={
+        "path": "src/game.py", "old_text": "player.x -= PLAYER_SPEED",
+        "new_text": "player.x -= PLAYER_SPED"})
+    controller, _ = make(project, [Reply(tool_calls=[breaks]), Reply(text="Done.")]
+                         + [Reply(text="I could not fix it.")] * 6)
+    turn = controller.send("make the player slower")
+    assert not turn.put_back
+    assert "PLAYER_SPED" in project.entrypoint_path.read_text(encoding="utf-8")
+
+
+def test_asked_for_pictures_in_a_game_with_no_scene_gary_is_told_the_tool(project) -> None:
+    from PIL import Image
+
+    Image.new("RGBA", (16, 16), (40, 90, 220, 255)).save(
+        project.directory / "assets" / "monster.png")
+    project.entrypoint_path.write_text(CATCH_GAME, encoding="utf-8")   # no scene in it
+    controller, provider = make(project, [Reply(text="Which one?")] * 3)
+    controller.send("use my monster picture for the pizza")
+    assert "call game_object -- one call for each thing" in provider.calls[0][-1].content
+
+
+def test_a_game_with_a_scene_is_not_told_again(project) -> None:
+    from PIL import Image
+
+    Image.new("RGBA", (16, 16), (40, 90, 220, 255)).save(
+        project.directory / "assets" / "monster.png")
+    with_scene = CATCH_GAME.replace("import pygame\n", "import pygame\nfrom scene import Scene\n")
+    with_scene = with_scene.replace("score = 0\n", "score = 0\nscene = Scene(screen)\n")
+    with_scene = with_scene.replace("    screen.fill((20, 20, 40))\n",
+                                    "    screen.fill((20, 20, 40))\n    scene.draw()\n")
+    project.entrypoint_path.write_text(with_scene, encoding="utf-8")
+    controller, provider = make(project, [Reply(text="Which one?")] * 3)
+    controller.send("use my monster picture for the pizza")
+    assert "call game_object -- one call for each thing" not in provider.calls[0][-1].content

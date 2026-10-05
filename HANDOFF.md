@@ -17,13 +17,17 @@ phase handoff. WHATS_NEW.md is rewritten at the end of every pass.
   pictures), with optional cloud AI. The game plays inside the Workbench and has a scene
   layer, and a 3D Block World starter for 3D games. The Fast Path handles common
   requests with recipes. There is invisible version history with Undo, project memory,
-  and GitHub backup. **1797 tests pass, ruff is clean.**
+  and GitHub backup. **1810 tests pass, ruff is clean.**
 - **The game builds pass (SPIKES §33, WHATS_NEW.md).** Neither local model builds a whole
   game from one sentence, and before it neither drew anything 3D. A 3D ask now gets the
   3D Block World. Beginning a Game on Gary Fast warns that it struggles with games
-  (`struggles_with` in `models.json`). Gary Smart measured about even with Gary Fast at
-  2D games, and better at changing the 3D world. Cloud was unmeasured: both saved keys
-  were refused.
+  (`struggles_with` in `models.json`). Cloud was unmeasured: both saved keys were refused.
+- **Gary Smart writes a new game whole (SPIKES §33G-H).** Asked outside the edit tool it
+  could; through exact edits on the starter it could not. While a game is the untouched
+  starter, a "make a game" message is written whole, playtested, repaired up to twice, and
+  kept only if it passes (`_write_whole_game`, not for a model that `struggles_with`
+  games). Every first-message game in the final runs worked. A change that breaks a game
+  Open Nest had tested working is put back (`_put_back`).
 - Branches are stacked, one per phase, and nothing is merged to `main`. Branch Phase 14
   from `phase-13-live-preview`.
 - **Phase 12 is still formally open.** Its definition of done, "a child asks for a game
@@ -34,8 +38,8 @@ phase handoff. WHATS_NEW.md is rewritten at the end of every pass.
 
 1. **The owner tries the game builds pass**: a 3D game ("create a simple, block 3D
    game", test05), the warning when a Game is begun on Gary Fast, the Platform Game card.
-   Two calls for the owner: whether Gary Smart should get the warning too (it was about
-   even at 2D games, SPIKES §33B/§33D), and new cloud keys (`.env`, as before) so
+   Then a new game on Gary Smart ("Make a platform game"): written whole and tested. The
+   owner's call: new cloud keys (`.env`, as before) so
    `benchmarks/game_builds/build_walk.py <label> claude-sonnet` can measure a cloud Gary.
 2. **The owner re-runs test04 and the maze on Gary Fast.** On a Mac set up before the
    vision pass, the first launch after `git pull` reinstalls the requirements (network
@@ -214,7 +218,11 @@ benchmarks/      measurement drivers and kept results (replays, tool choice, Fas
 - A capability flag on a model is not a capability of the system: `verified`,
   `supports_images`.
 - `struggles_with` (`models.json`) is measured data: it decides the warning when a kind
-  of project is begun on that model (`router.model_advice`). Never name a model in code.
+  of project is begun on that model (`router.model_advice`), and who may write a game
+  whole. Never name a model in code.
+- **A written game is plain pygame, not the scene kit**: written on the kit, 0 of 3 passed
+  even repaired (SPIKES §33H). Its things are rects and lists of rects, so game_object can
+  put pictures on them later.
 - Every machine-dependent decision is handed the `MachineProfile`. Only
   `models.machine.detect()` looks at hardware.
 - Requirements are pinned; bumping one is a deliberate edit. `opennest` may import

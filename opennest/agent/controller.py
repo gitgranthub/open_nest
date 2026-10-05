@@ -31,6 +31,7 @@ from opennest.agent.budget import (
     RECOVERY,
     REPAIR,
     ROLLOVER,
+    WRITE_GAME,
     BudgetExhausted,
     CallBudget,
     MeteredProvider,
@@ -413,6 +414,11 @@ class Turn:
     scaffolded: tuple[str, ...] = ()
     #: Whether Open Nest started the game again as the 3D Block World this turn.
     block_world_started: bool = False
+    #: What became of writing the whole game in one reply (``_write_whole_game``):
+    #: "" when it was not tried, "written", or "kept the starter: <last verdict>".
+    whole_game: str = ""
+    #: Whether this turn's change broke a game that worked, and was put back (``_put_back``).
+    put_back: bool = False
     #: Said first, before everything else: what Open Nest set up, or which step of a plan
     #: this is and what changed underneath it.
     opening: str = ""
@@ -489,6 +495,42 @@ def build_system_prompt(
     if guidance:
         parts.append(guidance)
     return "\n\n".join(parts)
+
+
+#: Writing a whole game (``_write_whole_game``): room for a program of 100-200 lines, and
+#: how many times a failed test goes back. Measured (SPIKES.md section 33G): 108-180
+#: lines; one repair turned Gary Smart's side-scroller from a crash into the game.
+WHOLE_GAME_TOKENS = 4000
+WHOLE_GAME_REPAIRS = 2
+_PROGRAM = re.compile(r"```(?:python|py)?[ \t]*\n(.*?)```", re.DOTALL)
+
+
+def _whole_program(reply: str, relative: str) -> tuple[str, str]:
+    """The program in a reply, and "" -- or "" and what to say about why it is not one.
+
+    It must be complete and parse, and have the one top-level game loop -- a
+    ``screen.fill`` and a ``pygame.display.flip`` in it -- that the scene layer, the
+    recipes and the checked facts read; a game inside a class could not be given the
+    child's pictures afterwards.
+    """
+    from opennest.fastpath.kinds import games  # lazily: the parser that finds the loop
+
+    found = _PROGRAM.search(reply)
+    if not found:
+        return "", ("Your reply had no complete ```python code block -- it may have been "
+                    "cut off. Write a shorter version of the whole game.")
+    code = found.group(1)
+    try:
+        compile(code, relative, "exec")
+    except SyntaxError as exc:
+        return "", (f"That program does not parse: {exc.msg} on line {exc.lineno}. Fix it.")
+    facts = games.facts_of(code, relative)
+    if not all(facts.has(key) for key in ("loop", "fill", "flip", "surface")):
+        return "", ("Open Nest needs the game loop at the top level of the file -- `while "
+                    "running:`, not inside a function or a class -- with screen.fill(...) "
+                    "and pygame.display.flip() in it, so the child's pictures and changes "
+                    "can be added later. Write it that way.")
+    return code, ""
 
 
 #: The sentences Open Nest writes around a plan (``_reduce``, ``_framed``). In a model's
@@ -568,6 +610,32 @@ _FROM_ABOVE = re.compile(r"\b(?:maze|labyrinth|top[- ]?down|from above|bird'?s[-
 _GENRES = re.compile(r"\b(?:shooter|platformer|racer|racing game|runner|maze|dodger|"
                      r"adventure|rpg|tower defen[cs]e|space invaders|pac-?man|mario)\b",
                      re.IGNORECASE)
+
+#: A message that asks for a game to be made: "make a space game", "a game where ...".
+#: Not "add asteroids to the game" -- a change to the game there is.
+_MAKES_A_GAME = re.compile(
+    r"\b(?:make|build|create|write|code|design|turn (?:it|this) into|let'?s (?:make|build|"
+    r"do|have))\b[^.!?]*\bgames?\b|\bgames? (?:where|about|with|in which|that|like)\b",
+    re.IGNORECASE)
+
+#: Said beside the message, when Open Nest had the whole game written and it passed its
+#: test (``_write_whole_game``). Gary's reply is what remains.
+WHOLE_WRITTEN = (
+    "(Open Nest: you have just written this whole game into {entry}, and Open Nest "
+    "tested it without a window: it runs. Tell them in two or three sentences what the "
+    "game is and how to play it, from the code. Do not change it in this turn.)")
+
+#: Said beside a message asking to use the child's pictures, in a game with no scene yet --
+#: one written whole, or built by hand. Measured on the test04 replay after the game was
+#: written whole (SPIKES.md section 33H): asked to use the tree and monster pictures,
+#: Gary Smart loaded them with edit_file, twelve calls a turn, and crashed the game; the
+#: tool that puts a picture on the game's own things, keeping how they move, went unused.
+PICTURES_BY_TOOL = (
+    "(Open Nest: to put their pictures in the game, call game_object -- one call for each "
+    "thing, with its name and the picture, or a list of pictures for several copies. Open "
+    "Nest draws them on the game's own things of that name and keeps how they move. Do not "
+    "load pictures with edit_file.)")
+_PICTURE_WORDS = re.compile(r"\b(?:pictures?|images?|photos?|png)\b", re.IGNORECASE)
 
 #: Said beside a message that says the game is not good. The rule is in ANSWER_RULES;
 #: the final test04 replay's 4B answered "You are not making a good game" with the trees'
@@ -1048,6 +1116,9 @@ class AgentController:
         self._metered = MeteredProvider(self.provider, self._budget)
         #: How many of this turn's tool results the last headless test already covers.
         self._tested_through = 0
+        #: The game as it was, when Open Nest's own test last passed on exactly these files
+        #: -- what a turn that breaks it puts back (``_put_back``).
+        self._working = self._verified_working()
 
         previous, self._last_request = self._last_request, text
         recent, self._recent_note = self._recent_note, ""
@@ -1123,6 +1194,9 @@ class AgentController:
                 self.history[-1] = replace(self.history[-1], content=(
                     f"{self.history[-1].content}\n\n{NOT_GOOD}"))
                 self._asked_text = text
+        written = None
+        if not answering and step is None and outcome == "gary" and not in_3d:
+            written = self._write_whole_game(turn, text)
         if not answering and step is None and plays_in_panel(self.project):
             # Beside the message, for this turn only; the settled history keeps their words.
             notes = [WHOLE_GAME] if _GENRES.search(text) or (
@@ -1136,6 +1210,11 @@ class AgentController:
                 notes = [block_world.GUIDE.format(entry=f"src/{self.project.manifest.entrypoint}")]
                 if turn.block_world_started:
                     notes.append(block_world.JUST_STARTED)
+            elif written is not None:
+                # Instead of "build it now with game_object": it is built, and tested.
+                notes = [WHOLE_WRITTEN.format(entry=f"src/{self.project.manifest.entrypoint}")]
+            elif self._asks_for_pictures_without_a_scene(text):
+                notes.append(PICTURES_BY_TOOL)
             elif block_world.ASKS_FOR_3D.search(text) and block_world.offered(
                     self.project.profile):
                 self._wants_3d = True
@@ -1143,6 +1222,13 @@ class AgentController:
                 self.history[-1] = replace(self.history[-1], content="\n\n".join(
                     [self.history[-1].content, *notes]))
                 self._asked_text = text
+        if written is not None:
+            # What the model wrote goes into the history as the call it was, after the
+            # message, so the next thing Gary says is about the game it just made.
+            call, result = written
+            self.history.append(Message(role="assistant", content="", tool_calls=(call,)))
+            self.history.append(Message(role="tool", name=call.name, tool_call_id=call.id,
+                                        content=result.content))
         try:
             turn = self._exchange(turn, text, on_text, challenged, corrected)
         except BudgetExhausted:
@@ -1481,6 +1567,238 @@ class AgentController:
             f"There was nothing in the project yet, so I started it {began}: {description}",
         ) if part)
         self.refresh_state()
+
+    def _write_whole_game(self, turn: Turn, text: str):
+        """Have a new game written whole, tested and repaired -- while nothing is lost.
+
+        Measured on the game builds (SPIKES.md section 33G): asked for a whole game in one
+        reply, the way any coding assistant is asked, Gary Smart wrote the cat game, the
+        space game and the side-scroller, each tested by Open Nest's own playtest and
+        repaired from its feedback; through the edit tool, building on the starter by
+        exact text, it made none of them from the first message, with 47 of its 72 edits
+        refused. What the edit tool is for -- changing a game a child has, without
+        losing any of it -- is not at stake while the game is still the untouched Basic
+        Game. So then, and only then:
+
+        - one reply with the whole program (``prompts/whole_game.txt``: one file, the
+          numbers at the top, one game loop at the top level -- the shape the scene
+          layer, the recipes and the checked facts read), then Open Nest's playtest;
+        - a failure goes back with the test's own words, twice at most, all from the
+          turn's one call budget;
+        - kept only if it passes. Otherwise the starter is put back exactly as it was
+          and the turn goes on the ordinary way.
+
+        Only for a model not measured to struggle with games (``struggles_with``): one
+        reply gave Gary Fast one working game in five, its long output breaking (a
+        runaway repetition, a stray word in another language). A model the catalogue
+        does not know -- a test's scripted one -- is never asked.
+
+        Returns the write as a (call, result) pair for the history, or None.
+        """
+        project = self.project
+        if not plays_in_panel(project) or _FROM_ABOVE.search(text) or \
+                not (_MAKES_A_GAME.search(text) or _GENRES.search(text)) or \
+                block_world.ASKS_FOR_3D.search(text):
+            return None
+        info = getattr(self.provider, "info", None)
+        try:
+            from opennest.ai.router import get_entry  # lazily, like the other model lookups
+
+            if "games" in get_entry(getattr(info, "id", "")).struggles_with:
+                return None
+        except ProviderError:
+            return None
+        budget = getattr(self, "_budget", None)
+        if budget is not None and budget.remaining < 4:
+            return None
+        path = project.entrypoint_path
+        try:
+            basic = starter_kits.get_starter("pygame_basic")
+            starter = (basic.directory / basic.entry_point).read_text(encoding="utf-8")
+            if path.read_text(encoding="utf-8") != starter:
+                return None
+        except (OSError, UnicodeDecodeError, starter_kits.StarterError):
+            return None
+
+        relative = f"src/{project.manifest.entrypoint}"
+        pictures = [asset for asset in assets.list_assets(project)
+                    if asset.kind == asset_kinds.IMAGE]
+        listed = "; ".join(f"{asset.path}" + (f" ({asset.seen})" if asset.seen else "")
+                           for asset in pictures[:6])
+        template = (paths.prompts_dir() / "whole_game.txt").read_text(encoding="utf-8")
+        system = template.strip().replace("{pictures}", (
+            f" -- or these pictures from the project, loaded with pygame.image.load and the "
+            f"path exactly as written: {listed}") if listed else "")
+        wishes = getattr(self, "_wishes", None) or [text]
+        messages = [Message(role="system", content=system), Message(
+            role="user", content="Their idea, in their own words:\n" + "\n".join(
+                f"- \u201c{wish}\u201d" for wish in wishes))]
+        provider = getattr(self, "_metered", None) or self.provider
+        self.toolbox.report(Step("recipe", "writing the whole game"))
+        verdict, written = "", None
+        try:
+            for attempt in range(1 + WHOLE_GAME_REPAIRS):
+                if isinstance(provider, MeteredProvider):
+                    provider.kind = WRITE_GAME
+                try:
+                    for _chunk in provider.chat(messages, tools=None, settings=Settings(
+                            temperature=0.0, max_tokens=WHOLE_GAME_TOKENS)):
+                        pass
+                    reply = provider.finish()
+                except ProviderError as exc:
+                    if isinstance(exc, BudgetExhausted):
+                        raise
+                    break
+                code, problem = _whole_program(reply.text or "", relative)
+                if problem:
+                    verdict, feedback = "not a whole game", problem
+                else:
+                    tried = self._keep_if_it_plays(turn, code, relative, attempt)
+                    if tried is None:
+                        verdict = "untested"
+                        break
+                    written, failure = tried
+                    if written is not None:
+                        return written
+                    verdict, feedback = failure
+                if attempt < WHOLE_GAME_REPAIRS:
+                    messages += [Message(role="assistant", content=reply.text or ""),
+                                 Message(role="user", content=(
+                                     f"{feedback}\n\nReply with the whole corrected "
+                                     f"program in one ```python code block."))]
+        finally:
+            if written is None:
+                # Nothing kept: the project is exactly as it was before the step.
+                path.write_text(starter, encoding="utf-8")
+        turn.whole_game = f"kept the starter: {verdict or 'no reply'}"
+        return None
+
+    def _keep_if_it_plays(self, turn: Turn, code: str, relative: str, attempt: int):
+        """Write ``code`` and test it: ((call, result), None) when it passed and is kept,
+        (None, (verdict, feedback)) when it did not, or None when it could not be tested."""
+        self.project.entrypoint_path.write_text(code, encoding="utf-8")
+        test = self._test_written_game()
+        if test is None:
+            return None
+        if not test.failed:
+            return self._keep_written_game(turn, code, test, relative, attempt), None
+        return None, (test.verdict, test.feedback())
+
+    def _asks_for_pictures_without_a_scene(self, text: str) -> bool:
+        """The child asks to use their pictures, they have some, and the game has no scene."""
+        if "game_object" not in self.toolbox.allowed or not _PICTURE_WORDS.search(text):
+            return False
+        if not any(asset.kind == asset_kinds.IMAGE for asset in assets.list_assets(
+                self.project)):
+            return False
+        from opennest.graphics import source as scene_source  # lazily, like evidence
+
+        try:
+            code = self.project.entrypoint_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return False
+        return not scene_source.read(code).adopted
+
+    def _verified_working(self) -> dict[str, str] | None:
+        """The project's src/ files, when Open Nest's last test passed on exactly them."""
+        last = getattr(self.toolbox, "last_playtest", None)
+        if last is None or last.verdict != playtest.PASSED:
+            return None
+        def code(entries) -> tuple:
+            # The code only: a picture added since (assets/) changes nothing that ran.
+            return tuple(entry for entry in entries if entry[0].startswith("src/"))
+
+        if code(getattr(self.toolbox, "last_playtest_files", ())) != code(
+                source_fingerprint(self.project.directory)):
+            return None
+        src = self.project.directory / "src"
+        try:
+            return {str(path.relative_to(self.project.directory)): path.read_text(
+                encoding="utf-8") for path in sorted(src.rglob("*.py"))
+                if "__pycache__" not in path.parts}
+        except (OSError, UnicodeDecodeError):
+            return None
+
+    def _put_back(self, turn: Turn) -> None:
+        """A change that broke a game which worked goes, and the working game comes back.
+
+        Measured on the game builds (SPIKES.md section 33H): after Gary Smart wrote the
+        owner's test04 game whole, "use the tree pictures" became twelve hand edits, a
+        crash the repairs could not mend, and a game that no longer ran at all -- three
+        turns running. The give-up already offered "we can go back to the last version
+        that worked"; when Open Nest's own test passed on the game before this message,
+        that is done, and said. Never to a version nobody tested.
+        """
+        working = getattr(self, "_working", None)
+        if not working or not turn.playtests or not turn.playtests[-1].failed or not any(
+                result.changed_files for _, result in turn.tool_results):
+            return
+        directory = self.project.directory
+        try:
+            for path in (directory / "src").rglob("*.py"):
+                relative = str(path.relative_to(directory))
+                if "__pycache__" not in path.parts and relative not in working:
+                    path.unlink()             # made by this turn's broken change
+            for relative, text in working.items():
+                (directory / relative).write_text(text, encoding="utf-8")
+        except OSError:
+            return
+        turn.put_back = True
+        failed = turn.playtests[-1]
+        saw = _PLAYTEST_GAVE_UP.get(failed.verdict, "it did not work")
+        turn.text = (f"That change broke the game: when I tested it, {saw}. So I put the "
+                     f"game back the way it was before your message -- that version works. "
+                     f"Want me to try it another way?")
+        turn.plan_note = ""
+        self._recent_note = ("(Open Nest: your last change broke the game, so Open Nest put "
+                             "back the version from before it. The files are as they were "
+                             "before that message.)")
+        self._files_after = source_fingerprint(directory)
+        relative = f"src/{self.project.manifest.entrypoint}"
+        content = self.toolbox._file_text(relative)
+        if content is not None:
+            self.toolbox.report(Step("changed", f"put back {relative}", path=relative,
+                                     content=content))
+        self.refresh_state()
+
+    def _test_written_game(self) -> playtest.Playtest | None:
+        """Open Nest's playtest of what was just written -- also in a Blank game, which has
+        no test after an ordinary change, because nothing here is kept untested."""
+        result = self.toolbox.playtest()
+        if result is not None or not plays_in_panel(self.project):
+            return result
+        self.toolbox.report(Step("testing", "testing the game without a window"))
+        files = source_fingerprint(self.project.directory)
+        result = playtest.run(self.project.directory, self.project.profile.run_command,
+                              python_executable=self.toolbox.python_executable)
+        self.toolbox.last_playtest, self.toolbox.last_playtest_files = result, files
+        return result
+
+    def _keep_written_game(self, turn: Turn, code: str, test: playtest.Playtest,
+                           relative: str, attempt: int):
+        """The written game, passed: a change of Gary's, tested, reported as it is."""
+        moving = "something moves on its own" if test.moved_by_itself else ""
+        keys = "it responds to the keys" if test.responded_to else ""
+        seen = " and ".join(part for part in (moving, keys) if part)
+        result = ToolResult(True, (
+            f"Wrote {relative}: the whole game, {code.count(chr(10)) + 1} lines"
+            f"{f', after {attempt} repair' + ('s' if attempt != 1 else '') if attempt else ''}. "
+            f"Open Nest tested it without a window: it runs{', and ' + seen if seen else ''}."),
+            changed_files=(relative,))
+        call = ToolCall(name="write_file", arguments={"path": relative, "content": code},
+                        id="whole_game")
+        turn.tool_results.append((call.name, result))
+        turn.calls.append(("write_file", call.arguments, result))
+        turn.playtests.append(test)
+        # Tested just now: the turn's own test after a change need not run it again.
+        self._tested_through = len(turn.tool_results)
+        turn.whole_game = "written"
+        content = self.toolbox._file_text(relative)
+        if content is not None:
+            self.toolbox.report(Step("changed", f"changed {relative}", path=relative,
+                                     content=content))
+        self.refresh_state()
+        return call, result
 
     def _set_up_block_world(self, turn: Turn, text: str) -> None:
         """Start the game again as the 3D Block World, when 3D is asked for first thing.
@@ -2214,8 +2532,9 @@ class AgentController:
         # not carry it into the next thread's prompt.
         self._attached = ()
         self._guidance = ""
-        changed = any(result.changed_files for _, result in turn.tool_results) or bool(
-            turn.scaffolded)
+        self._put_back(turn)
+        changed = not turn.put_back and (any(
+            result.changed_files for _, result in turn.tool_results) or bool(turn.scaffolded))
         # State is refreshed before the checkpoint so the saved version contains both the
         # change and the note describing it.
         if self.memory is not None:

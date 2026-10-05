@@ -5371,3 +5371,81 @@ still the untouched starter, so nothing of the child's is lost -- then the playt
 repair, for a model that does not struggle with games. That is a change to a measured
 safety rule and is the owner's call.
 
+### 33H. Fixing it: a new game written whole, tested, repaired -- and never left broken
+
+The owner's answer to §33G: fix it. What was built, and the two rounds that were not kept.
+
+**First, what did *not* work.** Simply allowing the whole-file writes Gary Smart attempted
+inside the Workbench would not have helped: every one of its ten blocked attempts in the
+final builds was the 42-line starter with a few lines changed, never a game. The
+110-180-line games came only when it was asked, outside the edit tool, for the whole game.
+So Open Nest asks that, as its own step.
+
+**`AgentController._write_whole_game`**: for a message that asks for a game to be made
+(`_MAKES_A_GAME`, or a genre word) while the game is still the untouched Basic Game -- so
+nothing of the child's can be lost -- and only for a model not marked `struggles_with`
+games (Gary Fast is; a scripted test model is unknown and never asked): one reply with the
+whole program (`prompts/whole_game.txt`), Open Nest's playtest, the test's own feedback
+back up to twice, all from the turn's one budget (`budget.WRITE_GAME`). Kept only if it
+passes, as a `write_file` call in the history, with Gary told beside the message to say
+what he made and change nothing; otherwise the starter goes back byte for byte and the
+turn goes on the ordinary way. A maze (the scene's layout) and 3D (the block world) are
+not this. A Blank project gets its candidate tested too, though Blank has no test after
+an ordinary change.
+
+**What the written game looks like**, and the round that was reverted. The prompt asks for
+the shape the rest of Open Nest reads: the numbers at the top, every thing a
+`pygame.Rect` (several of a kind a list of them), one top-level `while running:` loop with
+`screen.fill` and `pygame.display.flip`; `_whole_program` refuses a game in a function or a
+class, which no later tool could change. A requirement that the player be found by Open
+Nest's player reader was tried and dropped: the reader knows the starter's
+`if keys[...]: player.x -= SPEED` only, and turned away two good games. A version that had
+Gary draw everything through the scene kit (`scene.add(..., rects=...)`), so pictures
+could go on later, was measured and reverted: **0 of 3 games passed even with two repairs
+each** -- Gary Smart knows pygame and not the kit (`Text(color=...)`,
+`scene.remove(rect=...)`, an imported `Rectangle`), and repairs could not teach it.
+
+**Pictures afterwards.** On the first test04 replay with the step (`whole_vl8b`), the game
+written on message 3 was a real night-woods shooter -- and then "use the tree pictures"
+became twelve `edit_file` calls a turn loading pictures by hand, a crash the repairs could
+not mend, and a game that no longer ran, three turns running. Two changes:
+
+- **Beside a message asking to use pictures, in a game with no scene yet**, Gary is told
+  that game_object puts them on the game's own things of that name, keeping how they move
+  (`PICTURES_BY_TOOL`). game_object already could: on a written game's `enemies` list it
+  writes `scene.add("enemies", Picture(...), rects=enemies)` and takes out the hand-drawing
+  -- **at 42.6 times their size**, because `_list_scale` took a picture file's own pixels
+  (1278 across) as the size wanted. A picture with no size asked for now fits the game's
+  rect.
+- **A change that breaks a game which worked is put back** (`_put_back`): when Open Nest's
+  own test passed on exactly the game's code before the message (`_verified_working`; a
+  picture added since does not count), and the turn ends with the game failing its test,
+  the code goes back and the child is told -- "That change broke the game: when I tested it,
+  it stopped with an error. So I put the game back the way it was before your message --
+  that version works." Gary is told on the next message. Never to a version nobody tested.
+
+**The final measurements** (Gary Smart; `results/smart_whole4.json`,
+`owner_test04/results/whole4_vl8b.json`; `smart_whole.json` and `whole_vl8b`/`whole2_vl8b`
+are the rounds before, kept as found):
+
+| first message | through the Workbench (§33D) | written whole |
+|---|---|---|
+| a cat catches falling pizzas | pizzas, no cat | ✓ the cat, pizzas, a score, lives |
+| a space game | a 30x30 rectangle | ✓ a dodging game, a score, lives |
+| a platform game | a floor with a gap, no jump | ✓ platforms, jumping, coins, enemies, a score |
+| a side-scroller | a sky, a road, a rock | ✓ run, jump the rocks, a score (scrolling scenery later: one still tree) |
+| test04's night-woods shooter | a sky, monsters of its own | ✓ a shooter with a score and lives |
+
+Every first-message whole game written in either round passed its test -- eight of eight,
+and test04's in all three replays -- in one reply (a repair was never needed in the final
+round), 33-196 s a game with three models running at once. On test04 the six tree pictures
+then went **onto the written game's own trees, one per copy**, the game ran at the end of
+every turn, and nothing was put back; the monster picture went on a new still monster
+(Gary gave it to "player"), not on the moving ones. Gary Fast's test04 (`whole4_vl4b`) is as
+before -- it never takes this path. The Phase 12 app walk under cocoa, 43/43.
+
+**Not done**: Gary Fast gets none of this (one working game in five written whole, §33G);
+later changes to a written game are still edits, as good as the model -- the side-scroller's
+trees never scrolled; the monster picture on the game's own monsters needs Gary to name
+them; cloud unmeasured.
+

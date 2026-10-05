@@ -26,9 +26,23 @@ Gary Smart took about twice as long for the same turns.
   player, bigger, a night sky, trees. **Neither builds a whole game from one sentence**
   (the cat game, a platformer, a side-scroller), and before this pass **neither drew
   anything 3D**: Open Nest itself told every model to make "the closest 2D version".
-- **Gary Smart is not clearly better at games.** Better at some steps, worse at others,
-  and about twice as slow. It is better at changing the 3D world.
+- **Through the edit tool, Gary Smart was not clearly better at games** -- better at some
+  steps, worse at others, about twice as slow. That was the setup, not the model: see the
+  fix above.
 - **Cloud was not measured**: both saved keys were refused ("invalid" / "invalidated").
+
+## The fix: Gary Smart writes the whole game
+
+Asked, outside the edit tool, Gary Smart could write whole games; through it, building on
+the starter by exact edits, it made none from the first message (SPIKES §33G). Now, while a
+game is still the untouched starter, a "make a game ..." message has the whole game written
+in one go, tested by Open Nest, repaired from the test up to twice, and kept only if it
+works -- otherwise the starter comes back. Every first-message game Gary Smart was asked
+for in the final runs worked: the cat game, a space game, a platformer, a side-scroller,
+and the owner's night-woods shooter, whose six tree pictures then went onto the game's own
+trees. Not for Gary Fast (it writes long code badly). Two guards came with it: a change
+that breaks a game which worked is put back, and asked to use pictures in a game with no
+scene, Gary is told the tool that does it.
 
 ## What changed
 
