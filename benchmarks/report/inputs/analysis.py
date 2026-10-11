@@ -1,0 +1,171 @@
+"""Look at a table of data and draw a picture of it.
+
+Drop a .csv file onto the project and press Run Analysis. This finds it, says what is
+inside it, and draws a chart into the charts folder.
+
+Then start changing it. The interesting questions are yours: which column matters, what
+you expected to see, and whether the chart agrees with you.
+"""
+
+import matplotlib
+
+# Pick the drawing engine before importing pyplot. "Agg" draws straight to a file
+# instead of opening a window, which is what we want -- the chart appears in Open Nest.
+matplotlib.use("Agg")
+
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+
+DATA_DIR = Path("data")
+CHART_DIR = Path("charts")
+
+
+def find_a_table():
+    """The first .csv in the data folder, or None if there is not one yet."""
+    tables = sorted(DATA_DIR.glob("*.csv"))
+    if not tables:
+        return None
+    return tables[0]
+
+
+def read_dates(frame):
+    """Turn a column of dates into real dates, in place. A chart then draws a readable
+    time axis instead of one label for every row."""
+    for name in frame.columns:
+        looks_like_time = any(word in str(name).lower() for word in ("date", "time", "day"))
+        if looks_like_time and pd.api.types.is_string_dtype(frame[name]):
+            try:
+                frame[name] = pd.to_datetime(frame[name])
+            except (ValueError, TypeError):
+                pass  # not dates after all: leave the column as it was
+
+
+def describe(table, frame):
+    """Say what is actually in the file, before drawing any conclusions from it."""
+    print(f"Reading {table.name}")
+    print(f"  {len(frame)} rows, {len(frame.columns)} columns")
+    print(f"  columns: {', '.join(str(c) for c in frame.columns)}")
+
+    missing = frame.isna().sum()
+    gaps = {name: int(count) for name, count in missing.items() if count}
+    if gaps:
+        print(f"  empty cells: {gaps}")
+    else:
+        print("  no empty cells")
+
+    numbers = frame.select_dtypes("number")
+    if not numbers.empty:
+        print("\nThe number columns, summarised:")
+        print(numbers.describe().to_string())
+    return numbers
+
+
+def draw(frame, numbers, table_name):
+    """One chart, with both axes labelled -- and said in words, because a chart nobody can
+    read is not a result, and the words are what you (and Gary) can check."""
+    CHART_DIR.mkdir(exist_ok=True)
+
+    figure, axes = plt.subplots()
+
+    # Along the bottom: the first column of words if there is one (a name, a date).
+    labels = None
+    for name in frame.columns:
+        if name not in numbers.columns:
+            labels = name
+            break
+
+    first_number = numbers.columns[0]
+    others = [name for name in numbers.columns if name != first_number][:4]
+
+    if labels is not None and len(frame) <= 30:
+        shown, along = [first_number], labels
+        axes.bar(frame[labels].astype(str), numbers[first_number])
+        plt.setp(axes.get_xticklabels(), rotation=45, ha="right")
+    elif labels is None and others and numbers[first_number].is_monotonic_increasing:
+        # All numbers, and the first one only goes up -- week 1, 2, 3 -- so it is what
+        # the others are measured against: one line for each of them.
+        shown, along = others, first_number
+        for name in others:
+            axes.plot(numbers[first_number], numbers[name], marker="o", label=str(name))
+        if len(others) > 1:
+            axes.legend()
+    else:
+        shown, along = [first_number], None
+        axes.plot(range(len(frame)), numbers[first_number], marker="o", markersize=3)
+
+    what = " and ".join(str(name) for name in shown)
+    by = f"by {along}" if along is not None else "row by row"
+    axes.set_xlabel(str(along) if along is not None else "Row number")
+    axes.set_ylabel(what if len(shown) == 1 else "value")
+    axes.set_title(f"{what} {by}, from {table_name}")
+    figure.tight_layout()
+
+    chart = CHART_DIR / "chart.png"
+    figure.savefig(chart)
+    print(f"\nChart saved to {chart}: {what} {by}.")
+    return chart
+
+
+table = find_a_table()
+
+if table is None:
+    print("There is no data here yet.")
+    print()
+    print("Drag a .csv file onto the project and press Run Analysis again.")
+    print("A .csv is just a table saved as text -- most spreadsheets can save one.")
+else:
+    frame = pd.read_csv(table)
+    read_dates(frame)
+    numbers = describe(table, frame)
+
+    if numbers.empty:
+        print("\nNo number columns to chart yet.")
+        print("A chart needs at least one column of numbers.")
+    else:
+        draw(frame, numbers, table.name)
+
+    # Create a dashboard with multiple time series using seaborn for better visuals
+    # Temperature trends
+    plt.figure(figsize=(8, 10))
+    plt.subplot(3, 1, 1)
+    sns.lineplot(data=frame, x="date", y="temp_high_f", label="High Temp")
+    sns.lineplot(data=frame, x="date", y="temp_low_f", label="Low Temp")
+    sns.lineplot(data=frame, x="date", y="temp_avg_f", label="Avg Temp")
+    plt.title("Temperature Trends")
+    plt.xlabel("Date")
+    plt.ylabel("Temperature (°F)")
+    plt.legend()
+    plt.grid(True)
+    
+    # Humidity
+    plt.subplot(3, 1, 2)
+    sns.lineplot(data=frame, x="date", y="humidity_avg_pct")
+    plt.title("Average Humidity")
+    plt.xlabel("Date")
+    plt.ylabel("Humidity (%)")
+    plt.grid(True)
+    
+    # Wind speed
+    plt.subplot(3, 1, 3)
+    sns.lineplot(data=frame, x="date", y="wind_speed_avg_mph")
+    plt.title("Average Wind Speed")
+    plt.xlabel("Date")
+    plt.ylabel("Wind Speed (mph)")
+    plt.grid(True)
+    
+    plt.tight_layout()
+    plt.savefig("charts/weather_dashboard.png")
+    plt.close()
+
+    # Rain by month, the way the research prompt asks: one idea, labelled, no colour.
+    monthly = frame.groupby(frame["date"].dt.strftime("%b"), sort=False)["precip_in"].sum()
+    figure, axes = plt.subplots()
+    axes.bar(monthly.index, monthly.values)
+    axes.set_title("August was the wettest month")
+    axes.set_xlabel("Month")
+    axes.set_ylabel("Rain (inches)")
+    figure.tight_layout()
+    figure.savefig("charts/rain_by_month.png")

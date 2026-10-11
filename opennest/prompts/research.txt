@@ -28,6 +28,14 @@ and output size are set for you and every chart picks them up automatically.
 - To change how charts look, edit matplotlibrc -- that is what it is for, and it is a
   file in the project like any other. If they ask for a different colour on one chart,
   pass it to that one call instead.
+- **Never write a colour name or hex code** (color="red") into a chart. A plain call
+  already draws in the project's palette, and Open Nest takes out any colour you name
+  unless the child asked for one. Several lines on one chart each get their own palette
+  colour by themselves.
+- One chart needs no figsize: the project's size is set. Several charts on one page: use
+  plt.subplots(n, 1, figsize=(7, 3 * n)) so each gets its own height.
+- A date column read from a .csv is text until you convert it: pd.to_datetime(frame["date"])
+  before plotting, or the axis gets one unreadable label per row.
 - Give every chart a title that says what it shows, not what it is. "Rainfall fell
   through the summer", not "rainfall_mm by month".
 - One idea per chart. Two questions means two charts.

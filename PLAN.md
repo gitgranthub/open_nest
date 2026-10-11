@@ -186,6 +186,7 @@ message list — the mistake Phase 2 already made once.
 | ~~D2~~ | ~~Default local model + quantization~~ | ~~Phase 1~~ | **Resolved**: `mlx-community/Qwen3-4B-Instruct-2507-4bit` @ `50d4275`. Apache-2.0, 2.61 GB resident, 92.5 tok/s. **Revised (SPIKES §32)**: Gary Fast, `mlx-community/Qwen3-VL-4B-Instruct-4bit` @ `2fd8dac` -- 79 of 94 acceptable first moves against 67, and it sees pictures; Gary Smart (Qwen3-VL 8B) for 16 GB+; the older local models `deprecated` |
 | ~~D3~~ | ~~Tool-call format~~ | ~~Phase 1~~ | **Resolved**: native `<tool_call>` template, temp 0, ≤4 tools, file state injected rather than listed via a tool |
 | D4 | Projects directory location | Phase 0 | `~/Open Nest/Projects` (mirrors work order's `~/BuildLab/Projects`) |
+| ~~D14~~ | ~~Whether exporting a report needs a parent gate (PHASE_12_HANDOFF §7)~~ | ~~the report pass~~ | **Resolved: no gate.** A child must be able to save their own work, and the permission is a person choosing one place in a real save dialog -- D9's logic. Export is still a privileged action (HANDOFF §5): the dialog's answer is checked and granted for one write (`export/save.py`), Open Nest's own folders are refused, what leaves is secret-scanned as a push is, and Gary cannot reach it (no tool, and nothing he can reach imports it -- a test). SPIKES §34 |
 | ~~D5~~ | ~~Vendor a standalone Python vs. require Homebrew/python.org~~ | ~~Phase 1~~ | **Resolved in Phase 0**: vendor a pinned, checksum-verified standalone build (section 2.1) |
 
 ---

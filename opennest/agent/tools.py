@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from opennest.agent import chart_style
 from opennest.assets import kinds
 from opennest.execution import arduino, outputs, playtest
 from opennest.execution.python_runner import RunResult, run_project, stop_project
@@ -501,13 +502,24 @@ class Toolbox:
         content, unescaped = repair_written_text(relative, content)
         _reject_broken_python(relative, content)
         _reject_tool_calls_as_code(relative, "", content)
+        content, styled = self._keep_house_colours(relative, "", content)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         rel = str(path.relative_to(self.project.directory.resolve()))
         return ToolResult(True, f"Wrote {rel} ({len(content)} characters)."
-                          + _counting_note(relative, "", content),
+                          + _counting_note(relative, "", content) + styled,
                           changed_files=(rel,),
                           recovered="escaping" if unescaped else "")
+
+    def _keep_house_colours(self, relative: str, before: str, after: str) -> tuple[str, str]:
+        """Research charts draw in the project's palette; see :mod:`chart_style`.
+
+        The application does this, because the prompt only asks Gary to: measured on the
+        owner's weather dashboard, which came back in red, blue and green."""
+        if self.project.profile.id != "research" or not relative.endswith(".py"):
+            return after, ""
+        updated, removed = chart_style.keep_house_colours(before, after, self.message[0])
+        return updated, chart_style.note(removed) if removed else ""
 
     def _edit_file(self, args: dict) -> ToolResult:
         """Replace one exact snippet, with a bounded repair when the match is near.
@@ -605,9 +617,11 @@ class Toolbox:
             )
         _reject_broken_python(relative, updated)
         _reject_tool_calls_as_code(relative, text, updated)
+        updated, styled = self._keep_house_colours(relative, text, updated)
         path.write_text(updated, encoding="utf-8")
         rel = str(path.relative_to(self.project.directory.resolve()))
-        return ToolResult(True, f"Changed {rel}." + _counting_note(relative, text, updated),
+        return ToolResult(True, f"Changed {rel}." + _counting_note(relative, text, updated)
+                          + styled,
                           changed_files=(rel,), recovered=recovered)
 
     def _refuse_picture_name(self, relative: str) -> None:

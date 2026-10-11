@@ -30,6 +30,18 @@ def find_a_table():
     return tables[0]
 
 
+def read_dates(frame):
+    """Turn a column of dates into real dates, in place. A chart then draws a readable
+    time axis instead of one label for every row."""
+    for name in frame.columns:
+        looks_like_time = any(word in str(name).lower() for word in ("date", "time", "day"))
+        if looks_like_time and pd.api.types.is_string_dtype(frame[name]):
+            try:
+                frame[name] = pd.to_datetime(frame[name])
+            except (ValueError, TypeError):
+                pass  # not dates after all: leave the column as it was
+
+
 def describe(table, frame):
     """Say what is actually in the file, before drawing any conclusions from it."""
     print(f"Reading {table.name}")
@@ -55,7 +67,7 @@ def draw(frame, numbers, table_name):
     read is not a result, and the words are what you (and Gary) can check."""
     CHART_DIR.mkdir(exist_ok=True)
 
-    figure, axes = plt.subplots(figsize=(8, 4.5))
+    figure, axes = plt.subplots()
 
     # Along the bottom: the first column of words if there is one (a name, a date).
     labels = None
@@ -91,7 +103,7 @@ def draw(frame, numbers, table_name):
     figure.tight_layout()
 
     chart = CHART_DIR / "chart.png"
-    figure.savefig(chart, dpi=110)
+    figure.savefig(chart)
     print(f"\nChart saved to {chart}: {what} {by}.")
     return chart
 
@@ -105,6 +117,7 @@ if table is None:
     print("A .csv is just a table saved as text -- most spreadsheets can save one.")
 else:
     frame = pd.read_csv(table)
+    read_dates(frame)
     numbers = describe(table, frame)
 
     if numbers.empty:

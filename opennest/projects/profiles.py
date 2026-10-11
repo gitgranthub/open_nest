@@ -68,6 +68,9 @@ class Profile:
     #: opens no window of its own and is drawn inside the Workbench instead, still in
     #: its own sandboxed process. Phase 13, :mod:`opennest.execution.live_view`.
     live_view: str | None = None
+    #: Whether the project's results can be made into a report and exported as a PDF --
+    #: Research only (:mod:`opennest.export`). Export is the application's, never a tool.
+    report: bool = False
 
     @property
     def can_run(self) -> bool:
@@ -159,6 +162,7 @@ def _build(raw: dict) -> Profile:
         image_model=raw.get("image_model"),
         playtest=raw.get("playtest"),
         live_view=raw.get("live_view"),
+        report=bool(raw.get("report", False)),
     )
 
 

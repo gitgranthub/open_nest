@@ -230,7 +230,9 @@
         "Track Observations",
         "Compare Results"
       ],
-      "run_mode": "batch"
+      "run_mode": "batch",
+      "_report_note": "Show the report and Export PDF: the question, the charts the analysis draws, the findings and the sources on 8 x 10 pages, laid out by src/report.toml (opennest/export). Export is a button a person presses, never a tool, and writes only where they chose in a save dialog. SPIKES.md section 34.",
+      "report": true
     },
     {
       "id": "image_creation",

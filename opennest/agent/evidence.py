@@ -1004,6 +1004,18 @@ def _run_line(profile, live: bool = False) -> str:
             f"Build / Preview; \u201cStop\u201d ends one that keeps running.")
 
 
+def _report_line(profile) -> str:
+    """The report's two buttons, where a profile has them (``Profile.report``): "how do I
+    save it as a PDF?" is answered with the real ones, never an invented Share."""
+    if not getattr(profile, "report", False):
+        return ""
+    return (" Beside the chart, “Show the report” shows their question, charts, "
+            "findings and sources as pages. “Export PDF…” opens a save window "
+            "where they choose the folder, like Documents -- never the project -- and saves "
+            "those pages there as a PDF, which they can open and print. How the report "
+            "looks is src/report.toml.")
+
+
 def _new_project_line() -> str:
     """How a new project is started, from the Flight Deck's own cards. Measured on the
     stress pass: sent there from a Blank project, the child was told to click a "New
@@ -1033,7 +1045,7 @@ def guide(profile, *, live: bool = False) -> str:
         "- PROJECT (left): their files. Clicking one shows its code in Build / Preview "
         "with the last changes marked; a dot means changed or new since their last "
         "message. ASSETS below: things they added; \u201c+ Add to Project\u201d adds more.",
-        "- BUILD / PREVIEW (middle): the code, and the result.",
+        "- BUILD / PREVIEW (middle): the code, and the result." + _report_line(profile),
         "- Buttons along the bottom: " + _run_line(profile, live) + " \u201cSave a "
         "Version\u201d keeps how it is now; \u201cUndo\u201d goes back one change; "
         "\u201cBuild Style\u201d is just build it, or build it and teach me.",

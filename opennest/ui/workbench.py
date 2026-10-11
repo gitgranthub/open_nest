@@ -47,6 +47,8 @@ from opennest.assets import kinds, look
 from opennest.assets import manager as assets
 from opennest.execution import arduino, outputs, web_preview
 from opennest.execution.python_runner import finished, stop_project
+from opennest.export import report
+from opennest.export import save as export_save
 from opennest.projects import starters
 from opennest.projects.manager import (
     MANIFEST_NAME,
@@ -62,10 +64,12 @@ from opennest.ui import web_preview as web_preview_ui
 from opennest.ui.common import horizontal_rule, section_label, status_row
 from opennest.ui.game_view import GameView
 from opennest.ui.game_window import GameWindow
+from opennest.ui.report_view import ReportView
 from opennest.ui.worker import (
     AgentWorker,
     ImageWorker,
     LookWorker,
+    ReportWorker,
     RunWorker,
     run_in_thread,
     stop_thread,
@@ -90,6 +94,10 @@ POP_OUT = "Pop out"
 PUT_BACK = "Put back"
 #: ...and while a website's page is showing: back to the page.
 SHOW_PAGE = "Show the page"
+#: A Research project's report: shown as its pages, and saved as a PDF (``export``).
+SHOW_REPORT = "Show the report"
+HIDE_REPORT = "Hide the report"
+EXPORT_PDF = "Export PDF…"
 
 #: Where a file list item keeps its mark: "new" or "changed" since the child's last message.
 MARK_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -551,9 +559,50 @@ class Workbench(QWidget):
         self._chart = QLabel()
         self._chart.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._chart.hide()
-        layout.addWidget(self._chart_caption)
+        self._report_view = None
+        if self.project.profile.report:
+            layout.addLayout(self._report_controls())
+            layout.addWidget(self._report_notes)
+            layout.addWidget(self._report_view, 3)
+        else:
+            layout.addWidget(self._chart_caption)
         layout.addWidget(self._chart, 2)
         return frame
+
+    def _report_controls(self) -> QHBoxLayout:
+        """Show the report and Export PDF, beside the chart's caption (Research only).
+
+        Export is a button the child presses and never a tool: Gary cannot reach it, and
+        the file goes only where a person chose in a save dialog (``export.save``).
+        """
+        self._report_caption = QLabel()
+        self._report_caption.setProperty("role", "mono")
+        self._report_caption.hide()
+        self._report_button = QPushButton(SHOW_REPORT)
+        self._report_button.setToolTip("See the question, the charts and what you found "
+                                       "as pages, the way Export PDF saves them")
+        self._report_button.clicked.connect(self._toggle_report)
+        self._export_button = QPushButton(EXPORT_PDF)
+        self._export_button.setToolTip("Save the report as a PDF on this Mac")
+        self._export_button.clicked.connect(self._export)
+        self._report_notes = QLabel()
+        self._report_notes.setProperty("role", "cardBody")
+        self._report_notes.setWordWrap(True)
+        self._report_notes.hide()
+        self._report_view = ReportView(self)
+        self._report_view.hide()
+        #: The report on screen, what it was made from, and what showing it hid.
+        self._report = None
+        self._report_inputs = None
+        self._report_hid: list[QWidget] = []
+        self._export_after = False
+        row = QHBoxLayout()
+        row.addWidget(self._chart_caption)
+        row.addWidget(self._report_caption)
+        row.addStretch(1)
+        row.addWidget(self._report_button)
+        row.addWidget(self._export_button)
+        return row
 
     def _assistant_panel(self) -> QFrame:
         # The panel is titled with his name, so this is where someone wonders who he is.
@@ -1058,6 +1107,9 @@ class Workbench(QWidget):
         self._send_button.setEnabled(not busy)
         self._input.setEnabled(not busy)
         self._run_button.setEnabled(not busy)
+        if self._report_view is not None:
+            self._report_button.setEnabled(not busy)
+            self._export_button.setEnabled(not busy)
 
     # -- the waiting and completion hierarchies (guide sections 53, 54) -----
 
@@ -1080,6 +1132,8 @@ class Workbench(QWidget):
         if not text or self._thread is not None:
             return
         self._input.clear()
+        # The report on screen is of the project as it was; this message may change it.
+        self._hide_report()
         attachments = tuple(self._pending)
         self._pending.clear()
         self._show_pending()
@@ -1465,6 +1519,7 @@ class Workbench(QWidget):
         details button can never be left over a file listing or a later message with the
         stderr of some earlier run behind it.
         """
+        self._hide_report()
         self._clear_details()
         self._clear_code_marks()
         self._code_button.hide()
@@ -1514,6 +1569,7 @@ class Workbench(QWidget):
 
     def _show_code(self, step) -> None:
         """A file as it is right now, its new lines marked, scrolled to the first one."""
+        self._hide_report()
         if self._web is not None and not self._web.isHidden():
             # The page is about to change; while it is being built, the code is the thing
             # to watch. ``_page_back`` puts the page back when the turn ends.
@@ -1648,6 +1704,7 @@ class Workbench(QWidget):
         ``relative`` is for the case where the application already knows, because it
         put the file there itself -- a generated image.
         """
+        self._hide_report()
         if relative is None:
             produced = outputs.images_written(self.project.directory, self._images_before)
             if not produced:
@@ -1819,6 +1876,158 @@ class Workbench(QWidget):
         self._web.show()
         self._output.setMaximumHeight(110)
         self._web.show_page(web_preview.entry_url(self.project))
+
+    # -- the report (Research): Show the report, Export PDF ---------------------
+
+    def _toggle_report(self) -> None:
+        if self._report_view is not None and not self._report_view.isHidden():
+            self._hide_report()
+            self._report_button.setFocus()
+            return
+        self._make_report(then_export=False)
+
+    def _export(self) -> None:
+        """Export PDF. The report on screen if it is still the project's, otherwise made
+        again first -- so the child sees the very pages they are about to save, behind the
+        save dialog, and what is saved is what was shown."""
+        if self._thread is not None or self._report_view is None:
+            return
+        if self._report is not None and not self._report_view.isHidden() and \
+                self._report_inputs == report.inputs_state(self.project.directory,
+                                                           self._report.charts):
+            self._save_report(self._report)
+            return
+        self._make_report(then_export=True)
+
+    def _make_report(self, *, then_export: bool) -> None:
+        """Run the analysis and make the report, off the UI thread (``ReportWorker``)."""
+        if self._thread is not None or not self._something_to_run():
+            return
+        self._export_after = then_export
+        self._note_images()
+        self._busy(True)
+        self.working("Making your report. The analysis runs first, so the charts are up "
+                     "to date.")
+        worker = ReportWorker(self.toolbox)
+        worker.finished.connect(self._report_made)
+        self._thread = run_in_thread(self, worker)
+        self._thread.finished.connect(self._thread_done)
+
+    def _report_made(self, made) -> None:
+        if self._releasing:
+            return
+        self._busy(False)
+        self.working("")
+        then_export, self._export_after = self._export_after, False
+        result = made.result
+        # What the analysis printed and drew is in the panel, as Run Analysis leaves it,
+        # under the report -- Hide the report goes back to it.
+        self._ran(result)
+        run = result.run
+        if run is None or not run.ok:
+            self._say(SYSTEM_NAME, "There is no report yet: the analysis stopped with an "
+                                   "error, and the report is made from what it draws. The "
+                                   "error is in Build / Preview.")
+            with contextlib.suppress(Exception):
+                self.controller.note_event("The child pressed Show the report, which runs "
+                                           "the analysis first, and it failed (the error "
+                                           "is in Last run).")
+            return
+        drew = f" and drew {', '.join(result.made_files)}" if result.made_files else ""
+        if made.report is None:
+            self._say(SYSTEM_NAME, made.problem)
+            with contextlib.suppress(Exception):
+                self.controller.note_event(f"The child pressed Show the report: the "
+                                           f"analysis ran{drew}, and no report was made: "
+                                           f"{made.problem}", drew=bool(result.made_files))
+            return
+        self._report = made.report
+        self._report_inputs = report.inputs_state(self.project.directory, made.report.charts)
+        with contextlib.suppress(Exception):
+            self.controller.note_event(
+                f"The child pressed Show the report: the analysis ran{drew}, and the report "
+                f"is {made.report.pages} pages ({', '.join(made.report.sections)}).",
+                drew=bool(result.made_files))
+        if not self._show_report(made.report):
+            return
+        if then_export:
+            self._save_report(made.report)
+
+    def _show_report(self, made) -> bool:
+        """The report's pages in the panel, in place of the run's text and chart."""
+        self._report_hid = [widget for widget in (
+            self._output, self._code_caption, self._chart, self._chart_caption,
+            self._details_button, self._code_button) if not widget.isHidden()]
+        for widget in self._report_hid:
+            widget.hide()
+        pages = self._report_view.show_pdf(made.pdf)
+        if pages == 0:
+            self._hide_report()
+            self._say(SYSTEM_NAME, "The report was made, but Open Nest could not show its "
+                                   "pages.")
+            return False
+        self._report_caption.setText(
+            f"The report — {pages} page{'' if pages == 1 else 's'}, as Export PDF "
+            f"saves it")
+        self._report_caption.show()
+        self._report_notes.setText("\n".join(made.notes))
+        self._report_notes.setVisible(bool(made.notes))
+        self._report_view.show()
+        self._report_button.setText(HIDE_REPORT)
+        return True
+
+    def _hide_report(self) -> None:
+        """Back to what the report covered. Anything else shown in the panel calls this:
+        a report left up while the project changed would be a report of something else."""
+        if self._report_view is None or self._report_view.isHidden():
+            return
+        self._report_view.hide()
+        self._report_view.clear()
+        self._report_caption.hide()
+        self._report_notes.hide()
+        for widget in self._report_hid:
+            widget.show()
+        self._report_hid = []
+        self._report_button.setText(SHOW_REPORT)
+
+    def _choose_destination(self, name: str) -> str | None:
+        """The save dialog: where a person chooses to put the PDF. None if cancelled.
+
+        A real dialog a person drives is the whole permission for an export (PLAN.md D14),
+        so this is the only thing that ever produces a place to save. Tests replace it.
+        """
+        dialog = QFileDialog(self, "Export PDF", str(export_save.default_folder() / name),
+                             "PDF document (*.pdf)")
+        dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+        dialog.setFileMode(QFileDialog.FileMode.AnyFile)
+        # Before the dialog asks about replacing a file, so it asks about the right name.
+        dialog.setDefaultSuffix("pdf")
+        if dialog.exec() != QFileDialog.DialogCode.Accepted:
+            return None
+        chosen = dialog.selectedFiles()
+        return chosen[0] if chosen else None
+
+    def _save_report(self, made) -> None:
+        """Export: one save dialog, one write there, and only what was checked is said."""
+        if export_save.scan(made):
+            # Said before asking where to save, not after; ``write`` scans again anyway.
+            self._say(SYSTEM_NAME, export_save.refusal(export_save.scan(made)))
+            return
+        chosen = self._choose_destination(export_save.default_name(self.project.name))
+        if not chosen:
+            return  # Cancelled: nothing was written, and nothing needs saying.
+        try:
+            saved = export_save.write(export_save.from_dialog(chosen), made)
+        except export_save.ExportRefused as exc:
+            said = str(exc)
+            self._say(SYSTEM_NAME, said if said.startswith("The report was not saved")
+                      else f"The report was not saved. {said}")
+            return
+        self._say(SYSTEM_NAME, saved.sentence())
+        self._report_caption.setText(f"The report — saved as {saved.path.name}")
+        with contextlib.suppress(Exception):
+            self.controller.note_event(f"The child exported the report as a PDF, "
+                                       f"{saved.path.name} ({saved.pages} pages).")
 
     def _save_version(self) -> None:
         """Mark the project as it is now, by hand.

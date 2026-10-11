@@ -1,0 +1,23 @@
+# How your report looks. Show the report to see it; Export PDF saves it as a PDF.
+# This file is yours: change a line, or ask Gary to.
+
+# The words of the title on the first page. Empty means the project's name.
+title = ""
+
+# Your name under the title, if you want it there.
+author = ""
+
+# How big the title is, in points, from 12 to 48: a bigger number is a bigger title.
+title_size = 26
+
+# How big all the other words are, in points, from 8 to 16.
+text_size = 11
+
+# What goes in, and in what order. Leave a part out and it is not in the report.
+#   question -- question.md     charts  -- the charts the analysis draws
+#   findings -- findings.md     sources -- sources.md
+order = ["question", "charts", "findings", "sources"]
+
+# Which charts, in what order, by file name. Empty means every chart the analysis
+# draws, in the order it draws them.
+charts = []

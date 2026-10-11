@@ -246,9 +246,9 @@ def test_a_withdrawn_starter_is_still_named_rather_than_forgotten(tmp_path: Path
 def test_the_research_starter_ships_a_chart_style() -> None:
     """A style that depends on the model writing one right line is sometimes missing.
 
-    matplotlib reads a ``matplotlibrc`` from the working directory and a project runs
-    from its own directory, so shipping the file *is* the mechanism -- no import, no
-    setup call, nothing to remember.
+    Shipping the file and pointing matplotlib at it is the mechanism -- no import, no
+    setup call, nothing to remember. That it is really read is the run-based test below
+    (a project runs from its root, and the file is in src/).
     """
     from opennest.projects import starters
 
@@ -310,3 +310,45 @@ def test_the_research_prompt_does_not_tell_gary_to_replace_the_style() -> None:
     prompt = (paths.prompts_dir() / "research.txt").read_text(encoding="utf-8")
     assert "set_theme" in prompt, "the prompt should name the trap explicitly"
     assert "Never call sns.set_theme()" in prompt
+
+
+def test_a_research_run_actually_draws_in_the_house_style(tmp_path: Path) -> None:
+    """The style shipped in src/ for a long time and was never read.
+
+    matplotlib reads ``matplotlibrc`` from the working directory, a project runs from its
+    root, and the kit's files live in ``src/``. The file-exists tests above all passed
+    while every chart drew white. This one runs a real chart the way the runner does.
+    """
+    import subprocess
+    import sys
+
+    from opennest.execution.python_runner import _child_environment
+
+    project = create_project("Weather", "research", root=tmp_path)
+    assert (project.directory / "src" / "matplotlibrc").is_file()
+    code = (
+        "import matplotlib; matplotlib.use('Agg')\n"
+        "print(matplotlib.rcParams['figure.facecolor'], "
+        "matplotlib.rcParams['savefig.dpi'], "
+        "matplotlib.colors.to_hex(matplotlib.rcParams['axes.prop_cycle'].by_key()['color'][0]))\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", code], cwd=project.directory, capture_output=True,
+        text=True, env=_child_environment(project.directory), timeout=120,
+    )
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.split() == ["#F2EFE8", "150.0", "#b96a16"], done.stdout
+
+
+def test_the_starter_analysis_does_not_override_the_style() -> None:
+    from opennest.projects import starters
+
+    kit = next(k for k in starters.load_starters() if k.id == "research_basic")
+    code = (kit.directory / "analysis.py").read_text(encoding="utf-8")
+    assert "figsize" not in code and "dpi=" not in code
+
+
+def test_the_research_prompt_forbids_naming_colours() -> None:
+    text = (Path(__file__).resolve().parent.parent / "opennest" / "prompts"
+            / "research.txt").read_text(encoding="utf-8")
+    assert "Never write a colour name" in text and "pd.to_datetime" in text

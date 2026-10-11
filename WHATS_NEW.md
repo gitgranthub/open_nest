@@ -1,75 +1,83 @@
-# What's new: games -- what Gary can build, a 3D world, and a warning
+# What's new: a Research report -- 8 x 10 pages, a PDF, and charts in the house style
 
-*2026-10-04, branch `phase-13-live-preview`. The numbers are in SPIKES.md §33.*
+*2026-10-11, branch `phase-13-live-preview`. The numbers are in SPIKES.md §34.*
 
 ## In one sentence
 
-Asked for a 3D block game, Gary now gives one -- a first-person world of 1-metre blocks
-you walk through with W A S D -- and starting a game on Gary Fast says plainly that it
-struggles to build a whole game, and offers what this Mac can use instead.
-
-## What we found
-
-Eight game builds through the real Workbench, each step's goal written down before it
-ran: a Blank start, an empty Games project, the idea cards, changing the characters,
-changing the background, a side-scroller, the owner's own test05 (the block 3D game), and
-a 3D walk in space. Both local models, before and after the fixes:
-
-| | Steps done (of 22), before | after | Changing the 3D world |
-|---|---:|---:|---|
-| **Gary Fast** | 6 done, 3 partly | **11 done, 6 partly** | night ✓, a red tower ✗, walk faster ✗ |
-| **Gary Smart** | 5 done, 2 partly | **8 done, 10 partly** | night ✓, a red tower ✗, walk faster ✓ |
-
-Gary Smart took about twice as long for the same turns.
-
-- **Both models do one concrete change well** -- a blue circle, the child's picture as the
-  player, bigger, a night sky, trees. **Neither builds a whole game from one sentence**
-  (the cat game, a platformer, a side-scroller), and before this pass **neither drew
-  anything 3D**: Open Nest itself told every model to make "the closest 2D version".
-- **Through the edit tool, Gary Smart was not clearly better at games** -- better at some
-  steps, worse at others, about twice as slow. That was the setup, not the model: see the
-  fix above.
-- **Cloud was not measured**: both saved keys were refused ("invalid" / "invalidated").
-
-## The fix: Gary Smart writes the whole game
-
-Asked, outside the edit tool, Gary Smart could write whole games; through it, building on
-the starter by exact edits, it made none from the first message (SPIKES §33G). Now, while a
-game is still the untouched starter, a "make a game ..." message has the whole game written
-in one go, tested by Open Nest, repaired from the test up to twice, and kept only if it
-works -- otherwise the starter comes back. Every first-message game Gary Smart was asked
-for in the final runs worked: the cat game, a space game, a platformer, a side-scroller,
-and the owner's night-woods shooter, whose six tree pictures then went onto the game's own
-trees. Not for Gary Fast (it writes long code badly). Two guards came with it: a change
-that breaks a game which worked is put back, and asked to use pictures in a game with no
-scene, Gary is told the tool that does it.
+A Research project now makes a report -- its question, the charts the analysis draws, what
+the child found and where the data came from, on 8 x 10 inch pages -- which the child sees
+in the Workbench with **Show the report** and saves anywhere on the Mac with **Export
+PDF…**, and the charts in it finally draw in Open Nest's own colours.
 
 ## What changed
 
-- **The 3D Block World** -- a new way to start a Game ("How it starts"), and what a 3D
-  request gets while the game is still the plain starter. First person, W/S walk, A/D
-  turn, two hands, gold blocks to collect. Everything to change is a named line at the
-  top: the map (`WORLD`, one letter a block), the kinds of block, `SKY = "day"`,
-  `"sunset"`, `"night"` or `"space"`, `GROUND = "grass"`, `"sand"`, `"snow"` or `"moon"`,
-  planets, hands, speeds. In it, Gary is told what the world is and which names to
-  change; the 2D scene tool, recipes and plans step aside. Never replaces a game the child
-  has changed -- they are told where to find it instead.
-- **The warning.** Beginning a Game on Gary Fast: "Gary Fast struggles to build a game
-  that works ... For a game, use at least Gary Smart or a cloud model." Buttons only for
-  what this Mac can really use (Gary Smart if installed and it fits the memory, a cloud
-  model if a parent turned cloud on and saved a key), the parent's step otherwise, and
-  always "Keep Gary Fast". Which model gets it is catalogue data (`struggles_with`).
-- **The Platform Game card** was built as the asteroid-dodging game on Gary Fast (and a
-  side-scroller on Gary Smart). Fixed.
-- **Fixed along the way:** a plan offering one step three times; Gary repeating Open
-  Nest's plan from the turn before as his own reply; "The only change made was ..." in a
-  turn that changed nothing; shapes placed off the screen when Gary gave screen positions
-  and no size (Gary Smart's mountains and trees).
+- **The report** (`opennest/export/report.py`). Title, date and a small amber bar on page
+  1; the title along the top of the pages after; "Page 2 of 4" at the foot. The paper is the
+  charts' own warm colour. A chart is never cut in two or made bigger than it was drawn: it
+  fits the page's width, one taller than a page gets a page of its own, and a second chart
+  shrinks a little to share a page rather than leave a gap (five charts: 4 pages, not 7).
+  Text never leaves one line alone at the top or foot of a page. Only the child's own words
+  go in: the starter's instructions and its `<!-- -->` notes are left out, and the
+  Workbench says which files were.
+- **Always the charts the code draws now.** Making the report runs the analysis first
+  (half a second), so a chart left over from an older version can never get in. A failed
+  analysis makes no report, and says so.
+- **The preview is the PDF.** The Workbench shows the PDF's own pages, from the same bytes
+  Export PDF saves. What the child sees is what they save.
+- **Export PDF…** opens the Mac's save window (Documents first, "Weather Study report.pdf").
+  Open Nest writes that one file and nothing else. It checks the file is really there
+  before saying "Saved “Weather Study report.pdf” in Documents. 4 pages." It refuses its own
+  folders, folders it cannot write to, and anything key-shaped in the text. **No parent PIN**:
+  saving your own work should not need one (PLAN.md D14). Gary cannot export: it is a
+  button, not a tool.
+- **Gary changes the report** through `src/report.toml`, a file in the project like
+  `matplotlibrc`: the title, your name, the sizes, the order of the parts, which charts.
+  "Make the title of my report bigger" or "put the charts first" is one line. Asked how to
+  save or print the report, he now names the real buttons; before, he told the child to add
+  `savefig(format='pdf')` or a `print()` line.
+- **The chart style really applies** (the pass before this one, checked and finished here).
+  The house `matplotlibrc` was never being read, so every chart drew in stock matplotlib.
+  Open Nest now points matplotlib at it. Colours Gary names that the child did not ask for
+  are taken out. The starter converts dates. Fixed in this pass: a colour hidden inside
+  another word ("hund**red**", "bo**red**") no longer counted as asked for, and the
+  starter's `matplotlibrc` no longer tells Gary the wrong reason it works.
+
+## What we measured
+
+Gary Fast, one turn per message on the weather project, before and after this pass's Gary
+changes:
+
+| | before | after |
+|---|---:|---:|
+| changes to the report (7) | 5 | **7** |
+| chart requests (fair 3) | 1 | 3 |
+| "how do I save/print my report?" (2) | 0 | 2 |
+
+Report changes took about 11 s each (20-55 s before). The research prompt edit from the
+pass before (colours, figure sizes, dates) had never been measured; it cost nothing here.
+
+Gary Smart: 6 of 7 report changes before, 7 of 7 after; both export questions after, none
+before. A message about a chart *in* the report ("the rain chart in my report should be
+called ...") still goes to the analysis, as it always did: measured on Gary Fast, with the
+report note it went into the report's own title instead and Gary said the chart was
+renamed, so the note now stays off messages about a chart itself.
+
+Found, and fixed: Gary Smart's dashboard used matplotlib's `tab:blue`, `tab:green`,
+`tab:red`, which the colour guard did not know. Found, and **not** fixed here: a Research
+turn can change the analysis, not run it, and say the chart changed -- Gary Smart's
+"degrees" label broke the analysis and he said "The chart now shows °F". Older than this
+pass; Show the report does say the analysis failed. Flagged as its own task.
 
 ## Not done yet
 
-- **Cloud models** -- unmeasured until a parent saves working keys (drop them in `.env` as
-  before).
-- Neither model added a new kind of block to the 3D map (the "red tower") in any run.
-- Whole games in one sentence still fail on both local models; Open Nest offers a plan.
+- **A Research turn is not run after an edit** (above): a claim about a chart can be
+  untested. Flagged as its own task.
+- **Try it by hand**: the real macOS save window (asking before it replaces a file, adding
+  `.pdf`), printing an exported PDF, and the pages on a Retina screen. The tests replace
+  the save window.
+- A new Research project's very first Run Analysis takes about 6 seconds while matplotlib
+  builds that project's font cache; after that, half a second. Older than this pass, and
+  noticed, not changed.
+- Two charts sharing a page are not the same size (the second a little smaller).
+- An emoji in the findings cannot be printed; it is left out, and said.
 - No 8 GB Mac has been measured.

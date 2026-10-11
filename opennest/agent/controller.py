@@ -77,6 +77,7 @@ from opennest.assets import look
 from opennest.assets import manager as assets
 from opennest.execution import playtest
 from opennest.execution.python_runner import RunResult
+from opennest.export import report
 from opennest.graphics import block_world
 from opennest.memory.manager import MemoryManager
 from opennest.projects import starters as starter_kits
@@ -647,6 +648,33 @@ NOT_GOOD = (
 _UNHAPPY = re.compile(r"\bnot (?:making |a |very )*(?:good|fun)\b|\bbad game\b|\bboring\b|"
                       r"\bsucks\b|\bterrible\b|\bnot what i (?:want|asked)", re.IGNORECASE)
 
+#: Said beside a message about a Research project's report -- only then (HANDOFF section
+#: 4: guidance for one kind of request goes beside that message). The layout is data in
+#: the project, so "make the title bigger" is one line of src/report.toml; the whole file
+#: goes with the note, so the edit's old_text is in front of the model. Measured: SPIKES.md
+#: section 34.
+REPORT_GUIDE = (
+    "(Open Nest: this is about their report -- the pages “Show the report” and "
+    "“Export PDF…” make from question.md, the charts, findings.md and "
+    "sources.md. How it looks -- its title, the sizes, the order of the parts, which "
+    "charts -- is src/report.toml, and this is all of it now:\n"
+    "{layout}\n"
+    "For how the report looks, make the change there with one edit_file, on the line it "
+    "is about. What a chart itself shows or says is changed in the analysis, as always. "
+    "They see the report by pressing “Show the report”.)")
+_ABOUT_REPORT = re.compile(r"\b(?:report|pdf|printout|print it|printed)\b", re.IGNORECASE)
+#: ...but a message about a chart itself -- what it is called, its labels, colours, lines
+#: -- is a change to the analysis, report or no report, and goes as it always went.
+#: Measured: with the note, Gary Fast put "the rain chart in my report should be called
+#: Rain by month" into report.toml's title and said the chart was renamed (SPIKES.md
+#: section 34F); without it, the analysis's chart title, as asked.
+_CHART_ITSELF = re.compile(
+    r"(?=.*\b(?:chart|graph|plot)s?\b)"
+    r"(?=.*\b(?:called|titled|named|label(?:led|s)?|axis|axes|colou?r(?:s|ed)?|lines?|"
+    r"bars?|legend|says?)\b|.*\b(?:chart|graph|plot)'?s? title\b|"
+    r".*\btitle (?:of|on) (?:the|my|that) (?:\w+ )?(?:chart|graph|plot)\b)",
+    re.IGNORECASE)
+
 #: "What should I do first?", "any ideas?", "where do I start?" -- asking for a way in.
 _WAY_IN = re.compile(
     r"\b(?:what (?:should|can|do|could) (?:i|we) (?:do|make|build|try)|any ideas|ideas? for|"
@@ -1151,7 +1179,13 @@ class AgentController:
         # A block world has none of the shapes a game recipe is written for: its player is
         # the camera, its things are letters in WORLD (``graphics.block_world``).
         in_3d = block_world.of_project(self.project)
-        if self.fastpath is not None and (not answering or analysis) and not in_3d:
+        # A change to the report is a line of src/report.toml, which no recipe edits: the
+        # Research recipes change the analysis, so "make the report's title bigger" would
+        # restyle a chart instead (measured, SPIKES.md section 34). They step aside.
+        about_report = not answering and step is None and self.project.profile.report \
+            and bool(_ABOUT_REPORT.search(text)) and not _CHART_ITSELF.search(text)
+        if self.fastpath is not None and (not answering or analysis) and not in_3d \
+                and not about_report:
             outcome = self._fast_path(turn, text, previous, attachments, on_text)
         if outcome == "handled":
             turn.by_recipe = True
@@ -1222,6 +1256,11 @@ class AgentController:
                 self.history[-1] = replace(self.history[-1], content="\n\n".join(
                     [self.history[-1].content, *notes]))
                 self._asked_text = text
+        if about_report:
+            # Beside the message, for this turn only; the settled history keeps their words.
+            self.history[-1] = replace(self.history[-1], content=(
+                f"{self.history[-1].content}\n\n{self._report_note()}"))
+            self._asked_text = text
         if written is not None:
             # What the model wrote goes into the history as the call it was, after the
             # message, so the next thing Gary says is about the game it just made.
@@ -1698,6 +1737,18 @@ class AgentController:
         except (OSError, UnicodeDecodeError):
             return False
         return not scene_source.read(code).adopted
+
+    def _report_note(self) -> str:
+        """:data:`REPORT_GUIDE`, with the project's ``src/report.toml`` as it is now. A
+        project made before the file was in the research starter gets it first, so there
+        is a line to change; the report reads the same defaults either way."""
+        report.ensure_layout_file(self.project.directory)
+        try:
+            layout = (self.project.directory / report.LAYOUT_FILE).read_text(
+                encoding="utf-8").strip()
+        except (OSError, UnicodeDecodeError):
+            layout = "(it could not be read)"
+        return REPORT_GUIDE.format(layout=layout)
 
     def _verified_working(self) -> dict[str, str] | None:
         """The project's src/ files, when Open Nest's last test passed on exactly them."""

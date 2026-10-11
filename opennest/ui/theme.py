@@ -277,6 +277,13 @@ QFrame[role="panel"] {{
     border-radius: {radius}px;
 }}
 
+/* A page of a Research report, shown in the Workbench: the paper with a hairline round
+   it, the way a sheet reads on a desk. */
+QLabel[role="reportPage"] {{
+    border: 1px solid {p.border_strong};
+    background: transparent;
+}}
+
 QFrame[role="rule"] {{
     background-color: {p.border};
     border: none;

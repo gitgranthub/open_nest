@@ -10,14 +10,22 @@ PHASE_13_HANDOFF.md) hold each phase's detail.
 Keep this file short: what is true now, and the rules. History goes in the archive or a
 phase handoff. WHATS_NEW.md is rewritten at the end of every pass.
 
-## Where it stands (2026-10-04)
+## Where it stands (2026-10-11)
 
 - **Built through Phase 13, on `phase-13-live-preview`.** It has seven project types and a
   nine-step setup wizard. Local AI is Gary Fast or Gary Smart (Qwen3-VL, both see
   pictures), with optional cloud AI. The game plays inside the Workbench and has a scene
   layer, and a 3D Block World starter for 3D games. The Fast Path handles common
   requests with recipes. There is invisible version history with Undo, project memory,
-  and GitHub backup. **1810 tests pass, ruff is clean.**
+  and GitHub backup. **1881 tests pass, ruff is clean.**
+- **A Research project makes a report (SPIKES §34, WHATS_NEW.md).** The question, the
+  charts the analysis draws, the findings and the sources on 8 x 10 pages, shown in the
+  Workbench as the PDF's own pages (**Show the report**) and saved with **Export PDF…**
+  through the Mac's save window, to that one file only, secret-scanned, no PIN (PLAN.md
+  D14). The analysis runs first, so no stale chart gets in. The layout is
+  `src/report.toml`; both local models made 7 of 7 report changes, one edit each. The
+  house chart style is really applied now (`MATPLOTLIBRC`, the pass before this one; its
+  colour guard now also knows `tab:`/`xkcd:` colours).
 - **The game builds pass (SPIKES §33, WHATS_NEW.md).** Neither local model builds a whole
   game from one sentence, and before it neither drew anything 3D. A 3D ask now gets the
   3D Block World. Beginning a Game on Gary Fast warns that it struggles with games
@@ -36,25 +44,34 @@ phase handoff. WHATS_NEW.md is rewritten at the end of every pass.
 
 **What is next**
 
-1. **The owner tries the game builds pass**: a 3D game ("create a simple, block 3D
+1. **The owner tries the report**: a Research project on their weather CSV, Show the
+   report, Export PDF… to Documents (the real save window: the replace question, `.pdf`
+   added), print it, and ask Gary to change it ("put the charts first"). Then the game
+   builds pass below.
+2. **The owner tries the game builds pass**: a 3D game ("create a simple, block 3D
    game", test05), the warning when a Game is begun on Gary Fast, the Platform Game card.
    Then a new game on Gary Smart ("Make a platform game"): written whole and tested. The
    owner's call: new cloud keys (`.env`, as before) so
    `benchmarks/game_builds/build_walk.py <label> claude-sonnet` can measure a cloud Gary.
-2. **The owner re-runs test04 and the maze on Gary Fast.** On a Mac set up before the
+3. **The owner re-runs test04 and the maze on Gary Fast.** On a Mac set up before the
    vision pass, the first launch after `git pull` reinstalls the requirements (network
    needed), and Gary Fast is downloaded from Settings. **An 8 GB Mac is still
    unmeasured.**
-3. **The background cut-out.** `Picture(path, see_through=True)` in the kit: the corner
+4. **The background cut-out.** `Picture(path, see_through=True)` in the kit: the corner
    colour's connected area made transparent with `pygame.mask`. Raise `VERSION` to 5,
    add v4's SHA-256 to `looks.EARLIER_KITS` with a v4 fixture, and add `see_through` to
    `game_object`. Because that changes the tool's description, re-run
    `benchmarks/graphics/tool_choice.py` first.
-4. **Phase 14, Publish Version**, as the owner reshaped it (PHASE_13_HANDOFF §6,
-   PHASE_12_HANDOFF §7). Not started; the sunglasses wait for it.
-5. **Hardening** (SPIKES §28N). The playtest sees under 2 s of a game, so a crash behind
+5. **Phase 14, Publish Version**, as the owner reshaped it (PHASE_13_HANDOFF §6,
+   PHASE_12_HANDOFF §7). Not started; the sunglasses wait for it. Research's "PDF report"
+   output exists now (`opennest/export/`); a published release would make it from the
+   frozen snapshot rather than the working files.
+6. **Hardening** (SPIKES §28N). The playtest sees under 2 s of a game, so a crash behind
    a timer is missed. Gary can repeat one refused call until the budget runs out.
-6. **Known limits, recorded:**
+7. **Known limits, recorded:**
+   - **A Research turn is not run after it edits the analysis**, so a claim about a chart
+     can be untested: Gary Smart broke the analysis adding a "degrees" label and said "The
+     chart now shows °F" (SPIKES §34F). Older than the report pass; flagged as its own task.
    - Gary Fast's whole-game turn tries to rewrite the file first.
    - Gary Smart ignores the child's monster picture.
    - Cloud providers send no pixels.
@@ -89,7 +106,7 @@ PR numbers do not match review order: review 1 → 2 → 3 → 4 → 6 → 7 →
 ```bash
 ./Setup\ Open\ Nest.command          # no .venv yet: installs its own CPython 3.12.14
 ./Launch\ Open\ Nest\ Demo.command    # the app on the dev sandbox, .opennest-sandbox
-.venv/bin/python -m pytest -q         # 1750 tests, ~4 min -- run it UNWRAPPED
+.venv/bin/python -m pytest -q         # 1881 tests, ~4.5 min -- run it UNWRAPPED
 ```
 
 | Phase | Command | Network |
@@ -118,6 +135,8 @@ opennest/
 ├── memory/      project bible, state, compaction, history search, safety (secret scan)
 ├── conversations/  context budget, archive, rollover
 ├── execution/   running child code, playtest, live view, Arduino
+├── export/      report.py (a Research report's pages, as PDF bytes), save.py (the one
+│                write a save dialog grants)
 ├── models/      catalogue, machine, discovery, compatibility (the model registry)
 ├── setup/       the wizard, downloader, health check, updates, migration
 ├── github/      device flow, private repos, push queue
@@ -183,6 +202,19 @@ benchmarks/      measurement drivers and kept results (replays, tool choice, Fas
   Path and plans step aside in it. A game the child changed is never swapped for it. Its
   knobs are one edit each (`SKY = "night"`); a look that took two edits got one from a 4B.
 
+**The report**
+- The preview is the PDF: the Workbench shows the bytes Export PDF writes. Never add a
+  second renderer -- a preview that differs from the export is a bug.
+- Pagination is arithmetic on measured text and pixel sizes; a fixed input has a fixed page
+  count, and `tests/test_report.py` pins it. Change `KEEP_ON_PAGE` only with SPIKES §34.
+- The app process imports matplotlib only for reports, through `report._matplotlib()`, which
+  keeps its cache in `paths.cache_dir()`. Left alone it writes `~/.matplotlib`.
+- Gary is told about `src/report.toml` beside a message about the report, never always.
+  A message about a chart *in* the report is the analysis's (`_CHART_ITSELF`): with the
+  note, Gary Fast renamed the report instead of the chart and said otherwise.
+- A Qt test makes a `QApplication`, never a bare `QGuiApplication`: the first one made is the
+  session's, and every widget test after it aborts.
+
 **Sandbox, macOS, toolchains**
 - Seatbelt does not nest. `run_project` fails closed; never weaken it to pass a test.
 - `mlx_lm.load("<repo>")` contacts the Hub, so resolve a local snapshot path first.
@@ -238,6 +270,8 @@ benchmarks/      measurement drivers and kept results (replays, tool choice, Fas
 - **Privileged actions** (upload, deploy, export, publish) stay sandboxed and are granted
   one more thing, explicitly and enforced. For example, Arduino upload may write only to
   the selected `/dev/cu.*`. An ordinary profile is byte-identical without the grant.
+  Export writes one file, the one a person chose in a save dialog, once (`export/save.py`);
+  Open Nest's own folders are refused, and the text is secret-scanned as a push is.
 - **Credentials:** keys and the parent PIN are only in the Keychain (`keychain.py` has no
   file I/O). Commits are refused if anything is credential-shaped. No test touches the
   real Keychain (`FakeKeyring`).

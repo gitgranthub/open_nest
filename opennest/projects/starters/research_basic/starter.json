@@ -10,9 +10,11 @@
     "question.md",
     "sources.md",
     "findings.md",
-    "matplotlibrc"
+    "matplotlibrc",
+    "report.toml"
   ],
-  "_matplotlibrc_note": "The house chart style. matplotlib reads a matplotlibrc from the working directory and a project runs from its own directory, so every chart picks it up with no import and no setup call -- deterministic rather than dependent on the model writing one right line. It is a shipped file like the others, which means it is the child's to change.",
+  "_report_note": "How the report looks when the child presses Show the report or Export PDF: the title, its size, the order of the parts, which charts. Data in the project like matplotlibrc, so 'make the title bigger' is one line (opennest/export/report.py). A project made before this file existed gets the same defaults without it.",
+  "_matplotlibrc_note": "The house chart style. A project runs from its root and this file is in src/, so Open Nest points matplotlib at it (MATPLOTLIBRC, python_runner._child_environment) and every chart picks it up with no import and no setup call -- deterministic rather than dependent on the model writing one right line. It is a shipped file like the others, which means it is the child's to change.",
   "_directories_note": "data/ and notes/ are where a research project puts things it collects. The project already has a top-level data/ directory for imported datasets; these sit beside the analysis so a child can keep working notes next to the code that reads them.",
   "directories": [
     "notes"

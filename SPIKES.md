@@ -5449,3 +5449,191 @@ later changes to a written game are still edits, as good as the model -- the sid
 trees never scrolled; the monster picture on the game's own monsters needs Gary to name
 them; cloud unmeasured.
 
+
+## 34. A Research report: 8 x 10 pages, a PDF, and what Gary changes
+
+The owner's ask: the Research results as a report on **8 x 10 inch pages**, paginated,
+exported as a PDF, and previewed in the Workbench. PHASE_12_HANDOFF §7 had specified only
+the composition (chart PNG + `findings.md` through `matplotlib.backends.backend_pdf`, no new
+dependency); nothing in `opennest/` had a page. Everything below was measured on the
+owner's `assets/test_data/home_weather_station_2025.csv` (365 days, 17 columns), with the
+charts drawn by the real analysis through `run_project` -- the sandbox and the house
+`matplotlibrc` (the previous pass's `MATPLOTLIBRC` fix) -- and the pages looked at as
+images rendered by QtPdf, a reader that is not matplotlib.
+
+### 34A. What the analysis really draws
+
+research01's Gary-written analysis plus one bar chart in the research prompt's style:
+
+| chart | pixels (150 dpi) | inches | width-fit on 6.5 in |
+|---|---|---|---|
+| `chart.png` (the starter's) | 1074 x 670 | 7.16 x 4.47 | 0.908 |
+| `weather_dashboard.png` (3 panels) | 1223 x 1525 | 8.15 x 10.17 | taller than a page: 0.792 |
+| `rain_by_month.png` | 1075 x 670 | 7.17 x 4.47 | 0.907 |
+
+`savefig.bbox: tight` makes every size different, so nothing can assume one. The
+dashboard (Gary's `figsize=(8, 10)`) is taller than any 8 x 10 page's content. The run: 6.6 s
+the first time in a new project (it builds that project's own matplotlib font cache,
+`MPLCONFIGDIR` per project), **0.55 s** warm (three runs).
+
+### 34B. The page model, decided by looking
+
+- **Page** 8 x 10 in (576 x 720 pt); margins 0.75 in at the sides and top, 0.92 in at the
+  bottom (the footer sits inside it); content 6.5 x 8.33 in. Page 1 opens with the title
+  (26 pt bold), the date (and "By <name>" if the child adds one), and one short amber bar --
+  the only accent on the page. From page 2 a running header (the title, 8.5 pt, a hairline
+  under it). Every page: "Made with Open Nest" left, "Page n of N" right. Paper `#F2EFE8`
+  like the charts' own, so a chart sits on the page instead of in a beige box on white
+  (printing it uses ink for the tint -- the owner's look, recorded).
+- **Order**: the question, the charts, the findings, the sources -- the research prompt's
+  own order (question, evidence, what it shows). Changeable, below.
+- **A chart is never split and never enlarged.** Made to fit the width; one taller than a
+  page gets a page of its own, scaled to fit (said if under 70%: "drawn as several charts,
+  it would print bigger"). If what is left of a page is too short, it may shrink to stay:
+
+| `KEEP_ON_PAGE` | weather report | five ordinary charts |
+|---|---|---|
+| 1.0 (never shrink) | 5 pages; page 1 only the title and question | 7 pages, one chart each |
+| **0.85** | **4 pages**; chart 1 stays beside the question at 87% (not 91%) | **4 pages**, two a page, the second at 81% |
+| 0.7 | 4, the same | 4, the same |
+
+  0.85 kept. The second chart on a shared page prints visibly smaller than the first
+  (0.81 against 0.91); accepted against nearly twice the pages.
+- **Text** is measured from the font's unhinted outlines (`text_to_path`; the space is
+  0.278 em, Helvetica Neue's own) and broken greedily, so pagination is arithmetic: the
+  page count for a fixed input is a number (`tests/test_report.py` pins it). No widow or
+  orphan: a paragraph of 3 lines or fewer is never split, a longer one never leaves one
+  line alone; a heading moves with what follows it; a table's header with its first row.
+  A long findings (18 more paragraphs) went to 6 pages, cleanly; "Notes on the data" moved
+  to the next page with its paragraph rather than sit at the foot of page 5.
+- **Tables** (`sources.md` has one): each column at least its longest word. Before that,
+  `home_weather_station_2025.csv` broke into "2025." and "csv".
+
+### 34C. Embed the PNGs; do not re-draw
+
+- **Embedded, unresampled.** `imshow(interpolation="none")` puts the PNG's own pixels in
+  the PDF (`/Width 1223 /Height 1525` -- checked in the file), and the viewer or printer
+  scales: 172-189 ppi at these print sizes. Re-drawing as vectors would mean running the
+  child's code a second time in another mode, and the report would show a drawing the
+  Workbench never did. The report shows what the child saw.
+- **The analysis runs first, every time** (0.55 s warm), and the report has exactly the
+  charts that run drew, in the order it drew them -- research01's own `charts/` held a
+  chart its code no longer drew. A failed run makes no report (said). `src/report.toml`'s
+  `charts = [...]` chooses and orders by file name.
+- **Fonts**: Type 42, subset (Helvetica Neue Regular/Bold/Italic, Menlo): 21.8 KB against
+  28.3 KB for Type 3 on the probe page, and every page's words are extractable text.
+  `parse_math=False` everywhere: "$5 and $6" printed as written. CJK prints through Arial
+  Unicode MS; an emoji has no font, so it is left out and said ("The report leaves out 🌧,
+  which Open Nest cannot print"), and its invisible variation selector is not named.
+- **Only the child's words.** A paragraph identical to the research starter's own copy of
+  that file is its instructions, not a finding; HTML comments go; a heading with nothing of
+  theirs under it goes; a table row with nothing in it goes. research01 as found -- all
+  three files the starter's -- made a report of its two charts, and said which files were
+  left out.
+- **Cost**: 0.59 s warm for 4 pages and 3 charts, 464 KB; 6.7 s the first time on a Mac
+  (matplotlib's own font cache, kept in `paths.cache_dir()` -- the application never
+  imported matplotlib before, and left to itself it writes `~/.matplotlib`).
+
+### 34D. The preview is the PDF
+
+The Workbench shows the PDF's own pages, rendered by QtPdf from the same bytes Export PDF
+writes -- 12 ms a page at 840 px. QPdfView was tried: it renders on its own thread (a grab
+straight after showing is blank white pages) in its own grey; the page list is synchronous,
+testable, and in the theme. HTML was not considered: a second renderer is a second report.
+Export writes the bytes on screen when nothing the report is made from has changed
+(`inputs_state`: `src/`, `assets/`, `data/` and its charts), and otherwise makes it again
+and shows it before the save dialog. `PdfViewerEnabled=False` in the website preview is
+Chromium's viewer for a child's page; this shows only a PDF Open Nest made.
+
+### 34E. Export: one file, where a person chose, once
+
+`export/save.py`. The save dialog's answer becomes a grant (`from_dialog`); `write` takes
+the grant and the report, never a path, and the grant is spent by writing. Refused, and
+said: not a .pdf name, a folder, a missing folder, a shortcut, an unwritable folder, and
+Open Nest's own folders (`managed_locations`, compared casefolded). Every piece of text the
+PDF was made from is secret-scanned first, as a push is; a finding names the file and line
+and never the key. Written to a hidden file beside the target and renamed over it, so a
+failed write leaves the old file; read back -- there, the right size, `%PDF-` -- before
+"Saved “Rain Study report.pdf” in Documents. 3 pages." is said. Gary is told (`note_event`).
+**No parent PIN** (PLAN.md D14). Gary cannot reach any of it: no tool, and nothing under
+`agent/`, `fastpath/`, `ai/` or `memory/` imports `export.save` (a test).
+
+### 34F. What Gary changes, and what he is told
+
+The layout is **data in the project**, `src/report.toml` beside `matplotlibrc` (title,
+author, title_size, text_size, order, charts), shipped in the research starter; a project
+made before it gets the same defaults without it, and the file when Gary is asked to change
+the report. `benchmarks/report/report_turns.py`: one turn per message on a fresh copy of the
+weather project (question, findings and sources written, the analysis run once), the real
+controller, Toolbox, Fast Path and model, goals written in the driver before it ran.
+**before** is the product without this pass's Gary changes -- no note, the Fast Path for
+every message, no report line in the screen guide, and the research prompt as committed at
+HEAD, so it also measures the previous pass's unmeasured prompt edit (colour, figsize,
+dates). **after** is as built.
+
+Gary Fast, every run kept as found (`results/`):
+
+| run | what changed before it | report changes (7) | a chart in the report (§ below) | chart requests | export questions (2) |
+|---|---|---|---|---|---|
+| `report_fast` | -- | before 5, after 6 | -- | before 1 of 3, after 3 of 3 | before 0, after 2 |
+| `report_fast2` | the size line says "a bigger number is a bigger title" | after 7 | -- | | |
+| `report_fast3` | the file says the ranges, 12 to 48 and 8 to 16 | after 7 | -- | | |
+| `report_fast4` | the note scoped to "how the report looks" | before 5, after 7 | before 1 of 1, **after 0 of 1** | | |
+| `report_fast5` | the chart-itself gate | before 5, **after 7** | before 1 of 2, after 0 of 2 (by hand) | | |
+
+- **before**, the Fast Path took "make the title of my report bigger" as a chart restyle and
+  changed nothing ("I haven't changed anything yet. Try one small piece of it first");
+  "put the charts first" failed two edits and offered a plan with steps nobody asked for (a
+  title page, a table of contents). Asked how to save the report as a PDF: "add
+  `plt.savefig(..., format='pdf')`"; asked to print it: "add a `print()` line".
+- **after**, every report change was one `edit_file` on `report.toml` and nothing else, in
+  about 11 s (20-55 s before). The one miss in the first run set `title = "Weather Study"`
+  for "make the title bigger" -- the 4B matched the first line with "title" in it; with the
+  size line's comment saying "a bigger number is a bigger title", 7 of 7. A reply then said
+  "32 points ... the maximum allowed"; the file now says the real ranges, and the next run
+  said only what it did.
+- **A chart in the report is the analysis.** Asked "the rain chart in my report should be
+  called Rain by month", Gary Fast with the note put it into report.toml's own title and
+  told the child "The rain chart is now titled 'Rain by month' in the report" -- the wrong
+  file and a sentence that was not true. Without the note it changed the chart's title in
+  `analysis.py`. So the note now stays off a message about a chart itself -- what it is
+  called, its labels, colours, lines (`_CHART_ITSELF`) -- and that message goes as it always
+  went. In `report_fast5` neither chart message touched report.toml and both replies were
+  true; the rain title was made in one of two runs and the "degrees" label in neither (the
+  axis already read "Temperature (°F)", and Gary said so): the edit tool's ordinary
+  variation, the same with and without this pass. **The goal check was wrong** until
+  then: the fixture's own comment says "Rain by month", so "is it in the code?" passed
+  whatever Gary did. Those four turns are scored by hand from what changed and what was
+  said; the driver now needs the words newly added to a changed analysis.
+- **Chart requests**: "make a dashboard" was not acted on by Gary Fast in either condition
+  -- the fixture already draws that dashboard, and he said so (true); a goal that did not
+  fit, so the fair count is 1 of 3 before, 3 of 3 after. No unasked colour in any Gary Fast
+  chart turn; "make the humidity line green" kept green.
+- **The screen guide's line** (always on for Research, because "never invent a button"
+  needs the button) first read "saves those pages as a PDF where they choose", and Gary
+  Fast said Export "saves the report as a PDF in your project folder". Now it says the save
+  window, Documents, never the project; both answers named the real buttons, accurately.
+
+Gary Smart (`results/report_smart.json` with the first note; `report_smart2` with the final
+note and gate): report changes **before 6, after 7** in both; chart requests 4 of 4 in both
+(Gary Smart did build the dashboard again); export questions before 0 ("You can't save a
+PDF directly from this project yet ... add this to your `src/analysis.py`"), after 2. About
+30 s a turn. Two things it found:
+
+- **Its dashboard named `color="tab:blue"`, `"tab:green"`, `"tab:red"`** -- the previous
+  pass's colour guard knew plain names and hex codes only, so stock matplotlib got through.
+  `chart_style` now takes out `tab:` and `xkcd:` colours too (their greys stay, as neutrals),
+  and a colour inside another word ("hund**red**", "bo**red**") no longer counts as one the
+  child asked for. Both tested.
+- **A Research turn can claim a chart change it never ran.** For the "degrees" label, in
+  both conditions, Gary Smart's one edit added
+  `set_yticklabels([... label.endswith('temp') ...])` -- `Text` has no `endswith`, so the
+  analysis fails -- made no run, and said "The chart now shows °F". Older than this pass and
+  not changed here: a Research turn is not run after an edit, as a game is playtested.
+  Show the report runs the analysis and says plainly that it failed. Its rain title missed
+  the line three times and said so, in both conditions.
+
+**Not done**: the real macOS save window (the replace question, `.pdf` added) is replaced in
+the tests and was not driven by hand; nothing was printed on paper; two charts sharing a page
+are not the same size; a new project's first run builds its own font cache (~6 s); cloud
+models were not measured (no working keys).

@@ -396,6 +396,15 @@ def _child_environment(project_dir: Path, extra: dict[str, str] | None = None) -
     # correctness one -- the chart was always written.
     env["MPLCONFIGDIR"] = str(Path(project_dir) / MATPLOTLIB_CACHE)
 
+    # The house chart style. matplotlib reads ``matplotlibrc`` from the working directory,
+    # which is the project root -- but a starter's files live in ``src/``, so the style
+    # shipped there was never found and every chart drew in matplotlib's defaults. Point
+    # matplotlib at it. A file at the root still wins, because the working directory
+    # outranks MATPLOTLIBRC.
+    style = Path(project_dir) / "src" / "matplotlibrc"
+    if style.is_file():
+        env["MATPLOTLIBRC"] = str(style)
+
     if extra:
         env.update(extra)
     return env

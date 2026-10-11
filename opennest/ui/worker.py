@@ -8,6 +8,7 @@ on a worker thread and reports back through Qt signals.
 from __future__ import annotations
 
 import contextlib
+from dataclasses import dataclass
 
 from PySide6.QtCore import QEventLoop, QObject, QThread, QTimer, Signal
 
@@ -109,6 +110,53 @@ class RunWorker(QObject):
         finally:
             self.toolbox.observer = None
         self.finished.emit(result)
+
+
+@dataclass(frozen=True)
+class ReportMade:
+    """What making a report came to: the analysis's run, and the report or why not."""
+
+    result: object                  # the run_project ToolResult
+    report: object | None = None    # export.report.Report
+    problem: str = ""               # for the child, when there is no report
+
+
+class ReportWorker(QObject):
+    """Makes a Research project's report off the UI thread: the analysis, then the pages.
+
+    The analysis runs first, every time, so the charts in the report are the ones the
+    code draws now and never one an older version left behind -- a stale chart is the
+    report saying something the project no longer says. It is the Run Analysis button's
+    own run, through the same Toolbox, so it is confined, and counted, like that one.
+    Measured at about 0.6 s warm for the weather analysis, and the pages about 0.6 s more
+    (SPIKES.md section 34).
+    """
+
+    finished = Signal(object)  # ReportMade
+
+    def __init__(self, toolbox) -> None:
+        super().__init__()
+        self.toolbox = toolbox
+
+    def run(self) -> None:
+        from opennest.export import report
+
+        project = self.toolbox.project
+        result = self.toolbox.dispatch("run_project", {})
+        if result.run is None or not result.run.ok or result.run.still_running:
+            self.finished.emit(ReportMade(result))
+            return
+        try:
+            # ``made_files`` is newest first; the report wants the order they were drawn.
+            made = report.build(project.directory, project.name,
+                                list(reversed(result.made_files)))
+        except report.ReportError as exc:
+            self.finished.emit(ReportMade(result, problem=str(exc)))
+        except Exception as exc:  # noqa: BLE001 - a crash here must not kill the app
+            self.finished.emit(ReportMade(result, problem=f"The report could not be made. "
+                                                          f"{exc}"))
+        else:
+            self.finished.emit(ReportMade(result, made))
 
 
 class ImageWorker(QObject):
