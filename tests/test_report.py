@@ -151,9 +151,10 @@ def test_a_chart_taller_than_a_page_gets_a_page_of_its_own_and_is_said(study) ->
 
 
 def test_two_ordinary_charts_share_a_page_rather_than_one_each(study, monkeypatch) -> None:
-    """Five charts the house size share pages two at a time, the second made a little
-    smaller to stay (KEEP_ON_PAGE); a chart that could never be made smaller would take a
-    page each (SPIKES.md section 34: 7 pages against 4 on the weather report)."""
+    """Five charts the house size share pages two at a time, both a little smaller and
+    the same size (KEEP_ON_PAGE, ``_together``); a chart that could never be made smaller
+    would take a page each (SPIKES.md section 34: 7 pages against 4 on the weather
+    report)."""
     names = []
     for n in range(5):
         _picture(study.directory / "charts" / f"c{n}.png", (1075, 670))
@@ -163,7 +164,7 @@ def test_two_ordinary_charts_share_a_page_rather_than_one_each(study, monkeypatc
     assert made.pages == 3
     assert [page for _path, page, _scale in made.placements] == [1, 2, 2, 3, 3]
     assert [scale for _path, _page, scale in made.placements] == [
-        0.907, 0.907, 0.808, 0.907, 0.808]
+        0.907, 0.858, 0.858, 0.858, 0.858]
     assert min(scale for *_rest, scale in made.placements) >= 0.907 * report.KEEP_ON_PAGE
 
     monkeypatch.setattr(report, "KEEP_ON_PAGE", 1.0)
@@ -273,7 +274,7 @@ def test_the_charts_line_chooses_and_orders_them(study) -> None:
         'charts = ["rain_by_month.png", "chart", "old_chart.png"]\n', encoding="utf-8")
     made = _build(study)
     assert made.charts == ("charts/rain_by_month.png", "charts/chart.png")
-    assert any("old_chart.png, which the analysis did not draw" in n for n in made.notes)
+    assert any("names old_chart.png, which the analysis did not draw" in n for n in made.notes)
 
 
 def test_a_mistake_in_the_layout_gets_the_usual_layout_and_is_said(study) -> None:
@@ -339,3 +340,42 @@ def test_matplotlib_keeps_its_cache_inside_open_nest(tmp_path) -> None:
                           env=env, cwd=Path(__file__).resolve().parent.parent, timeout=120)
     assert done.returncode == 0, done.stderr
     assert done.stdout.strip() == str(tmp_path / "home" / "cache" / "matplotlib")
+
+
+def test_charts_named_that_were_never_drawn_give_every_chart_that_was(study) -> None:
+    """weather3: report.toml named chart1-3.png, the analysis drew chart.png -- and the
+    report had nothing in it (SPIKES.md section 34G)."""
+    (study.directory / "src" / "report.toml").write_text(
+        'charts = ["chart1.png", "chart2.png", "chart3.png"]\n', encoding="utf-8")
+    made = _build(study)
+    assert made.charts == tuple(DRAWN)
+    assert ("report.toml names chart1.png, chart2.png and chart3.png, which the analysis "
+            "did not draw, so the report has every chart it did draw.") in made.notes
+
+    (study.directory / "src" / "report.toml").write_text(
+        'charts = ["rain_by_month", "chart9.png"]\n', encoding="utf-8")
+    made = _build(study)
+    assert made.charts == ("charts/rain_by_month.png",)
+    assert any("names chart9.png, which the analysis did not draw this time, so the report "
+               "leaves it out" in note for note in made.notes)
+
+
+def test_drawn_charts_are_the_analysiss_pictures_not_the_childs(study) -> None:
+    _picture(study.directory / "assets" / "photo.png", (40, 40))
+    assert report.drawn_charts(study.directory) == DRAWN
+
+
+def test_big_charts_one_after_another_share_pages_at_one_size(study) -> None:
+    """weather3: Gary Smart's three charts at figsize (10, 6) -- 1315 x 888 px -- took a page
+    each, half of every page empty (SPIKES.md section 34G)."""
+    names = []
+    for n in range(4):
+        _picture(study.directory / "charts" / f"big{n}.png", (1315, 888))
+        names.append(f"charts/big{n}.png")
+    (study.directory / "src" / "report.toml").write_text('order = ["charts"]\n')
+    made = _build(study, names)
+    pages = [page for _path, page, _scale in made.placements]
+    scales = {scale for *_rest, scale in made.placements}
+    assert pages == [1, 2, 2, 3] and made.pages == 3
+    assert len({s for (_p, page, s) in made.placements if page == 2}) == 1, "one size a page"
+    assert min(scales) >= 0.742 * report.KEEP_ON_PAGE

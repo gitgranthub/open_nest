@@ -42,6 +42,31 @@ PDF…**, and the charts in it finally draw in Open Nest's own colours.
   another word ("hund**red**", "bo**red**") no longer counted as asked for, and the
   starter's `matplotlibrc` no longer tells Gary the wrong reason it works.
 
+## Then the owner's own report: "a dashboard report", and Gary built none
+
+On Gary Smart, a new Research project with the weather CSV: "Make a weather report
+dashboard report with a few modern visualizations of the data analyzed." Gary only wrote
+three made-up chart names into report.toml, said "the analysis will draw them", and Show
+the report had nothing to show. Reproduced: 0 of 3 such messages. Now **3 of 3 on both
+Gary Smart and Gary Fast** -- three new charts each, run, and in the report. What was
+wrong, all Open Nest's (SPIKES.md §34G):
+
+- A report that needs charts made is the **analysis's** work, not the layout's: Gary is
+  told the report shows every chart the analysis draws, and **where in the analysis to add
+  them** -- Gary Smart had been aiming his edits at a "# Add your analysis here." line that
+  does not exist, ten times a turn.
+- The starter now **imports seaborn**, which the research prompt says is there.
+- **A Research turn now runs the analysis after it changes it**, as a game is tested: a
+  failure goes back to Gary to fix, and if he cannot, the child is told it failed -- never
+  "the chart now shows ...".
+- A `report.toml` naming charts nobody drew is **refused** when Gary writes it; one
+  already like that gets every chart that was drawn, said in one sentence.
+- **Charts one after another share a page at one size**: Gary Smart's big charts had taken
+  a page each, half of it empty -- 4 pages became 3.
+
+Your weather3 project still has the made-up names in its report.toml; it now makes a report
+anyway (with the one chart it has). Send the message again and Gary builds the charts.
+
 ## What we measured
 
 Gary Fast, one turn per message on the weather project, before and after this pass's Gary
@@ -63,21 +88,19 @@ report note it went into the report's own title instead and Gary said the chart 
 renamed, so the note now stays off messages about a chart itself.
 
 Found, and fixed: Gary Smart's dashboard used matplotlib's `tab:blue`, `tab:green`,
-`tab:red`, which the colour guard did not know. Found, and **not** fixed here: a Research
-turn can change the analysis, not run it, and say the chart changed -- Gary Smart's
-"degrees" label broke the analysis and he said "The chart now shows °F". Older than this
-pass; Show the report does say the analysis failed. Flagged as its own task.
+`tab:red`, which the colour guard did not know; and a Research turn could change the
+analysis, not run it, and say the chart changed (fixed in the owner's-report section
+above).
 
 ## Not done yet
 
-- **A Research turn is not run after an edit** (above): a claim about a chart can be
-  untested. Flagged as its own task.
 - **Try it by hand**: the real macOS save window (asking before it replaces a file, adding
   `.pdf`), printing an exported PDF, and the pages on a Retina screen. The tests replace
   the save window.
 - A new Research project's very first Run Analysis takes about 6 seconds while matplotlib
   builds that project's font cache; after that, half a second. Older than this pass, and
   noticed, not changed.
-- Two charts sharing a page are not the same size (the second a little smaller).
+- Some chart edits still miss (the edit tool's exact text): asked to rename the rain chart,
+  both models said they could not, truthfully.
 - An emoji in the findings cannot be printed; it is left out, and said.
 - No 8 GB Mac has been measured.

@@ -17,6 +17,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
+import seaborn as sns  # nicer charts; they draw in this project's colours too
 
 DATA_DIR = Path("data")
 CHART_DIR = Path("charts")

@@ -161,15 +161,21 @@ def read_layout(project_dir: Path) -> tuple[Layout, list[str], str]:
     except (OSError, UnicodeDecodeError):
         return Layout(), ["report.toml could not be read, so the report uses the usual "
                           "layout."], ""
+    layout, notes = parse_layout(text)
+    return layout, notes, text
+
+
+def parse_layout(text: str) -> tuple[Layout, list[str]]:
+    """:func:`read_layout` for text not yet saved -- the check before a write, too."""
     if not text:
-        return Layout(), [], ""
+        return Layout(), []
     try:
         raw = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
         where = re.search(r"line (\d+)", str(exc))
         at = f" on line {where.group(1)}" if where else ""
         return Layout(), [f"report.toml has a mistake{at}, so the report uses the usual "
-                          f"layout until it is fixed."], text
+                          f"layout until it is fixed."]
     notes: list[str] = []
     values: dict = {}
     known = {f for f in Layout.__dataclass_fields__}
@@ -219,7 +225,55 @@ def read_layout(project_dir: Path) -> tuple[Layout, list[str], str]:
                          "chart is in.")
         else:
             values["charts"] = tuple(c.strip() for c in charts if c.strip())
-    return replace(Layout(), **values), notes, text
+    return replace(Layout(), **values), notes
+
+
+def drawn_charts(project_dir: Path) -> list[str]:
+    """Pictures in the project that an analysis drew: every image outside the folders the
+    child's own files go in (``assets/``, ``docs/``, ``data/``), oldest first."""
+    from opennest.execution.outputs import IMAGE_SUFFIXES
+    from opennest.security.sandbox import visible_files
+
+    root = Path(project_dir)
+    found = []
+    for relative in visible_files(root):
+        top = Path(relative).parts[0] if Path(relative).parts else ""
+        if Path(relative).suffix.lower() in IMAGE_SUFFIXES and \
+                top not in ("assets", "docs", "data"):
+            try:
+                found.append((root.joinpath(relative).stat().st_mtime, relative))
+            except OSError:
+                continue
+    return [relative for _when, relative in sorted(found)]
+
+
+def layout_problems(project_dir: Path, text: str) -> list[str]:
+    """What is wrong with ``text`` as ``src/report.toml``, for Gary, before it is saved.
+
+    The read is forgiving -- a mistake gets the usual layout and is said to the child --
+    but a write is checked: a model that names charts nobody drew, or writes a line
+    Open Nest cannot read, is told now, while it can still fix it. Measured on the owner's
+    weather3: Gary Smart wrote charts = ["chart1.png", "chart2.png", "chart3.png"], told the
+    child the analysis would draw them, and the report had nothing (SPIKES.md section 34G).
+    """
+    layout, notes = parse_layout(text)
+    problems = [note.removeprefix("report.toml: ") for note in notes]
+    if layout.charts:
+        drawn = drawn_charts(project_dir)
+        _chosen, missing = _match_charts(drawn, layout.charts)
+        if missing:
+            have = ", ".join(drawn) if drawn else "no charts yet"
+            problems.append(
+                f"It names {_listed(missing)}, and the analysis has not drawn "
+                f"{'that' if len(missing) == 1 else 'those'} -- it has drawn {have}. "
+                f"Leave charts = [] and every chart the analysis draws goes in, in the order "
+                f"it draws them. A new chart is drawn in the analysis, not named here.")
+    return problems
+
+
+def _listed(names: Sequence[str]) -> str:
+    names = list(names)
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
 
 
 def ensure_layout_file(project_dir: Path) -> bool:
@@ -880,6 +934,9 @@ def paginate(chunks: Sequence[Chunk]) -> list[list[Placed]]:
       what is left of the page is too short it may be made up to :data:`KEEP_ON_PAGE`
       smaller to stay, and otherwise it starts the next page. One taller than a whole
       page is made to fit a page of its own.
+    - Charts that follow one another share a page at one size: when the next does not
+      fit, the charts at the foot of the page and it are made the same size together, if
+      that is no smaller than :data:`KEEP_ON_PAGE` allows (:func:`_together`).
     - Something that does not fit even on an empty page is put there anyway: a page is
       never left empty and nothing is dropped.
     """
@@ -889,6 +946,13 @@ def paginate(chunks: Sequence[Chunk]) -> list[list[Placed]]:
         # This chunk, and the ones it keeps with, have to fit from here.
         room = top - CONTENT_BOTTOM
         first = not pages[-1]
+        if chunk.chart is not None and not first and not chunk.keep_with_next:
+            whole = chunk.chart.natural[1] * chunk.chart.page_scale() + CAPTION_HEIGHT
+            if chunk.space_before + whole > room:
+                together = _together(pages[-1], chunk)
+                if together is not None:
+                    pages[-1], top = together
+                    continue
         used = 0.0
         for later in chunks[index:]:
             fits, _scale, height = _fits(later, room - used, first=first and later is chunk)
@@ -905,6 +969,38 @@ def paginate(chunks: Sequence[Chunk]) -> list[list[Placed]]:
         pages[-1].append(Placed(chunk, top - (0.0 if first else chunk.space_before), scale))
         top -= height
     return [page for page in pages if page] or [[]]
+
+
+def _together(page: list[Placed], chunk: Chunk) -> tuple[list[Placed], float] | None:
+    """The page with ``chunk`` added and the charts at its foot all one size, and where
+    the page now ends -- or None if they would be smaller than :data:`KEEP_ON_PAGE` lets.
+
+    Measured on the owner's weather3 (SPIKES.md section 34G): Gary Smart drew three
+    charts at figsize (10, 6), each 426 pt tall, and a page held one of them and a white
+    half; together, two to a page at 0.65 of their size. And two ordinary charts no longer
+    come out at two different sizes on one page.
+    """
+    run = []
+    for placed in reversed(page):
+        if placed.chunk.chart is None:
+            break
+        run.insert(0, placed)
+    if not run:
+        return None
+    charts = [placed.chunk for placed in run] + [chunk]
+    gaps = sum(c.space_before for c in charts[1:])
+    heights = sum(c.chart.natural[1] for c in charts)
+    room = run[0].top - CONTENT_BOTTOM - gaps - CAPTION_HEIGHT * len(charts)
+    scale = min(room / heights, *(c.chart.page_scale() for c in charts))
+    if scale < KEEP_ON_PAGE * min(c.chart.page_scale() for c in charts):
+        return None
+    placed, top = page[:len(page) - len(run)], run[0].top
+    for number, c in enumerate(charts):
+        if number:
+            top -= c.space_before
+        placed.append(Placed(c, top, scale))
+        top -= c.chart.natural[1] * scale + CAPTION_HEIGHT
+    return placed, top
 
 
 # ============================================================================== drawing
@@ -1051,20 +1147,33 @@ def choose_charts(drawn: Sequence[str], layout: Layout) -> tuple[list[str], list
     """
     if not layout.charts:
         return list(drawn), []
+    chosen, missing = _match_charts(drawn, layout.charts)
+    if not missing:
+        return chosen, []
+    it = "it" if len(missing) == 1 else "them"
+    if not chosen:
+        # None of them: every chart that was drawn, rather than a report with none.
+        return list(drawn), [f"report.toml names {_listed(missing)}, which the analysis did "
+                             f"not draw, so the report has every chart it did draw."]
+    return chosen, [f"report.toml names {_listed(missing)}, which the analysis did not draw "
+                    f"this time, so the report leaves {it} out."]
+
+
+def _match_charts(drawn: Sequence[str], names: Sequence[str]) -> tuple[list[str], list[str]]:
+    """The drawn charts ``names`` mean, in their order, and the names that mean none."""
     by_name: dict[str, str] = {}
     for relative in drawn:
         path = Path(relative)
         for key in (relative, path.name, path.stem):
             by_name.setdefault(key.casefold(), relative)
-    chosen, notes = [], []
-    for name in layout.charts:
+    chosen, missing = [], []
+    for name in names:
         found = by_name.get(name.casefold()) or by_name.get(Path(name).name.casefold())
         if found is None:
-            notes.append(f"report.toml names {name}, which the analysis did not draw this "
-                         f"time, so it is not in the report.")
+            missing.append(name)
         elif found not in chosen:
             chosen.append(found)
-    return chosen, notes
+    return chosen, missing
 
 
 def inputs_state(project_dir: Path, charts: Sequence[str]) -> tuple:

@@ -5628,12 +5628,76 @@ PDF directly from this project yet ... add this to your `src/analysis.py`"), aft
 - **A Research turn can claim a chart change it never ran.** For the "degrees" label, in
   both conditions, Gary Smart's one edit added
   `set_yticklabels([... label.endswith('temp') ...])` -- `Text` has no `endswith`, so the
-  analysis fails -- made no run, and said "The chart now shows °F". Older than this pass and
-  not changed here: a Research turn is not run after an edit, as a game is playtested.
-  Show the report runs the analysis and says plainly that it failed. Its rain title missed
+  analysis fails -- made no run, and said "The chart now shows °F". Older than this pass:
+  a Research turn was not run after an edit, as a game is playtested. Fixed in §34G. Its rain title missed
   the line three times and said so, in both conditions.
 
+### 34G. The owner's weather3: "a dashboard report" -- and Gary built none
+
+The owner, on Gary Smart, in a new Research project with the weather CSV and the starter
+untouched: "Make a weather report dashboard report with a few modern visualizations of the
+data analyzed." Gary changed only `src/report.toml`, to `charts = ["chart1.png",
+"chart2.png", "chart3.png"]`, and said "The analysis will draw them". It drew nothing new,
+and Show the report said "There is nothing to put in a report yet" with a line for each
+missing chart. Reproduced with `report_turns.py --groups=make --fixture=starter` (the owner's
+message and two like it; goals: the analysis changes, runs and draws at least two charts,
+the report has them, report.toml reads without a mistake) -- **0 of 3** (`make_smart_v1`),
+every turn editing only report.toml, one saying "The analysis will now generate these".
+
+Four faults, all Open Nest's, each fixed and measured in turn:
+
+1. **The note sent a request for charts to the layout.** "report" put the report.toml note
+   beside the message. A report that needs charts made -- make, create, want, with ... a
+   chart, graph, plot, dashboard, visualization -- now gets the analysis instead
+   (`_MAKES_CHARTS`; words that move charts already drawn, "first", "only", "take", keep
+   the layout's). Its note says the report shows every chart the analysis draws, so
+   report.toml needs no change, and the recipes run as for any chart request.
+   `make_smart_v2`: 1 of 3, and no turn touched report.toml -- but every `edit_file` was
+   refused.
+2. **Gary invented where to put them.** Ten calls a turn sent the same imagined block --
+   "# Add your analysis here. / # You can use frame to access the data. / ..." -- as
+   old_text, re-reading the file between. The note now gives the analysis's real last line
+   to copy (the research Fast Path's own anchor, `research.facts`), and the data's real
+   columns. `make_smart_v3`: every turn edited the analysis; 1 of 3 ran. One chart coloured
+   a scatter by a text column with `cmap="husl"`; one used `sns`, which the research prompt
+   says is there and the starter never imported, and Gary never ran it ("I changed
+   src/analysis.py.").
+3. **The starter now imports seaborn** (it changes no setting: checked, `rcParams` the same
+   before and after the import).
+4. **A Research turn is run after it changes the analysis** (`_analysis_wants_repair`, the
+   Research half of the games' playtest hook): when the model stops and the turn changed
+   Python since the last run of it, Open Nest runs Run Analysis itself; a failure goes back
+   as one of the turn's three repair attempts, with the error; a reply that changes nothing
+   after a failure is pulled up rather than let off; out of attempts, "I changed the
+   analysis, but when Open Nest ran it, it stopped with an error ..." -- never the claim.
+
+And two behind it: a `report.toml` naming charts nobody drew, or with any mistake in it, is
+**refused at write time** with the reason and what has been drawn (only what the change
+brings: weather3's own bad line does not block "make the title bigger"); and a report whose
+chart list names none of the charts drawn has **every chart that was** ("report.toml names
+chart1.png, chart2.png and chart3.png, which the analysis did not draw, so the report has
+every chart it did draw"), one sentence, not three.
+
+| final (`*_v4`) | Gary Smart | Gary Fast |
+|---|---|---|
+| the owner's message and two like it | **3 of 3**, 47 s a turn (three new charts each) | **3 of 3**, 30 s |
+| report changes (7) | 7 | 7 |
+| chart requests (4) | 4 | 3 (the dashboard the fixture already has, said) |
+| a chart in the report (2) | 0 | 0 |
+
+The chart-in-report turns are the edit tool's, as before: the rain title's old_text missed
+and Gary said so; the "degrees" label on Gary Smart first broke the analysis, was run,
+repaired and ran -- its label is "°F", not the word "degrees" the goal looked for.
+
+**The pages, looked at**: Gary Smart drew the three charts at `figsize=(10, 6)` (1315 x 888
+px, 426 pt tall), and each took a page with half of it empty -- two did not fit even with
+the second 15% smaller. **Charts one after another now share a page at one size**
+(`_together`: the charts at the foot of the page and the next made the same size, if no
+smaller than `KEEP_ON_PAGE` allows): weather3's report 4 pages to 3, two to a page at 0.65.
+The same rule ends the earlier unequal pair: five ordinary charts are 0.907, then
+0.858/0.858 twice (they were 0.907/0.808).
+
 **Not done**: the real macOS save window (the replace question, `.pdf` added) is replaced in
-the tests and was not driven by hand; nothing was printed on paper; two charts sharing a page
-are not the same size; a new project's first run builds its own font cache (~6 s); cloud
-models were not measured (no working keys).
+the tests and was not driven by hand; nothing was printed on paper; a new project's first
+run builds its own font cache (~6 s); the edit tool still misses some chart edits (the rain
+title, §34G); cloud models were not measured (no working keys).

@@ -28,6 +28,7 @@ from opennest.agent import chart_style
 from opennest.assets import kinds
 from opennest.execution import arduino, outputs, playtest
 from opennest.execution.python_runner import RunResult, run_project, stop_project
+from opennest.export import report
 from opennest.graphics import block_world
 from opennest.projects.manager import Project, plays_in_panel, source_fingerprint
 from opennest.security.sandbox import PathNotAllowed, resolve_in_project
@@ -502,6 +503,7 @@ class Toolbox:
         content, unescaped = repair_written_text(relative, content)
         _reject_broken_python(relative, content)
         _reject_tool_calls_as_code(relative, "", content)
+        self._check_report_layout(path, "", content)
         content, styled = self._keep_house_colours(relative, "", content)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
@@ -510,6 +512,30 @@ class Toolbox:
                           + _counting_note(relative, "", content) + styled,
                           changed_files=(rel,),
                           recovered="escaping" if unescaped else "")
+
+    def _check_report_layout(self, path: Path, before: str, content: str) -> None:
+        """A Research report's layout is checked before it is saved, not trusted.
+
+        Reading it is forgiving -- the child's typo gets the usual layout -- but a model that
+        names charts nobody drew, or writes a line Open Nest cannot read, is refused now,
+        while it can still put it right, and cannot then tell the child it worked
+        (``report.layout_problems``; SPIKES.md section 34G). Only what this change brings
+        is refused: a line that was already wrong does not block fixing the title."""
+        if not self.project.profile.report:
+            return
+        root = self.project.directory.resolve()
+        try:
+            relative = str(path.resolve().relative_to(root))
+        except ValueError:
+            return
+        if relative != report.LAYOUT_FILE:
+            return
+        already = set(report.layout_problems(self.project.directory, before)) if before else set()
+        problems = [p for p in report.layout_problems(self.project.directory, content)
+                    if p not in already]
+        if problems:
+            raise ToolError(f"That change to {relative} was not saved. " + " ".join(problems),
+                            reason="bad_layout")
 
     def _keep_house_colours(self, relative: str, before: str, after: str) -> tuple[str, str]:
         """Research charts draw in the project's palette; see :mod:`chart_style`.
@@ -617,6 +643,7 @@ class Toolbox:
             )
         _reject_broken_python(relative, updated)
         _reject_tool_calls_as_code(relative, text, updated)
+        self._check_report_layout(path, text, updated)
         updated, styled = self._keep_house_colours(relative, text, updated)
         path.write_text(updated, encoding="utf-8")
         rel = str(path.relative_to(self.project.directory.resolve()))

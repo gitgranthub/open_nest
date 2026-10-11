@@ -668,6 +668,31 @@ _ABOUT_REPORT = re.compile(r"\b(?:report|pdf|printout|print it|printed)\b", re.I
 #: Measured: with the note, Gary Fast put "the rain chart in my report should be called
 #: Rain by month" into report.toml's title and said the chart was renamed (SPIKES.md
 #: section 34F); without it, the analysis's chart title, as asked.
+#: ...and a report that needs charts made -- "a dashboard report with a few modern
+#: visualizations" -- is the analysis's work too: the report shows whatever the analysis
+#: draws. Measured on the owner's weather3, Gary Smart, all three such messages: with the
+#: layout note, each only edited report.toml, one naming three charts nobody drew and
+#: saying "the analysis will now generate these" (SPIKES.md section 34G).
+_MAKES_CHARTS = re.compile(
+    r"\b(?:make|create|build|draw|design|generate|produce|want|need|give|add|with|"
+    r"include)\b[^.!?]*\b(?:visuali[sz]ations?|visuals|dashboards?|infographics?|graphs?|"
+    r"plots?|charts?|diagrams?|histograms?|heat ?maps?)\b", re.IGNORECASE)
+#: Words that move or choose charts already drawn: "put the charts first", "only the rain
+#: chart" -- the layout's, even with a chart word in them.
+_ARRANGES_CHARTS = re.compile(r"\b(?:first|last|order|only|before|after|move|remove|take|"
+                              r"drop|swap|instead|leave out)\b", re.IGNORECASE)
+#: Said beside such a message instead of the layout.
+#: Where the new charts go is the analysis's real last line, given to copy: measured on
+#: weather3, Gary Smart sent an imagined "# Add your analysis here." block as old_text
+#: ten times in a turn, re-reading the file between, and changed nothing.
+REPORT_DRAWS = (
+    "(Open Nest: their report shows every chart the analysis draws, in the order it draws "
+    "them, so src/report.toml needs no change for this. Draw each chart they ask for in "
+    "the analysis, saved into charts/, and run it.{place} They see the report by pressing "
+    "“Show the report”.{where})")
+REPORT_DRAWS_PLACE = (
+    " Add the charts at the end of the analysis, after its last line, which is now "
+    "exactly:\n{line}\nUse that line as old_text, and start new_text with it.")
 _CHART_ITSELF = re.compile(
     r"(?=.*\b(?:chart|graph|plot)s?\b)"
     r"(?=.*\b(?:called|titled|named|label(?:led|s)?|axis|axes|colou?r(?:s|ed)?|lines?|"
@@ -1144,6 +1169,8 @@ class AgentController:
         self._metered = MeteredProvider(self.provider, self._budget)
         #: How many of this turn's tool results the last headless test already covers.
         self._tested_through = 0
+        #: The last run of a Research analysis this turn (``_analysis_wants_repair``).
+        self._analysis_check = None
         #: The game as it was, when Open Nest's own test last passed on exactly these files
         #: -- what a turn that breaks it puts back (``_put_back``).
         self._working = self._verified_working()
@@ -1182,8 +1209,13 @@ class AgentController:
         # A change to the report is a line of src/report.toml, which no recipe edits: the
         # Research recipes change the analysis, so "make the report's title bigger" would
         # restyle a chart instead (measured, SPIKES.md section 34). They step aside.
-        about_report = not answering and step is None and self.project.profile.report \
+        reported = not answering and step is None and self.project.profile.report \
             and bool(_ABOUT_REPORT.search(text)) and not _CHART_ITSELF.search(text)
+        # Charts to be made go to the analysis, as any chart request does -- recipes
+        # included -- with a word that the report will show them.
+        draws_for_report = reported and bool(_MAKES_CHARTS.search(text)) \
+            and not _ARRANGES_CHARTS.search(text)
+        about_report = reported and not draws_for_report
         if self.fastpath is not None and (not answering or analysis) and not in_3d \
                 and not about_report:
             outcome = self._fast_path(turn, text, previous, attachments, on_text)
@@ -1256,10 +1288,11 @@ class AgentController:
                 self.history[-1] = replace(self.history[-1], content="\n\n".join(
                     [self.history[-1].content, *notes]))
                 self._asked_text = text
-        if about_report:
+        if about_report or draws_for_report:
             # Beside the message, for this turn only; the settled history keeps their words.
+            note = self._report_note() if about_report else self._draws_note()
             self.history[-1] = replace(self.history[-1], content=(
-                f"{self.history[-1].content}\n\n{self._report_note()}"))
+                f"{self.history[-1].content}\n\n{note}"))
             self._asked_text = text
         if written is not None:
             # What the model wrote goes into the history as the call it was, after the
@@ -1749,6 +1782,24 @@ class AgentController:
         except (OSError, UnicodeDecodeError):
             layout = "(it could not be read)"
         return REPORT_GUIDE.format(layout=layout)
+
+    def _draws_note(self) -> str:
+        """:data:`REPORT_DRAWS`, with where new charts go and the data's real columns --
+        what the application knows, read from the files (the research kind's facts)."""
+        place = where = ""
+        try:
+            from opennest.fastpath.kinds import research as research_kind
+
+            facts = research_kind.facts(self.project)
+            anchor = facts.get("anchor")
+            lines = (facts.get("source") or "").split("\n")
+            if anchor and 0 < anchor <= len(lines) and lines[anchor - 1].strip():
+                place = REPORT_DRAWS_PLACE.format(line=lines[anchor - 1])
+            found = research_kind.where(facts)
+            where = f"\n{found}" if found else ""
+        except Exception:  # noqa: BLE001 - a note without the place is still the note
+            pass
+        return REPORT_DRAWS.format(place=place, where=where)
 
     def _verified_working(self) -> dict[str, str] | None:
         """The project's src/ files, when Open Nest's last test passed on exactly them."""
@@ -3663,6 +3714,8 @@ class AgentController:
         """
         if turn.gave_up:
             return False
+        if self.project.profile.report and self.project.profile.playtest is None:
+            return self._analysis_wants_repair(turn)
         fresh = turn.tool_results[self._tested_through:]
         if not any(result.changed_files for _, result in fresh):
             last = turn.playtests[-1] if turn.playtests else None
@@ -3678,6 +3731,62 @@ class AgentController:
         if not result.failed:
             return False
         return self._send_back(turn, result, result.feedback())
+
+    def _analysis_wants_repair(self, turn: Turn) -> bool:
+        """A Research analysis is run after a change, as a game is tested. True to go on.
+
+        Measured (SPIKES.md section 34G): Gary Smart added a chart that called ``sns``
+        the starter never imported, made no run, and said "I changed src/analysis.py";
+        another added a "degrees" label that broke the analysis and said "The chart now
+        shows °F". Nothing had run the code. So when the turn changed Python since the
+        last run of it and the model stops, Open Nest runs the analysis -- the child's own
+        Run Analysis -- and a failure goes back as one of the turn's three repair attempts,
+        with the error. Unchanged code is never run twice for this; the result is in the
+        turn, so the panel shows what it printed and drew.
+        """
+        fresh = turn.tool_results[self._tested_through:]
+        changed_code = [index for index, (_, result) in enumerate(fresh)
+                        if any(name.endswith(".py") for name in (result.changed_files or ()))]
+        if not changed_code:
+            # Nothing changed since the last run. If that run failed, the reply has fixed
+            # nothing: pulled up, not let off -- as a game's test does (measured there:
+            # handed the traceback, the model said it had fixed it and called no tool).
+            last = getattr(self, "_analysis_check", None)
+            if last is None or last.ok:
+                return False
+            return self._analysis_send_back(turn, last, again=True)
+        after = fresh[changed_code[-1] + 1:]
+        ran = [result for _, result in after if result.run is not None]
+        if ran:
+            result = ran[-1]   # It ran after the last change already; that run says.
+        else:
+            result = self.toolbox.dispatch("run_project", {})
+            turn.tool_results.append(("run_project", result))
+            self.refresh_state()
+        self._tested_through = len(turn.tool_results)
+        self._analysis_check = result
+        if result.ok:
+            return False
+        return self._analysis_send_back(turn, result)
+
+    def _analysis_send_back(self, turn: Turn, result: ToolResult, *, again: bool = False) -> bool:
+        """Spend one repair attempt on a failed analysis, or say it plainly if none are
+        left. Only the measured result is named, never a cause."""
+        if turn.repair_attempts >= MAX_REPAIR_ATTEMPTS:
+            turn.gave_up = True
+            turn.text = ("I changed the analysis, but when Open Nest ran it, it stopped with "
+                         "an error, and I couldn't fix that yet. The error is in Build / "
+                         "Preview. Tell me what you want to try next, or we can go back to "
+                         "the last version that worked.")
+            return False
+        turn.repair_attempts += 1
+        self._metered.kind = REPAIR
+        said = ("The analysis still fails, and nothing has changed since it was run"
+                if again else "Open Nest ran the analysis after your change, and it failed")
+        self.history.append(Message(role="user", content=(
+            f"{said}:\n\n{result.content}\n\nFix the cause in the file with edit_file, then "
+            "run it again. Do not say it works until it has run.")))
+        return True
 
     def _send_back(self, turn: Turn, result: playtest.Playtest, message: str) -> bool:
         """Spend one repair attempt on ``message``, or give up if none are left."""

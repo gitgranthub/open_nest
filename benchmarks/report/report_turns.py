@@ -2,7 +2,7 @@
 
     OPENNEST_HOME=$PWD/.opennest-sandbox HF_HUB_OFFLINE=1 .venv/bin/python \
         benchmarks/report/report_turns.py <label> [--model=<id>] [--conditions=before,after]
-        [--groups=report,inreport,charts,questions]
+        [--groups=report,inreport,charts,questions,make] [--fixture=written|starter]
 
 Every message is one turn on a fresh copy of one Research project: the owner's weather CSV
 (``assets/test_data``), a question, findings and sources written, an analysis drawing three
@@ -27,6 +27,9 @@ The goals were written down before the first run, below, and are checked from th
 - **inreport** -- a report message that is about a chart: the analysis's title must
   change and still run, and report.toml must not.
 - **questions** -- answered with the real button ("Export PDF"), and nothing changed.
+- **make** -- a report that needs charts made (the owner's weather3 message): the analysis
+  must change, run and draw at least two charts, the report must then have them, and
+  report.toml must read without a mistake. Use ``--fixture=starter``, as weather3 was.
 
 Writes ``results/<label>.json``.
 """
@@ -105,6 +108,15 @@ CHARTS = [
     ("make a dashboard of the weather with temperature, humidity and wind", False),
 ]
 
+#: A report that needs charts made first -- the owner's own message on weather3, then two
+#: like it. The analysis has to draw them; the report includes whatever it draws.
+MAKE = [
+    "Make a weather report dashboard report with a few modern visualizations of the data "
+    "analyzed.",
+    "make me a report with charts of the temperature, the rain and the wind",
+    "I want a dashboard report of my weather data with a few charts",
+]
+
 QUESTIONS = [
     "how do I save my report as a pdf?",
     "can I print my report?",
@@ -137,16 +149,19 @@ def restore(saved: dict) -> None:
     profiles.Profile.system_prompt = saved["prompt"]
 
 
-def base_project(root: Path):
+def base_project(root: Path, fixture: str = "written"):
+    """``written``: question, findings, sources and a three-chart analysis. ``starter``: the
+    owner's weather3 -- the research starter untouched, the CSV added, one chart."""
     project = create_project("Weather Study", "research", root=root)
     assets.import_file(project, CSV)
-    for name in ("question.md", "findings.md", "sources.md", "analysis.py"):
-        shutil.copy(INPUTS / name, project.directory / "src" / name)
+    if fixture == "written":
+        for name in ("question.md", "findings.md", "sources.md", "analysis.py"):
+            shutil.copy(INPUTS / name, project.directory / "src" / name)
     versions = VersionHistory(project)
     versions.start()
     versions.save("ready")
     ran = Toolbox(project).dispatch("run_project", {})
-    assert ran.ok and len(ran.made_files) == 3, ran.content
+    assert ran.ok and len(ran.made_files) == (3 if fixture == "written" else 1), ran.content
     versions.save("ran")
     return project
 
@@ -190,10 +205,11 @@ def main() -> int:
     model = options.get("model", default_model_id())
     conditions = options.get("conditions", "before,after").split(",")
     groups = options.get("groups", "report,inreport,charts,questions").split(",")
+    fixture = options.get("fixture", "written")
     provider = build_provider(model)
     provider.load()
     root = Path(tempfile.mkdtemp(prefix="report-base-"))
-    base = base_project(root).directory
+    base = base_project(root, fixture).directory
     results = []
     for condition in conditions:
         saved = before_condition() if condition == "before" else None
@@ -207,6 +223,8 @@ def main() -> int:
                 cases += [("charts", m, asked, "") for m, asked in CHARTS]
             if "questions" in groups:
                 cases += [("questions", m, None, "") for m in QUESTIONS]
+            if "make" in groups:
+                cases += [("make", m, None, "") for m in MAKE]
             for group, message, goal, words in cases:
                 project, turn, seconds, before, after, changed, calls = one_turn(
                     base, provider, message)
@@ -221,6 +239,21 @@ def main() -> int:
                     record.update(goal=words, layout=repr(layout), layout_notes=notes,
                                   met=bool(goal(layout)) and untouched and not notes,
                                   only_report_toml=changed == ["src/report.toml"])
+                elif group == "make":
+                    check = Toolbox(project).dispatch("run_project", {})
+                    drawn = list(reversed(check.made_files))
+                    layout, notes = layout_of(project.directory)
+                    try:
+                        made = report.build(project.directory, project.name, drawn)
+                        in_report, problem = list(made.charts), ""
+                    except report.ReportError as exc:
+                        in_report, problem = [], str(exc)
+                    record.update(runs=bool(check.ok), drew=drawn, in_report=in_report,
+                                  report_problem=problem, layout=repr(layout),
+                                  layout_notes=notes,
+                                  met=bool(check.ok and "src/analysis.py" in changed
+                                           and len(drawn) >= 2 and len(in_report) >= 2
+                                           and not notes))
                 elif group == "inreport":
                     check = Toolbox(project).dispatch("run_project", {})
                     code = after.get("src/analysis.py", "")

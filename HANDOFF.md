@@ -17,7 +17,7 @@ phase handoff. WHATS_NEW.md is rewritten at the end of every pass.
   pictures), with optional cloud AI. The game plays inside the Workbench and has a scene
   layer, and a 3D Block World starter for 3D games. The Fast Path handles common
   requests with recipes. There is invisible version history with Undo, project memory,
-  and GitHub backup. **1881 tests pass, ruff is clean.**
+  and GitHub backup. **1893 tests pass, ruff is clean.**
 - **A Research project makes a report (SPIKES §34, WHATS_NEW.md).** The question, the
   charts the analysis draws, the findings and the sources on 8 x 10 pages, shown in the
   Workbench as the PDF's own pages (**Show the report**) and saved with **Export PDF…**
@@ -26,6 +26,11 @@ phase handoff. WHATS_NEW.md is rewritten at the end of every pass.
   `src/report.toml`; both local models made 7 of 7 report changes, one edit each. The
   house chart style is really applied now (`MATPLOTLIBRC`, the pass before this one; its
   colour guard now also knows `tab:`/`xkcd:` colours).
+- **The owner's dashboard report works (SPIKES §34G).** "A weather report dashboard report
+  with a few modern visualizations" got nothing on Gary Smart (made-up chart names in
+  report.toml); now 3 of 3 on both models. A report needing charts goes to the analysis,
+  with where to add them; a Research turn's changed analysis is run and repaired, as a
+  game is tested (`_analysis_wants_repair`); report.toml is checked when written.
 - **The game builds pass (SPIKES §33, WHATS_NEW.md).** Neither local model builds a whole
   game from one sentence, and before it neither drew anything 3D. A 3D ask now gets the
   3D Block World. Beginning a Game on Gary Fast warns that it struggles with games
@@ -69,9 +74,6 @@ phase handoff. WHATS_NEW.md is rewritten at the end of every pass.
 6. **Hardening** (SPIKES §28N). The playtest sees under 2 s of a game, so a crash behind
    a timer is missed. Gary can repeat one refused call until the budget runs out.
 7. **Known limits, recorded:**
-   - **A Research turn is not run after it edits the analysis**, so a claim about a chart
-     can be untested: Gary Smart broke the analysis adding a "degrees" label and said "The
-     chart now shows °F" (SPIKES §34F). Older than the report pass; flagged as its own task.
    - Gary Fast's whole-game turn tries to rewrite the file first.
    - Gary Smart ignores the child's monster picture.
    - Cloud providers send no pixels.
@@ -106,7 +108,7 @@ PR numbers do not match review order: review 1 → 2 → 3 → 4 → 6 → 7 →
 ```bash
 ./Setup\ Open\ Nest.command          # no .venv yet: installs its own CPython 3.12.14
 ./Launch\ Open\ Nest\ Demo.command    # the app on the dev sandbox, .opennest-sandbox
-.venv/bin/python -m pytest -q         # 1881 tests, ~4.5 min -- run it UNWRAPPED
+.venv/bin/python -m pytest -q         # 1893 tests, ~4.5 min -- run it UNWRAPPED
 ```
 
 | Phase | Command | Network |
@@ -210,8 +212,11 @@ benchmarks/      measurement drivers and kept results (replays, tool choice, Fas
 - The app process imports matplotlib only for reports, through `report._matplotlib()`, which
   keeps its cache in `paths.cache_dir()`. Left alone it writes `~/.matplotlib`.
 - Gary is told about `src/report.toml` beside a message about the report, never always.
-  A message about a chart *in* the report is the analysis's (`_CHART_ITSELF`): with the
-  note, Gary Fast renamed the report instead of the chart and said otherwise.
+  A message about a chart *in* the report (`_CHART_ITSELF`), or one that needs charts made
+  (`_MAKES_CHARTS`), is the analysis's: with the layout note, Gary renamed the report
+  instead of the chart, and wrote made-up chart names instead of drawing any.
+- A Research turn that changed Python is run before it ends (`_analysis_wants_repair`);
+  its failure spends the turn's repair attempts like a game's failed test.
 - A Qt test makes a `QApplication`, never a bare `QGuiApplication`: the first one made is the
   session's, and every widget test after it aborts.
 
