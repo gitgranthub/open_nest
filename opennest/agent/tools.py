@@ -965,6 +965,46 @@ def repair_edit(text: str, old: str, new: str) -> tuple[str, str] | None:
                                   shift=len(actual) - len(sent))
                 if updated is not None:
                     return updated, _label(label, "indentation")
+    return _repair_quotes(text, old, new)
+
+
+def _same_quotes(text: str) -> str:
+    """Single and double quotes as one character -- same length, same positions."""
+    return text.replace("'", '"')
+
+
+def _repair_quotes(text: str, old: str, new: str) -> tuple[str, str] | None:
+    """The right line in the other quotes: ``set_title('...')`` for ``set_title("...")``.
+
+    Measured (SPIKES.md section 34H): asked to rename the rain chart, both local models
+    found the line -- ``axes.set_title('August was the wettest month')`` -- in single
+    quotes, against the file's double, and were refused every time, so the title never
+    changed. In Python the two quote marks mean the same for a string like this one.
+    Normalised, the text keeps every position, so the match is spliced into the real
+    file; the same rules as every rung: exactly one match, or no repair.
+    """
+    if "'" not in old and '"' not in old:
+        return None
+    quoted_text, quoted_old = _same_quotes(text), _same_quotes(old)
+    if quoted_text.count(quoted_old) == 1:
+        at = quoted_text.index(quoted_old)
+        return text[:at] + new + text[at + len(old):], "quotes"
+    if quoted_text.count(quoted_old) > 1:
+        return None
+    for ignore_indent in (False, True):
+        window = _unique_window(quoted_text, quoted_old, ignore_indent=ignore_indent)
+        if window is None:
+            continue
+        shift = 0
+        if ignore_indent:
+            actual = _indent_of(text.split("\n")[window[0]])
+            sent = _indent_of(old.replace("\r\n", "\n").split("\n")[0])
+            if "\t" in actual or "\t" in sent:
+                return None
+            shift = len(actual) - len(sent)
+        updated = _splice(text, window, new, shift=shift)
+        if updated is not None:
+            return updated, "quotes+" + ("indentation" if ignore_indent else "whitespace")
     return None
 
 

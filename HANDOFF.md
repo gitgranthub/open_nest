@@ -17,7 +17,7 @@ phase handoff. WHATS_NEW.md is rewritten at the end of every pass.
   pictures), with optional cloud AI. The game plays inside the Workbench and has a scene
   layer, and a 3D Block World starter for 3D games. The Fast Path handles common
   requests with recipes. There is invisible version history with Undo, project memory,
-  and GitHub backup. **1893 tests pass, ruff is clean.**
+  and GitHub backup. **1897 tests pass, ruff is clean.**
 - **A Research project makes a report (SPIKES §34, WHATS_NEW.md).** The question, the
   charts the analysis draws, the findings and the sources on 8 x 10 pages, shown in the
   Workbench as the PDF's own pages (**Show the report**) and saved with **Export PDF…**
@@ -108,7 +108,7 @@ PR numbers do not match review order: review 1 → 2 → 3 → 4 → 6 → 7 →
 ```bash
 ./Setup\ Open\ Nest.command          # no .venv yet: installs its own CPython 3.12.14
 ./Launch\ Open\ Nest\ Demo.command    # the app on the dev sandbox, .opennest-sandbox
-.venv/bin/python -m pytest -q         # 1893 tests, ~4.5 min -- run it UNWRAPPED
+.venv/bin/python -m pytest -q         # 1897 tests, ~4.5 min -- run it UNWRAPPED
 ```
 
 | Phase | Command | Network |

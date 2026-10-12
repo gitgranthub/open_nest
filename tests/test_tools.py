@@ -527,3 +527,64 @@ def test_every_refusal_carries_a_machine_readable_reason(box: Toolbox) -> None:
         result = box.dispatch("edit_file", args)
         assert not result.ok, args
         assert result.reason == expected, f"{args} gave {result.reason!r}"
+
+
+# -- the right line in the other quotes (SPIKES.md section 34H) ---------------------------
+
+RAIN = '''def rain(plt, monthly):
+    figure, axes = plt.subplots()
+    axes.bar(monthly.index, monthly.values)
+    axes.set_title("August was the wettest month")
+    axes.set_xlabel("Month")
+'''
+
+
+def _analysis(box: Toolbox, text: str = RAIN) -> Path:
+    path = box.project.directory / "src" / "analysis.py"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_the_right_line_in_the_other_quotes_is_repaired(box: Toolbox) -> None:
+    """Both local models, asked to rename the rain chart, sent the title line in single
+    quotes against the file's double -- and were refused every time."""
+    path = _analysis(box)
+    result = box.dispatch("edit_file", {
+        "path": "src/analysis.py",
+        "old_text": "    axes.set_title('August was the wettest month')",
+        "new_text": "    axes.set_title('Rain by month')",
+    })
+    assert result.ok and result.recovered == "quotes"
+    assert "    axes.set_title('Rain by month')\n" in path.read_text()
+    assert "August" not in path.read_text()
+
+
+def test_the_other_quotes_without_the_indent_are_repaired(box: Toolbox) -> None:
+    path = _analysis(box)
+    result = box.dispatch("edit_file", {
+        "path": "src/analysis.py",
+        "old_text": "axes.set_title('August was the wettest month')",
+        "new_text": "axes.set_title('Rain by month')",
+    })
+    assert result.ok and "    axes.set_title('Rain by month')\n" in path.read_text()
+
+
+def test_the_other_quotes_over_several_lines_keep_the_files_indent(box: Toolbox) -> None:
+    path = _analysis(box)
+    result = box.dispatch("edit_file", {
+        "path": "src/analysis.py",
+        "old_text": "axes.set_title('August was the wettest month')\naxes.set_xlabel('Month')",
+        "new_text": "axes.set_title('Rain by month')\naxes.set_xlabel('Month of 2025')",
+    })
+    assert result.ok and result.recovered == "quotes+indentation"
+    assert "    axes.set_title('Rain by month')\n    axes.set_xlabel('Month of 2025')\n" in \
+        path.read_text()
+
+
+def test_two_lines_that_differ_only_in_quotes_are_not_guessed_between(box: Toolbox) -> None:
+    """Exactly one match, or no repair: mixed quotes that could be either line stay refused."""
+    path = _analysis(box, 'print("a")\nprint(\'a\')\n')
+    result = box.dispatch("edit_file", {"path": "src/analysis.py",
+                                        "old_text": "print(\"a')", "new_text": "print('b')"})
+    assert not result.ok
+    assert path.read_text() == 'print("a")\nprint(\'a\')\n'

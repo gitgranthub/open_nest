@@ -5697,7 +5697,30 @@ smaller than `KEEP_ON_PAGE` allows): weather3's report 4 pages to 3, two to a pa
 The same rule ends the earlier unequal pair: five ordinary charts are 0.907, then
 0.858/0.858 twice (they were 0.907/0.808).
 
+### 34H. Renaming a chart: the right line, in the other quotes
+
+The owner asked whether Gary would need to look at the chart -- snapshots, then the title.
+Captured first (both local models; "the rain chart in my report should be called Rain by
+month" and "change the title of the rain chart to Rain by month"): the first edit guessed a
+title that was not there (`plt.title('Precipitation by Month')`); after reading the file,
+**both found the right line** and sent `axes.set_title('August was the wettest month')`
+-- single quotes, against the file's double -- and the tool refused it every time. Gary
+Smart landed one of four only when it happened to use double quotes. Seeing the picture
+would not have helped: the title text was already known, and the chart PNG is already a
+file in charts/, so there is nothing to snapshot or clean up.
+
+`repair_edit` now has a quote rung (`_repair_quotes`): `'` and `"` compared as one
+character -- same length, so every position maps back exactly -- spliced in only if there
+is exactly one match, with or without the indentation and whitespace rungs; new_text is
+written as sent, and the syntax check still runs. Mixed quotes that could be either of two
+lines stay refused (a test).
+
+`results/quotes_fast.json`, `quotes_smart.json`: the two renames **4 of 4** (0 of 4
+before), each turn a wrong guess, a read, the repaired edit and a run. Report changes 7 of
+7 on both, chart requests unchanged (3 of 4 on Gary Fast, the dashboard the fixture already
+has). The "degrees" label went in as "Temperature (°F)" on both -- the analysis runs, and
+the replies said that -- not the word "degrees" the goal looked for.
+
 **Not done**: the real macOS save window (the replace question, `.pdf` added) is replaced in
 the tests and was not driven by hand; nothing was printed on paper; a new project's first
-run builds its own font cache (~6 s); the edit tool still misses some chart edits (the rain
-title, §34G); cloud models were not measured (no working keys).
+run builds its own font cache (~6 s); cloud models were not measured (no working keys).

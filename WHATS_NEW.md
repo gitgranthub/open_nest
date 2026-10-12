@@ -64,6 +64,12 @@ wrong, all Open Nest's (SPIKES.md §34G):
 - **Charts one after another share a page at one size**: Gary Smart's big charts had taken
   a page each, half of it empty -- 4 pages became 3.
 
+**Renaming a chart works now too.** Both models found the right title line but typed it
+in single quotes where the file has double, and the edit tool refused it every time. It
+now treats the two quote marks as the same when that matches exactly one line: renames 4 of
+4 on both models (0 of 4 before). Gary did not need to see the chart -- he already knew the
+title; it was one quote mark (SPIKES.md §34H).
+
 Your weather3 project still has the made-up names in its report.toml; it now makes a report
 anyway (with the one chart it has). Send the message again and Gary builds the charts.
 
@@ -100,7 +106,5 @@ above).
 - A new Research project's very first Run Analysis takes about 6 seconds while matplotlib
   builds that project's font cache; after that, half a second. Older than this pass, and
   noticed, not changed.
-- Some chart edits still miss (the edit tool's exact text): asked to rename the rain chart,
-  both models said they could not, truthfully.
 - An emoji in the findings cannot be printed; it is left out, and said.
 - No 8 GB Mac has been measured.

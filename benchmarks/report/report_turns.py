@@ -98,6 +98,7 @@ IN_REPORT = [
     ("the rain chart in my report should be called Rain by month", "Rain by month"),
     ("the temperature chart in my report needs a label on the side saying degrees",
      "degrees"),
+    ("change the title of the rain chart to Rain by month", "Rain by month"),
 ]
 
 #: (message, whether the child asked for a colour)
